@@ -1,0 +1,109 @@
+# Builds emot3 on every push and pull request, and publishes release
+# assets whenever a tag matching v* is pushed.
+#
+# Three build configs are compiled on every run (breakage guard):
+#   Distribution -> emot3.dll       (public, clean: no dev tools, no swallows)
+#   Plus         -> emot3_plus.dll  (convenience input-swallows, no dev tools)
+#   Dev          -> emot3_dev.dll   (dev diagnostic tools + swallows)
+# Two gating macros drive this: EMOT3_DIST strips the AV-sensitive input-
+# swallows, EMOT3_DEVTOOLS includes the diagnostic dev tools. See the README
+# and src/emot3.vcxproj.
+#
+# Artifacts (every build): emot3.dll + emot3_plus.dll. On a v* tag, ONLY the
+# public emot3.dll is published as a release asset (Nexus' GitHub updater wants a
+# single .dll on the release); emot3_plus.dll stays a build artifact, and
+# emot3_dev.dll is compiled to catch breakage but is never shipped.
+#
+# Runs entirely on GitHub-hosted windows-latest (Windows Server 2022),
+# which ships with MSBuild, the C++ Build Tools, the Windows SDK,
+# rc.exe, and Python 3 pre-installed - the same stack the existing
+# Visual Studio .sln expects. No CMake / MinGW migration required.
+#
+# Public-repo runners are free with no minute cap, so the workflow
+# fires on every push without budget concerns.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+# Cancel any in-flight build for the same ref when a new push lands.
+# Saves runner time when commits arrive in quick succession.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+# The release step (softprops/action-gh-release on a v* tag) creates/updates a
+# GitHub Release, which needs write access to repo contents. The default
+# GITHUB_TOKEN is read-only on many repos, so grant it explicitly.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # The build #includes headers from the vendored submodules
+          # (imgui / nexus / mumble / nlohmann_json), so they must be fetched -
+          # the default checkout does NOT init submodules.
+          submodules: recursive
+
+      # MSBuild is in the runner image but isn't on PATH by default;
+      # this action wires it up for the rest of the job.
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      # gen_rc.py invokes `py -3` per the project's pre-build target.
+      # The Windows runner ships the `py` launcher pointed at Python 3
+      # out of the box, so no setup-python action is needed.
+      - name: Generate resource manifest
+        run: py -3 tools/gen_rc.py
+
+      # Build all three configs every run so a break in any of them fails the
+      # PR, not just at release time. Each writes its own folder + DLL name
+      # (per-config TargetName / OutDir), so they never clobber each other.
+      - name: Build Distribution (emot3.dll)
+        run: msbuild emot3.sln /p:Configuration=Distribution /p:Platform=x64 /m
+      - name: Build Plus (emot3_plus.dll)
+        run: msbuild emot3.sln /p:Configuration=Plus /p:Platform=x64 /m
+      - name: Build Dev (emot3_dev.dll, breakage guard - not shipped)
+        run: msbuild emot3.sln /p:Configuration=Dev /p:Platform=x64 /m
+
+      # Every build (push or PR) uploads the public + Plus DLLs as workflow
+      # artifacts - useful for grabbing a build of a feature branch without
+      # cutting a release. 14-day retention keeps storage well under the free
+      # 500 MB quota. emot3_dev.dll is intentionally not uploaded.
+      - name: Upload DLL artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: emot3-dll
+          path: |
+            build/Distribution/x64/emot3.dll
+            build/Plus/x64/emot3_plus.dll
+          retention-days: 14
+          if-no-files-found: error
+
+      # On tag pushes (v1.0.0, v0.2.1-beta, etc.) attach ONLY the public
+      # emot3.dll to a GitHub Release. Nexus' GitHub update provider downloads a
+      # .dll asset from the release, so the release must expose exactly one to
+      # stay unambiguous - emot3_plus.dll remains available via the build
+      # artifacts above (and emot3_dev.dll is never shipped). The release is
+      # created on first run for a given tag and the DLL appended; subsequent
+      # re-runs replace it. Releases storage doesn't count against the artifact
+      # quota, so this is the right home for the shipped binary.
+      - name: Publish release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/Distribution/x64/emot3.dll
+          fail_on_unmatched_files: true
+          generate_release_notes: true

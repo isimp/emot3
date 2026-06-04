@@ -1,0 +1,238 @@
+#include "Options.h"
+#include "OptionsCommon.h"
+#include "CharacterState.h"  // RTApiConnected for the precise-detection status line
+#include "EmoteAction.h"     // EmoteSendSwallowActive - dev cross-ref for "while moving"
+#include "Globals.h"
+#include "I18n.h"
+#include "Settings.h"
+#include "Layout.h"          // ToggleButton
+#include "NexusShortcut.h"   // ApplyNexusShortcut on settings changes
+#include "Logging.h"         // LOG_TRACE (setting-change audit trail)
+#include "Profiling.h"       // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
+
+#include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"  // PushItemFlag / ImGuiItemFlags_Disabled
+
+#include <string>
+#include <vector>
+// ---- Tab: General -----------------------------------------------------
+
+void RenderGeneralOptionsTab() {
+    PROFILE_SCOPE("opt.general");  // dev perf overlay
+    // Primary visibility toggle at the top of the tab - same
+    // affordance as the Quickbar tab's main toggle, same primary-
+    // action styling (bumped frame padding + Spacing + inline
+    // status), and the same label-flip so the verb describes the
+    // click action rather than promising "Show" when the window is
+    // already open. Replaces the old "Show panel during gameplay"
+    // checkbox, which read like an edge-case toggle rather than the
+    // primary visibility control it actually is.
+    ImGui::Spacing();
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14.f, 6.f));
+    const char* mainToggleLabel = g_Settings.ShowWindow
+                                  ? L("opt.gen.hide_main")
+                                  : L("opt.gen.show_main");
+    if (ToggleButton(mainToggleLabel, &g_Settings.ShowWindow)) {
+        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    }
+    ImGui::PopStyleVar();
+    if (ImGui::IsItemHovered())
+        TooltipText("opt.gen.toggle_tooltip");
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", g_Settings.ShowWindow ? L("opt.currently_visible")
+                                                    : L("opt.currently_hidden"));
+    ImGui::Spacing();
+
+    // ===== Language =====
+    OptionsSection(L("opt.sec.language"));
+    {
+        // "auto" + every UI language we ship a table for. We never list a
+        // language we don't have; an unsupported Nexus language under
+        // "auto" simply renders English (handled by L()'s fallback).
+        const std::vector<std::string>& uiLangs = AvailableUiLanguages();
+        const std::string& cur = g_Settings.UiLanguage;
+        std::string curLabel = (cur == "auto" || cur.empty())
+            ? std::string(L("options.ui_language.auto"))
+            : UiLanguageDisplayName(cur);
+
+        ImGui::Text("%s:", L("options.ui_language.label"));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.f);
+        if (ImGui::BeginCombo("##uilang", curLabel.c_str())) {
+            bool autoSel = (cur == "auto" || cur.empty());
+            if (ImGui::Selectable(L("options.ui_language.auto"), autoSel) && !autoSel) {
+                g_Settings.UiLanguage = "auto";
+                SetUiLanguage("auto");
+                if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            }
+            for (const auto& code : uiLangs) {
+                bool sel = (cur == code);
+                if (ImGui::Selectable(UiLanguageDisplayName(code).c_str(), sel) && !sel) {
+                    g_Settings.UiLanguage = code;
+                    SetUiLanguage(code);
+                    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+                }
+                if (sel) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            TooltipText("options.ui_language.tooltip");
+
+        // Spell out the interface-vs-emote-language split here: this control
+        // only affects emot3's own UI text. The wording of the emote
+        // commands/names is a separate setting in the Emotes tab. Muted so it
+        // reads as a footnote to the control, not another control.
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextWrapped("%s", L("options.ui_language.note"));
+        ImGui::PopStyleColor();
+    }
+
+    // ===== Notifications =====
+    // Whether emot3 prompts (a first-run-style dialog in the Library) when a
+    // version update added bundled emotes the user doesn't have. The dialog's
+    // "Don't ask again" flips this too. See the notifier in MainPanel.cpp.
+    OptionsSection(L("opt.sec.notifications"));
+    CheckboxWithSaveAndTooltip("opt.gen.notify_new_bundled",
+                               &g_Settings.NotifyNewBundledEmotes, /*defaultIsOn=*/true);
+
+    // ===== Nexus access bar icon =====
+    //
+    // The two controls under this header are tightly related — one
+    // toggles the icon, the other reassigns its left-click. Without the
+    // section title the swap control read as orphaned ("which left
+    // click?"); grouping them solves that.
+    OptionsSection(L("opt.sec.nexus_icon"));
+
+    if (CheckboxWithSaveAndTooltip("opt.gen.show_shortcut", &g_Settings.ShowNexusShortcut, /*defaultIsOn=*/true)) {
+        ApplyNexusShortcut();   // register or remove based on the new state
+    }
+
+    // Click-swap indented under the parent toggle and gated on the icon
+    // being shown — it's meaningless without an icon to click on.
+    ImGui::Indent();
+    if (DisabledCheckbox("opt.gen.swap_click", &g_Settings.SwapShortcutClickActions,
+                         /*enabled=*/g_Settings.ShowNexusShortcut,
+                         /*defaultIsOn=*/false, "opt.gen.swap_disabled")) {
+        ApplyNexusShortcut();   // re-register against the other keybind
+    }
+    ImGui::Unindent();
+
+    // ===== Sending =====
+    OptionsSection(L("opt.sec.sending"));
+
+    CheckboxWithSaveAndTooltip("opt.gen.send_on_click", &g_Settings.SendOnClick, /*defaultIsOn=*/true);
+
+    // Passive warning when the chat keybind isn't bound. See "Emote
+    // send refusal gate" in emot3.md for the design.
+    if (APIDefs && !APIDefs->GameBinds.IsBound(EGameBinds_UiChatCommand)) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+        ImGui::TextWrapped("%s", L("opt.gen.chat_unbound_warn"));
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+    }
+
+    CheckboxWithSaveAndTooltip("opt.gen.send_on_target", &g_Settings.SendTargetableOnTarget, /*defaultIsOn=*/false);
+
+    // ===== Icons =====
+    OptionsSection(L("opt.sec.icons"));
+
+    if (CheckboxWithSaveAndTooltip("opt.gen.ai_fallback", &g_Settings.UseAIIconFallback, /*defaultIsOn=*/false)) {
+        // Re-run the texture loader so newly-eligible emotes pick up
+        // their AI artwork immediately. Note: Nexus' texture cache has
+        // no eviction API, so emotes whose AI image is already loaded
+        // keep showing it until the game restarts. The tooltip says as
+        // much.
+        g_EmotesDirty = true;
+    }
+
+    CheckboxWithSaveAndTooltip("opt.gen.show_target_dot", &g_Settings.ShowTargetDot, /*defaultIsOn=*/true);
+
+    // How unusable emotes present on the Quickbar - one dropdown over the two
+    // settings: Grey out / Hide / Do nothing. "Do nothing" is the off state
+    // (QuickbarGreyUnusable=false), which also stops the send gate refusing
+    // game-state blocks, matching the former master toggle. Display order
+    // grey/hide/off; synth index maps to (QuickbarGreyUnusable, behaviour).
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(L("opt.gen.unusable_behavior"));
+    ImGui::SameLine();
+    int uidx = !g_Settings.QuickbarGreyUnusable ? 2
+             : (g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide ? 1 : 0);
+    const char* uItems[] = { L("opt.gen.unusable_grey"), L("opt.gen.unusable_hide"),
+                             L("opt.gen.unusable_off") };
+    ImGui::SetNextItemWidth(160.f);
+    if (ImGui::Combo("##unusable", &uidx, uItems, IM_ARRAYSIZE(uItems))) {
+        g_Settings.QuickbarGreyUnusable = (uidx != 2);
+        if (uidx == 0)      g_Settings.QuickbarUnusableBehavior = EUnusableBehavior::Grey;
+        else if (uidx == 1) g_Settings.QuickbarUnusableBehavior = EUnusableBehavior::Hide;
+        LOG_TRACE("setting general.unusable: grey=%d behavior=%d",
+                  g_Settings.QuickbarGreyUnusable, (int)g_Settings.QuickbarUnusableBehavior);
+        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    }
+    if (ImGui::IsItemHovered()) {
+        static const TooltipOption kUnusableOpts[] = {
+            { "opt.gen.unusable_grey", "opt.gen.unusable_grey.desc", true  },
+            { "opt.gen.unusable_hide", "opt.gen.unusable_hide.desc", false },
+            { "opt.gen.unusable_off",  "opt.gen.unusable_off.desc",  false },
+        };
+        TooltipOptions("opt.gen.unusable_intro", kUnusableOpts, IM_ARRAYSIZE(kUnusableOpts));
+    }
+
+    // Detection + the extra sources only matter while the interaction isn't "off";
+    // indent them under it so the grouping reads at a glance.
+    if (g_Settings.QuickbarGreyUnusable) {
+        ImGui::Indent();
+
+        CheckboxWithSaveAndTooltip("opt.gen.precise_state", &g_Settings.QuickbarPreciseStateDetection, /*defaultIsOn=*/true);
+        // Live status: precise detection is a no-op without the RealTime API addon.
+        if (RTApiConnected())
+            ImGui::TextColored(ImVec4(0.45f, 0.80f, 0.45f, 1.f), "%s", L("opt.gen.rtapi_connected"));
+        else
+            ImGui::TextDisabled("%s", L("opt.gen.rtapi_missing"));
+#ifdef EMOT3_DEVTOOLS
+        // Dev-tool raw probe so a "not found" report can be diagnosed in place.
+        // A diagnostic, so it's on the dev-tools axis (EMOT3_DEVTOOLS): present
+        // in Dev/Debug, absent from the public emot3.dll AND emot3_plus.dll.
+        ImGui::TextDisabled("%s", RTApiDebugInfo());
+#endif
+
+        // Extend the SAME interaction (grey or hide) to the addon's transient send
+        // refusals: a GW2 text box open, or a movement key held.
+        CheckboxWithSaveAndTooltip("opt.gen.unusable_textbox", &g_Settings.QuickbarUnusableTextbox, /*defaultIsOn=*/true);
+        // Movement cross-references the dev "swallow held keys" mode: while that's
+        // on, a held key no longer refuses the send (you can click mid-move), so
+        // this has no effect - show it disabled with the reason. (Swallow is
+        // compiled out of release builds, so EmoteSendSwallowActive() is always
+        // false there and the checkbox is plain.)
+        if (EmoteSendSwallowActive())
+            DisabledCheckbox("opt.gen.unusable_movement", &g_Settings.QuickbarUnusableMovement,
+                             /*enabled=*/false, /*defaultIsOn=*/true, "opt.gen.unusable_movement_swallow");
+        else
+            CheckboxWithSaveAndTooltip("opt.gen.unusable_movement", &g_Settings.QuickbarUnusableMovement, /*defaultIsOn=*/true);
+
+        ImGui::Unindent();
+    }
+
+    // (The Unlocks section moved to its own "Unlocks" tab — see OptionsUnlocks.cpp.)
+
+    // ===== Quickbar categories =====
+    // Built-in (synthetic) categories the Quickbar's category bar offers
+    // alongside the user's favorites categories. See Quickbar.cpp.
+    OptionsSection(L("opt.sec.qb_categories"));
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_favorites", &g_Settings.QuickbarShowFavoriteCategories, /*defaultIsOn=*/true);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_core", &g_Settings.QuickbarShowCoreCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_mad_king", &g_Settings.QuickbarShowMadKingCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked", &g_Settings.QuickbarShowUnlockedCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked_all", &g_Settings.QuickbarShowUnlockedAllCategory, /*defaultIsOn=*/true);
+
+    // Favorite categories are created and managed entirely in the Library now
+    // (add via its "+ Category" bar; collapse / drag-reorder / rename / delete
+    // from each category header). That removed this tab's duplicate editor - see
+    // RenderCategoryHeader in Cells.cpp.
+}

@@ -1,0 +1,76 @@
+#include "OptionsCommon.h"
+
+#include "Globals.h"    // g_SettingsPath
+#include "I18n.h"       // L
+#include "Settings.h"   // SaveSettings
+#include "Logging.h"    // LOG_TRACE (setting-change audit trail)
+
+#include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"  // PushItemFlag / ImGuiItemFlags_Disabled
+
+#include <string>
+
+namespace {
+// Compose "<labelKey>.on" / "<labelKey>.off" for the On/Off tooltip overloads.
+std::string OnKey (const char* labelKey) { return std::string(labelKey) + ".on";  }
+std::string OffKey(const char* labelKey) { return std::string(labelKey) + ".off"; }
+}  // namespace
+
+bool CheckboxWithSaveAndTooltip(const char* labelKey, bool* state,
+                                const char* tooltipKey) {
+    bool changed = ImGui::Checkbox(L(labelKey), state);
+    if (changed) {
+        LOG_TRACE("setting %s = %s", labelKey, *state ? "on" : "off");
+        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L(tooltipKey));
+    return changed;
+}
+
+bool CheckboxWithSaveAndTooltip(const char* labelKey, bool* state, bool defaultIsOn) {
+    bool changed = ImGui::Checkbox(L(labelKey), state);
+    if (changed) {
+        LOG_TRACE("setting %s = %s", labelKey, *state ? "on" : "off");
+        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    }
+    if (ImGui::IsItemHovered())
+        TooltipOnOff(OnKey(labelKey).c_str(), OffKey(labelKey).c_str(), defaultIsOn);
+    return changed;
+}
+
+bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
+                      bool defaultIsOn, const char* disabledTipKey) {
+    // Greyed-out-when-disabled checkbox. ItemFlags_Disabled still lets
+    // IsItemHovered fire, so we can explain *why* it's greyed; on a disabled
+    // click ImGui would still flip the bool, so revert it. When enabled the
+    // tooltip is the On/Off two-liner (<labelKey>.on/.off); when disabled it's
+    // the prose disabledTipKey. Auto-saves; returns true only on an enabled
+    // change so callers can chain extra work (e.g. ApplyNexusShortcut).
+    if (!enabled) {
+        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+    }
+    bool changed = ImGui::Checkbox(L(labelKey), state);
+    if (!enabled) {
+        ImGui::PopStyleVar();
+        ImGui::PopItemFlag();
+        if (changed) { *state = !*state; changed = false; }
+    }
+    if (ImGui::IsItemHovered()) {
+        if (enabled)
+            TooltipOnOff(OnKey(labelKey).c_str(), OffKey(labelKey).c_str(), defaultIsOn);
+        else
+            TooltipText(disabledTipKey);
+    }
+    if (changed) {  // only true on an enabled change (disabled clicks were reverted)
+        LOG_TRACE("setting %s = %s", labelKey, *state ? "on" : "off");
+        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    }
+    return changed;
+}
+
+void OptionsSection(const char* title) {
+    ImGui::Spacing();
+    ImGui::TextDisabled("%s", title);
+    ImGui::Separator();
+}

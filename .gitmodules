@@ -1,0 +1,12 @@
+[submodule "vendor/nexus"]
+	path = vendor/nexus
+	url = https://github.com/RaidcoreGG/RCGG-lib-nexus-api
+[submodule "vendor/imgui"]
+	path = vendor/imgui
+	url = https://github.com/RaidcoreGG/imgui
+[submodule "vendor/mumble"]
+	path = vendor/mumble
+	url = https://github.com/RaidcoreGG/RCGG-lib-mumble-api
+[submodule "vendor/nlohmann_json"]
+	path = vendor/nlohmann_json
+	url = https://github.com/nlohmann/json

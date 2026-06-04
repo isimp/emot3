@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="core">
+      <UniqueIdentifier>{1a1f3b50-0001-4001-8001-000000000001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dev">
+      <UniqueIdentifier>{1a1f3b50-000c-4001-8001-00000000000c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="data">
+      <UniqueIdentifier>{1a1f3b50-0002-4001-8001-000000000002}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ui">
+      <UniqueIdentifier>{1a1f3b50-0003-4001-8001-000000000003}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="resources">
+      <UniqueIdentifier>{1a1f3b50-0004-4001-8001-000000000004}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="generated">
+      <UniqueIdentifier>{1a1f3b50-0005-4001-8001-000000000005}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="vendor">
+      <UniqueIdentifier>{1a1f3b50-0006-4001-8001-000000000006}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="vendor\imgui">
+      <UniqueIdentifier>{b8dcb93b-2947-498a-8c72-51bb322b9742}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="vendor\mumble">
+      <UniqueIdentifier>{1a1f3b50-0008-4001-8001-000000000008}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="vendor\nexus">
+      <UniqueIdentifier>{1a1f3b50-0009-4001-8001-000000000009}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="vendor\rtapi">
+      <UniqueIdentifier>{1a1f3b50-000a-4001-8001-00000000000a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="vendor\hoardandseek">
+      <UniqueIdentifier>{1a1f3b50-000b-4001-8001-00000000000b}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="core\entry.cpp">          <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\EmoteAction.cpp">    <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\I18n.cpp">           <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\Globals.cpp">        <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\Logging.cpp">        <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\CharacterState.cpp"><Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\UnlockScan.cpp">    <Filter>core</Filter></ClCompile>
+    <ClCompile Include="dev\SendSuppress.cpp">    <Filter>dev</Filter></ClCompile>
+    <ClCompile Include="dev\DevSettings.cpp">     <Filter>dev</Filter></ClCompile>
+    <ClCompile Include="dev\QuickbarWheel.cpp">   <Filter>dev</Filter></ClCompile>
+    <ClCompile Include="dev\DevTools.cpp">        <Filter>dev</Filter></ClCompile>
+    <ClCompile Include="dev\DevStateInspector.cpp"><Filter>dev</Filter></ClCompile>
+    <ClCompile Include="dev\NotifierDebug.cpp">   <Filter>dev</Filter></ClCompile>
+    <ClCompile Include="core\Feedback.cpp">      <Filter>core</Filter></ClCompile>
+    <ClCompile Include="data\EmoteData.cpp">      <Filter>data</Filter></ClCompile>
+    <ClCompile Include="data\Favorites.cpp">      <Filter>data</Filter></ClCompile>
+    <ClCompile Include="data\QuickbarPresets.cpp"><Filter>data</Filter></ClCompile>
+    <ClCompile Include="data\Settings.cpp">       <Filter>data</Filter></ClCompile>
+    <ClCompile Include="ui\Cells.cpp">            <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\IconBrowse.cpp">       <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\Icons.cpp">            <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\Layout.cpp">           <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\MainPanel.cpp">        <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\NexusShortcut.cpp">    <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\Options.cpp">          <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\OptionsCommon.cpp">    <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\OptionsGeneral.cpp">   <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\OptionsQuickbar.cpp">  <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\OptionsEmotes.cpp">    <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\OptionsUnlocks.cpp">   <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\Quickbar.cpp">         <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="resources\Resources.cpp"> <Filter>resources</Filter></ClCompile>
+    <ClCompile Include="generated\ResourcesGenerated.cpp"> <Filter>generated</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\imgui.cpp">         <Filter>vendor\imgui</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\imgui_draw.cpp">    <Filter>vendor\imgui</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\imgui_tables.cpp">  <Filter>vendor\imgui</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\imgui_widgets.cpp"> <Filter>vendor\imgui</Filter></ClCompile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="core\EmoteAction.h"> <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\CharacterState.h"><Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\UnlockScan.h">  <Filter>core</Filter></ClInclude>
+    <ClInclude Include="dev\DevSettings.h">   <Filter>dev</Filter></ClInclude>
+    <ClInclude Include="dev\QuickbarWheel.h"> <Filter>dev</Filter></ClInclude>
+    <ClInclude Include="dev\DevTools.h">      <Filter>dev</Filter></ClInclude>
+    <ClInclude Include="dev\DevStateInspector.h"><Filter>dev</Filter></ClInclude>
+    <ClInclude Include="dev\Profiling.h">     <Filter>dev</Filter></ClInclude>
+    <ClInclude Include="dev\QuickbarDebug.h"> <Filter>dev</Filter></ClInclude>
+    <ClInclude Include="dev\NotifierDebug.h"> <Filter>dev</Filter></ClInclude>
+    <ClInclude Include="dev\SendSuppress.h">  <Filter>dev</Filter></ClInclude>
+    <ClInclude Include="core\Feedback.h">    <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\I18n.h">        <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\Globals.h">     <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\Keybinds.h">    <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\Logging.h">     <Filter>core</Filter></ClInclude>
+    <ClInclude Include="data\EmoteData.h">   <Filter>data</Filter></ClInclude>
+    <ClInclude Include="data\Favorites.h">   <Filter>data</Filter></ClInclude>
+    <ClInclude Include="data\QuickbarPresets.h"><Filter>data</Filter></ClInclude>
+    <ClInclude Include="data\Settings.h">    <Filter>data</Filter></ClInclude>
+    <ClInclude Include="ui\Cells.h">         <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\IconBrowse.h">    <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\Icons.h">         <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\Layout.h">        <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\MainPanel.h">     <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\NexusShortcut.h"> <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\Options.h">       <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\OptionsCommon.h"> <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\Quickbar.h">      <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="resources\Resources.h"> <Filter>resources</Filter></ClInclude>
+    <ClInclude Include="..\vendor\imgui\imconfig.h">       <Filter>vendor\imgui</Filter></ClInclude>
+    <ClInclude Include="..\vendor\imgui\imgui.h">          <Filter>vendor\imgui</Filter></ClInclude>
+    <ClInclude Include="..\vendor\imgui\imgui_internal.h"> <Filter>vendor\imgui</Filter></ClInclude>
+    <ClInclude Include="..\vendor\imgui\imstb_rectpack.h"> <Filter>vendor\imgui</Filter></ClInclude>
+    <ClInclude Include="..\vendor\imgui\imstb_textedit.h"> <Filter>vendor\imgui</Filter></ClInclude>
+    <ClInclude Include="..\vendor\imgui\imstb_truetype.h"> <Filter>vendor\imgui</Filter></ClInclude>
+    <ClInclude Include="..\vendor\mumble\Mumble.h"><Filter>vendor\mumble</Filter></ClInclude>
+    <ClInclude Include="..\vendor\nexus\Nexus.h"> <Filter>vendor\nexus</Filter></ClInclude>
+    <ClInclude Include="..\vendor\rtapi\RTAPI.h"> <Filter>vendor\rtapi</Filter></ClInclude>
+    <ClInclude Include="..\vendor\hoardandseek\HoardAndSeekAPI.h"><Filter>vendor\hoardandseek</Filter></ClInclude>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ResourceCompile Include="generated\emot3.rc"> <Filter>generated</Filter></ResourceCompile>
+  </ItemGroup>
+</Project>

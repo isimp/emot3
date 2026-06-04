@@ -1,0 +1,81 @@
+# ---------------------------------------------------------------------------
+#  emot3 - .gitignore
+#
+#  Scoped to what this repo actually produces / consumes:
+#    - MSBuild build outputs (per Configuration x Platform)
+#    - Visual Studio per-user / per-machine state
+#    - Generated resource files (rewritten on every build by gen_rc.py)
+#    - Python bytecode cache from running the codegen
+#    - Editor / agent local state (.vs, .idea, .vscode, .claude)
+#
+#  Trimmed from the stock GitHub VisualStudio template - the long list of
+#  Azure / NuGet / NCrunch / LightSwitch / etc. patterns doesn't apply to
+#  a single C++ DLL project.
+# ---------------------------------------------------------------------------
+
+
+# ---- Build outputs --------------------------------------------------------
+# MSBuild writes every per-configuration output under build\<Config>\x64\ (DLL +
+# obj\ intermediates), so build/ is the single output root - each config gets
+# its own folder and incremental database. The .exp / .lib are import-library
+# by-products of the DLL we don't ship; the DLL itself is published via the
+# GitHub Actions release workflow, not from a local build.
+build/
+
+*.dll
+*.exp
+*.lib
+*.obj
+*.pdb
+*.idb
+*.iobj
+*.ipdb
+*.ilk
+*.tlog
+*.lastbuildstate
+*.recipe
+*.log
+
+
+# ---- Generated source -----------------------------------------------------
+# tools/gen_rc.py overwrites these every build from the PNGs in resources/.
+# Source of truth is the PNG set; tracking the outputs only churns diffs.
+src/generated/emot3.rc
+src/generated/ResourcesGenerated.cpp
+
+
+# ---- Visual Studio cache / per-user state ---------------------------------
+# .vs/ holds IntelliSense DB, browse data, etc. *.user is per-developer
+# debugger config (launch args, working dir). All safe to regenerate.
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Intellisense / browse databases
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+*.ipch
+ipch/
+
+
+# ---- Other editors / tools ------------------------------------------------
+# .idea/.vscode are JetBrains / VS Code project dirs. .claude holds Claude Code
+# workspace state (settings, local overrides) - all per-developer, not shared.
+.idea/
+.vscode/
+.claude/
+
+
+# ---- Python ---------------------------------------------------------------
+# tools/gen_rc.py is plain Python with no third-party deps, but Windows
+# Python still drops a __pycache__ next to it on each run.
+__pycache__/
+*.pyc
+
+
+# ---- OS noise -------------------------------------------------------------
+Thumbs.db
+.DS_Store

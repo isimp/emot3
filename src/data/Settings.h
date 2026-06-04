@@ -1,0 +1,251 @@
+#pragma once
+#include <string>
+#include <vector>
+
+// View modes:
+//   Full      — icon with a two-line label below; widest cell.
+//   Icon      — icon only; smallest cell with artwork.
+//   TextOnly  — single-line text button, no icon (formerly named
+//               Compact; kept at numeric value 2 so settings.json
+//               files written before the rename still resolve).
+//   Compact   — icon with a small alpha text strip overlaid on the bottom
+//               edge of the icon. Same cell footprint as Icon.
+enum class EViewMode    { Full = 0, Icon = 1, TextOnly = 2, Compact = 3 };
+
+// When the mouse wheel cycles the active Quickbar category. Replaces the
+// old two-boolean scheme (over-bar + anywhere), where "anywhere" silently
+// superseded "over bar". Numeric values match the Options combo's item
+// order so no display<->enum lookup table is needed.
+//   Off      — wheel never cycles; always scrolls the icon list.
+//   OverBar  — wheel cycles only when the cursor is over the tab/dropdown
+//              row; over the icon list it still scrolls.
+//   Anywhere — wheel cycles anywhere in the Quickbar, overriding icon scroll.
+enum class EWheelCycle  { Off = 0, OverBar = 1, Anywhere = 2 };
+
+// How the Quickbar presents a "can't emote right now" block (mounted, and -
+// with the RealTime API - swimming / downed / etc.). Grey keeps the buttons
+// visible but dimmed + unclickable; Hide removes the whole bar until usable.
+enum class EUnusableBehavior { Grey = 0, Hide = 1 };
+
+// What the Quickbar does while the player is in combat. Off ignores combat;
+// Grey dims + blocks the buttons in place (Quickbar-only - emotes still work
+// in combat everywhere else); Hide removes the whole bar until combat ends.
+enum class EQbCombat { Off = 0, Grey = 1, Hide = 2 };
+
+struct FavoriteCategory {
+    std::string              Name;
+    std::vector<std::string> Emotes;  // emote IDs in user order
+    // Collapsed in the Library to just its header (the emote grid is hidden).
+    // Per-category UI state, persisted in settings.json. Default expanded.
+    bool                     Collapsed = false;
+};
+
+struct Settings {
+    // User-marked "unlocked" emote IDs (lowercase). Without API key access we
+    // can't auto-detect unlocks, so the user manages this list manually via
+    // the emote context menu (Mark as unlocked / Mark as locked).
+    std::vector<std::string>      ManuallyUnlocked;
+    // Main-panel emote-class filters. Three independent toggles, all on by
+    // default (all-on shows everything, the old "All" radio). An emote is
+    // shown only when the toggle for its class is on: core emotes follow
+    // FilterShowCore; unlockable emotes follow FilterShowUnlocked when the
+    // user has marked them unlocked, FilterShowLocked otherwise. Replaced
+    // the old single-select EEmoteFilter radio — see MainPanel.cpp.
+    bool                          FilterShowCore       = true;
+    bool                          FilterShowUnlocked   = true;
+    bool                          FilterShowLocked     = true;
+    EViewMode                     ViewMode             = EViewMode::Full;
+    float                         MainIconScale        = 1.0f;
+    // Per-section collapse state for the built-in Library sections (Core /
+    // Unlockable). User favorites categories store their own Collapsed flag in
+    // FavoriteCategory; these two cover the synthetic built-ins. Default
+    // expanded. An active search renders every section expanded regardless.
+    bool                          MainCoreCollapsed     = false;
+    bool                          MainUnlockedCollapsed = false;
+    EViewMode                     QuickbarViewMode     = EViewMode::Icon;
+    float                         QuickbarIconScale    = 1.0f;
+    bool                          QuickbarUseDropdown  = false;  // tabs (false) or dropdown (true)
+    bool                          ShowWindow           = true;
+    bool                          SendOnClick          = true;
+    // When on, left-clicking a targetable emote sends it on the current
+    // target (appends " @") instead of plain. Off by default. With it on, the
+    // right-click menu offers "Send normally" and drops "Send on target"
+    // (that's the click default now). See Cells.cpp.
+    bool                          SendTargetableOnTarget = false;
+    bool                          ShowQuickbar         = false;
+    bool                          QuickbarCloseOnEsc   = false;  // off by default — QB is a HUD, not a modal
+    // Positive-direction booleans throughout: `true` = the feature
+    // named by the field is active. Defaults still match the historic
+    // behaviour — resizable / movable / scrollbar visible / tooltips
+    // visible by default; transparent body, hidden title, click-
+    // through, and category-bar dropdown all opt-in.
+    bool                          QuickbarAllowResize      = true;   // edges drag to resize
+    bool                          QuickbarAllowMove        = true;   // title-bar / body drag to move
+    bool                          ShowQuickbarBg           = true;   // window/child background fill
+    bool                          ShowQuickbarTitle        = true;   // title bar (loses drag handle when off)
+    // Punches up the alpha of the category-bar tabs / dropdown and the
+    // Text-only mode emote buttons. Aimed at the "background off" use
+    // case where ImGui's default ~0.40-alpha button fills disappear
+    // against the game world. Doesn't touch icon/full/compact cells —
+    // their artwork already carries enough contrast on its own.
+    bool                          QuickbarHighContrast     = false;
+    bool                          ShowQuickbarScrollbar    = true;   // visible scrollbar (wheel scrolls either way)
+    bool                          QuickbarHorizontalScroll = false;  // column-major layout + horizontal scrollbar
+    // Drag-snap the Quickbar window to whole-cell multiples on both axes so it
+    // frames an exact grid (no partial cells, no premature scrollbar). On by
+    // default - the bar looks best framing a clean grid. Residual: the snap
+    // target shifts when the cell size (view mode / icon scale) or the chrome
+    // (title / category bar wrap / scrollbar) changes, so it re-snaps with a
+    // one-frame jump. See Quickbar.cpp.
+    bool                          QuickbarSnapWindow       = true;
+    // Cell-snapped scrolling: one wheel notch = one cell, scroll position rounds
+    // to whole cells (so scrolling back up always lands on clean rows). On by
+    // default; off restores ImGui's smooth wheel.
+    bool                          QuickbarSnapScroll       = true;
+    // Wheel scroll-wrap: wheeling past the bottom row jumps to the top (and the
+    // reverse). Mouse-wheel only - dragging the scrollbar still clamps at the
+    // ends. Off by default. Works in every scroll mode (in smooth vertical mode
+    // emot3 takes over the wheel while this is on). See Quickbar.cpp.
+    bool                          QuickbarScrollWrap       = false;
+    bool                          ShowQuickbarTooltips     = true;   // per-emote hover tooltips in the QB
+    bool                          QuickbarClickThrough     = false;  // pass clicks through empty QB area
+    bool                          ShowQuickbarCategoryBar = true;   // tab/dropdown row above the icons
+    // Which categories the Quickbar's category bar lists. The controls live
+    // in the Options General tab, so these persist under
+    // general.quickbar_categories in settings.json (see Settings.cpp).
+    //   Favorites    — the user's own favorites categories (all of them).
+    //   Core         — every core emote.
+    //   Unlocked     — unlockable emotes the user has marked unlocked.
+    //   UnlockedAll  — core + unlocked = everything currently usable.
+    // Favorites default on (the original behaviour). Among the built-ins only
+    // Unlocked (all) defaults on - it's the single "everything usable" list
+    // most users want; Core and the unlockables-only Unlocked are narrower
+    // slices, opt-in to avoid crowding the bar with extra tabs.
+    bool                          QuickbarShowFavoriteCategories  = true;
+    bool                          QuickbarShowCoreCategory        = false;
+    bool                          QuickbarShowUnlockedCategory    = false;
+    bool                          QuickbarShowUnlockedAllCategory = true;
+    // "Your Mad King Says..." Halloween event set (the mad_king-flagged
+    // emotes). Opt-in like Core / Unlocked — a seasonal slice most users
+    // only want during the event.
+    bool                          QuickbarShowMadKingCategory     = false;
+    // When the mouse wheel cycles the active category (see EWheelCycle).
+    // Defaults to OverBar - cycling when hovering the category bar is what
+    // most users intuitively expect, while the icon list still scrolls.
+    EWheelCycle                   QuickbarWheelCycle   = EWheelCycle::OverBar;
+    // Wheel-cycle wrap: at the last category, cycling further jumps to the
+    // first (and the reverse). On by default (the long-standing behaviour);
+    // off clamps cycling at the first/last category. Only relevant while
+    // QuickbarWheelCycle isn't Off.
+    bool                          QuickbarWheelCycleWrap = true;
+    // What the Quickbar does in combat (MumbleLink IsInCombat): Off / Grey out
+    // the buttons / Hide the whole bar. Off by default. Emotes still work in
+    // combat everywhere else - this is a Quickbar-only convenience, not a global
+    // usability block - so it's a Quickbar setting and travels with presets.
+    EQbCombat                     QuickbarCombatBehavior = EQbCombat::Off;
+    int                           QuickbarCategoryIdx  = 0;
+    // Opt-in fallback: when an emote has no official bundled icon AND no
+    // user-supplied PNG in icons/, use the bundled AI-generated artwork
+    // instead of the letter fallback. Off by default — the AI provenance
+    // is something the user should knowingly enable.
+    bool                          UseAIIconFallback    = false;
+    // Show the small corner dot marking targetable emotes (those you can
+    // suffix with " @"). On by default. Applies to both the main panel and
+    // the Quickbar (drawn in RenderEmoteCell).
+    bool                          ShowTargetDot        = true;
+    // Block emotes that can't currently be used: refuse the send (toast) + grey
+    // or hide the Quickbar. On by default. Always covers mounted (MumbleLink).
+    // With QuickbarPreciseStateDetection + the RealTime API addon it also covers
+    // downed / swimming / underwater / gliding / flying. See core/CharacterState.
+    bool                          QuickbarGreyUnusable = true;
+    // Extend the block to the precise can't-emote states above - requires the
+    // optional GW2 RealTime API addon (a no-op without it). Gated by
+    // QuickbarGreyUnusable. On by default; only does anything once RTAPI loads.
+    bool                          QuickbarPreciseStateDetection = true;
+    // How a blocked state presents on the Quickbar: grey the buttons (default)
+    // or hide the whole bar until the player can emote again.
+    EUnusableBehavior             QuickbarUnusableBehavior = EUnusableBehavior::Grey;
+    // Opt-in extensions to the unusable interaction (the grey/hide/off dropdown):
+    // apply the SAME interaction when the addon would refuse the send right now -
+    // a GW2 text box is focused (Textbox) or a movement key is held (Movement).
+    // Both ON by default (a greyed button matches the send refusal). Gated under
+    // QuickbarGreyUnusable. Movement is debounced + dropped under the
+    // dev swallow setting (you can still click while moving). See Quickbar.cpp.
+    bool                          QuickbarUnusableTextbox  = true;
+    bool                          QuickbarUnusableMovement = true;
+    // Nexus quick-access shortcut (the little icon row at the top of the
+    // screen). On by default — it's the main entry point for the addon.
+    bool                          ShowNexusShortcut    = true;
+    // When false (default): left click toggles main window, right click
+    // toggles Quickbar. When true the two are swapped — useful if you
+    // primarily use the Quickbar.
+    bool                          SwapShortcutClickActions = false;
+    // UI language code, or "auto" to follow Nexus' active language. Empty
+    // is treated as "auto". The set of valid concrete codes is discovered
+    // from the bundled i18n tables (see I18n.h). Default follows Nexus.
+    std::string                   UiLanguage = "auto";
+
+    // ---- Unlock tracking (Unlocks tab; see core/UnlockScan) ----
+    // Manual right-click lock management is always available; these govern the
+    // optional GW2-API sync that fills in account unlock state on top.
+    // Key source: 0 = Hoard & Seek proxy, 1 = own API key. Clamped on load.
+    int                           UnlockApiKeySource = 0;
+    // Own GW2 API key (needs account + unlocks + progression scope). Stored
+    // plaintext in settings.json like other GW2 addons. Empty by default.
+    std::string                   Gw2ApiKey;
+    // Auto-sync once per session, a few seconds after the game starts, when a
+    // usable source exists (own key set, or Hoard & Seek). Off by default.
+    // The sync is always additive (only ADDS found unlocks, never locks) since
+    // the API only covers a subset of emotes - we don't trust it to manage the
+    // full lock state.
+    bool                          UnlockAutoSync = false;
+
+    // ---- New-bundled-emote notifier (see core notifier detection) ----
+    // When a future addon version ships emotes not in KnownBundledEmotes, offer
+    // them via a first-run-style dialog. On by default; the dialog's "Don't ask
+    // again" (and an Options toggle) clears this.
+    bool                          NotifyNewBundledEmotes = true;
+    // Snapshot of bundled emote ids seen on a prior run. The notifier diffs the
+    // current bundle against this; deliberately-deleted bundled emotes stay in
+    // here so they're never re-offered. Empty (first run / fresh install) means
+    // "initialize silently, don't nag". Stored as a top-level inline array
+    // (known_bundled_emotes), like ManuallyUnlocked.
+    std::vector<std::string>      KnownBundledEmotes;
+
+    std::vector<FavoriteCategory> FavoriteCategories;
+};
+
+extern Settings g_Settings;
+
+// Map a raw integer (e.g. a hand-edited settings.json view_mode) to a valid
+// EViewMode, falling back to Full when out of range. Shared by the settings
+// and Quickbar-preset loaders so the normalization lives in one place.
+EViewMode NormalizeViewMode(int raw);
+
+// Map a raw integer to a valid EWheelCycle, falling back to OverBar (the
+// default) when out of range. Shared by the settings and Quickbar-preset
+// loaders, same as NormalizeViewMode.
+EWheelCycle NormalizeWheelCycle(int raw);
+
+// Map a raw integer to a valid EUnusableBehavior, falling back to Grey (the
+// default) when out of range. Same shape as NormalizeViewMode.
+EUnusableBehavior NormalizeUnusableBehavior(int raw);
+
+// Map a raw integer to a valid EQbCombat (Off/Grey/Hide), falling back to Off
+// (the default) when out of range. Same shape as NormalizeViewMode.
+EQbCombat NormalizeQbCombat(int raw);
+
+// Minimum icon scale for a view mode. Full / TextOnly / Compact need a 1.0
+// floor — their label area (two-line name / centered text line / alpha strip)
+// needs vertical room and breaks below 1×; Icon has no label and scales freely
+// from 0.5×. The 2.5× cap is uniform across modes. One source of truth for the
+// per-mode floor that the main-panel, Quickbar and Options scale sliders + their
+// render-time clamps all share, so they can't drift apart.
+float MinIconScaleForMode(EViewMode mode);
+
+// Load settings.json into g_Settings. Tolerant of a missing / malformed /
+// partially-hand-edited file (falls back to struct defaults per field, then
+// runs a sanitize pass). Returns true when the sanitize pass corrected an
+// out-of-range value, so the caller can re-save to heal the file on disk.
+bool LoadSettings(const std::string& path);
+void SaveSettings(const std::string& path);

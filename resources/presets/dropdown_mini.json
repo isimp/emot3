@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "geometry": {
+    "h": 216.0,
+    "w": 208.0,
+    "x": 60.0,
+    "y": 200.0
+  },
+  "name": "Dropdown Mini",
+  "settings": {
+    "allow_move": true,
+    "allow_resize": true,
+    "click_through": false,
+    "close_on_esc": false,
+    "combat_behavior": 0,
+    "high_contrast": false,
+    "horizontal_scroll": true,
+    "icon_scale": 0.800000011920929,
+    "scroll_wrap": true,
+    "show_background": true,
+    "show_category_bar": true,
+    "show_scrollbar": true,
+    "show_title": true,
+    "show_tooltips": true,
+    "snap_scroll": true,
+    "snap_window": true,
+    "use_dropdown": true,
+    "view_mode": 1,
+    "wheel_cycle_wrap": true,
+    "wheel_cycles_category": 1
+  }
+}

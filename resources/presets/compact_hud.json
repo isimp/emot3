@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "geometry": {
+    "h": 283.0,
+    "w": 202.0,
+    "x": 85.0,
+    "y": 80.0
+  },
+  "name": "Compact HUD",
+  "settings": {
+    "allow_move": true,
+    "allow_resize": true,
+    "click_through": false,
+    "close_on_esc": false,
+    "combat_behavior": 0,
+    "high_contrast": false,
+    "horizontal_scroll": false,
+    "icon_scale": 1.0,
+    "scroll_wrap": false,
+    "show_background": false,
+    "show_category_bar": true,
+    "show_scrollbar": true,
+    "show_title": true,
+    "show_tooltips": true,
+    "snap_scroll": true,
+    "snap_window": true,
+    "use_dropdown": false,
+    "view_mode": 3,
+    "wheel_cycle_wrap": true,
+    "wheel_cycles_category": 1
+  }
+}

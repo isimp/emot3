@@ -1,0 +1,417 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    x64 only. Two independent gating macros split what used to be one
+    (EMOT3_DIST):
+      EMOT3_DIST     - strips the AV-sensitive input-SWALLOWS (QuickbarWheel,
+                       SendSuppress, DevSettings/dev.json). Defined by
+                       Distribution + DistributionDevTools. See src/dev/QuickbarWheel.h.
+      EMOT3_DEVTOOLS - includes the diagnostic dev TOOLS (perf overlay, QB
+                       sizing readout, runtime state inspector). Present only
+                       when defined. See src/dev/DevTools.h. (All dev-only code
+                       lives in src/dev/, which is on the include path.)
+
+    Five configurations (-> output DLL):
+      Debug                - unoptimized, debug CRT, for stepping. Dev tools on,
+                             swallows on.                          -> emot3.dll
+      Distribution         - optimized, EMOT3_DIST. No swallows, no dev tools.
+                             The shipped public build (CI publishes). -> emot3.dll
+      Plus                 - optimized. Swallows on, no dev tools. The
+                             convenience build for power users.  -> emot3_plus.dll
+      Dev                  - optimized. Swallows on + dev tools on. The local
+                             diagnostic build.                    -> emot3_dev.dll
+      DistributionDevTools - optimized, EMOT3_DIST + EMOT3_DEVTOOLS. Swallows
+                             stripped but dev tools on - diagnose a dist-shaped
+                             binary.                       -> emot3_distdevtools.dll
+    Each configuration writes to its own folder under build\ (see OutDir/IntDir
+    below) so builds never clobber each other and incremental state survives
+    config switches. TargetName is per-config so the DLLs don't collide.
+  -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Plus|x64">
+      <Configuration>Plus</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Dev|x64">
+      <Configuration>Dev</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Distribution|x64">
+      <Configuration>Distribution</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="DistributionDevTools|x64">
+      <Configuration>DistributionDevTools</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{9A8702C3-E6A3-440C-ADB8-9D12C93D15E1}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>emot3</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>emot3</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Plus|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Dev|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Distribution|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DistributionDevTools|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Plus|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Dev|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Distribution|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='DistributionDevTools|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <!--
+    Output layout, shared by all configs via the $(Configuration) macro:
+    build\<Config>\x64\emot3.dll, intermediates in build\<Config>\x64\obj\.
+    Per-config folders give each config its own incremental-build database,
+    so switching configs doesn't force a full rebuild.
+  -->
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)build\$(Configuration)\$(Platform)\</OutDir>
+    <IntDir>$(SolutionDir)build\$(Configuration)\$(Platform)\obj\</IntDir>
+  </PropertyGroup>
+  <!--
+    Per-config DLL name. Debug + Distribution both produce emot3.dll (in their
+    own folders); Plus and Dev get distinct names so the three shipping-ish
+    DLLs never collide and CI can attach them by name.
+  -->
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <TargetName>emot3</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Distribution'">
+    <TargetName>emot3</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Plus'">
+    <TargetName>emot3_plus</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Dev'">
+    <TargetName>emot3_dev</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='DistributionDevTools'">
+    <TargetName>emot3_distdevtools</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Plus|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Dev|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Distribution|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DistributionDevTools|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;EMOT3_DEVTOOLS;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+    </Link>
+  </ItemDefinitionGroup>
+  <!--
+    Plus (formerly Release): optimized, KEEPS the input-swallow conveniences
+    (no EMOT3_DIST) but does NOT include the dev tools (no EMOT3_DEVTOOLS).
+    The power-user convenience build -> emot3_plus.dll.
+  -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Plus|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+    </Link>
+  </ItemDefinitionGroup>
+  <!--
+    Dev = Plus plus the EMOT3_DEVTOOLS define, which compiles IN the diagnostic
+    dev tools (perf overlay, QB sizing readout, runtime state inspector) - see
+    src/dev/DevTools.h. Swallows are also present (no EMOT3_DIST). The local
+    diagnostic build -> emot3_dev.dll. Optimization/CRT/link identical to Plus.
+  -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Dev|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;EMOT3_DEVTOOLS;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+    </Link>
+  </ItemDefinitionGroup>
+  <!--
+    Distribution = Plus plus the EMOT3_DIST define. EMOT3_DIST strips the
+    AV-sensitive input-swallows (QuickbarWheel, SendSuppress, DevSettings) -
+    see src/dev/QuickbarWheel.h and the README. No dev tools either (no
+    EMOT3_DEVTOOLS). The shipped public build -> emot3.dll. Everything else
+    (optimization, CRT, link settings) is identical to Plus.
+  -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Distribution|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;EMOT3_DIST;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+    </Link>
+  </ItemDefinitionGroup>
+  <!--
+    DistributionDevTools = Distribution plus the EMOT3_DEVTOOLS define: the
+    AV-sensitive input-swallows stay stripped (EMOT3_DIST) but the diagnostic
+    dev TOOLS (perf overlay, QB sizing readout, runtime state inspector) are
+    compiled IN. Lets you diagnose a dist-shaped binary. -> emot3_distdevtools.dll.
+    Optimization/CRT/link identical to Distribution.
+  -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='DistributionDevTools|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;EMOT3_DIST;EMOT3_DEVTOOLS;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="core\CharacterState.h" />
+    <ClInclude Include="core\UnlockScan.h" />
+    <ClInclude Include="dev\DevSettings.h" />
+    <ClInclude Include="dev\DevTools.h" />
+    <ClInclude Include="dev\DevStateInspector.h" />
+    <ClInclude Include="dev\Profiling.h" />
+    <ClInclude Include="dev\QuickbarDebug.h" />
+    <ClInclude Include="dev\NotifierDebug.h" />
+    <ClInclude Include="core\Feedback.h" />
+    <ClInclude Include="core\EmoteAction.h" />
+    <ClInclude Include="core\Globals.h" />
+    <ClInclude Include="dev\QuickbarWheel.h" />
+    <ClInclude Include="dev\SendSuppress.h" />
+    <ClInclude Include="core\I18n.h" />
+    <ClInclude Include="core\Keybinds.h" />
+    <ClInclude Include="core\Logging.h" />
+    <ClInclude Include="data\EmoteData.h" />
+    <ClInclude Include="data\Favorites.h" />
+    <ClInclude Include="data\QuickbarPresets.h" />
+    <ClInclude Include="data\Settings.h" />
+    <ClInclude Include="resources\Resources.h" />
+    <ClInclude Include="ui\Cells.h" />
+    <ClInclude Include="ui\IconBrowse.h" />
+    <ClInclude Include="ui\Icons.h" />
+    <ClInclude Include="ui\Layout.h" />
+    <ClInclude Include="ui\MainPanel.h" />
+    <ClInclude Include="ui\NexusShortcut.h" />
+    <ClInclude Include="ui\Options.h" />
+    <ClInclude Include="ui\OptionsCommon.h" />
+    <ClInclude Include="ui\Quickbar.h" />
+    <ClInclude Include="..\vendor\imgui\imconfig.h" />
+    <ClInclude Include="..\vendor\imgui\imgui.h" />
+    <ClInclude Include="..\vendor\imgui\imgui_internal.h" />
+    <ClInclude Include="..\vendor\imgui\imstb_rectpack.h" />
+    <ClInclude Include="..\vendor\imgui\imstb_textedit.h" />
+    <ClInclude Include="..\vendor\imgui\imstb_truetype.h" />
+    <ClInclude Include="..\vendor\mumble\Mumble.h" />
+    <ClInclude Include="..\vendor\nexus\Nexus.h" />
+    <!-- Vendored single headers (committed, not submodules): optional runtime
+         deps we read by struct layout / events. Listed so they show in the IDE
+         tree; headers aren't compiled, so this has no build effect. -->
+    <ClInclude Include="..\vendor\rtapi\RTAPI.h" />
+    <ClInclude Include="..\vendor\hoardandseek\HoardAndSeekAPI.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="core\CharacterState.cpp" />
+    <ClCompile Include="core\UnlockScan.cpp" />
+    <ClCompile Include="dev\DevSettings.cpp" />
+    <ClCompile Include="dev\DevTools.cpp" />
+    <ClCompile Include="dev\DevStateInspector.cpp" />
+    <ClCompile Include="dev\NotifierDebug.cpp" />
+    <ClCompile Include="core\Feedback.cpp" />
+    <ClCompile Include="core\EmoteAction.cpp" />
+    <ClCompile Include="core\entry.cpp" />
+    <ClCompile Include="core\Globals.cpp" />
+    <ClCompile Include="dev\QuickbarWheel.cpp" />
+    <ClCompile Include="dev\SendSuppress.cpp" />
+    <ClCompile Include="core\I18n.cpp" />
+    <ClCompile Include="core\Logging.cpp" />
+    <ClCompile Include="data\EmoteData.cpp" />
+    <ClCompile Include="data\Favorites.cpp" />
+    <ClCompile Include="data\QuickbarPresets.cpp" />
+    <ClCompile Include="data\Settings.cpp" />
+    <ClCompile Include="generated\ResourcesGenerated.cpp" />
+    <ClCompile Include="resources\Resources.cpp" />
+    <ClCompile Include="ui\Cells.cpp" />
+    <ClCompile Include="ui\IconBrowse.cpp" />
+    <ClCompile Include="ui\Icons.cpp" />
+    <ClCompile Include="ui\Layout.cpp" />
+    <ClCompile Include="ui\MainPanel.cpp" />
+    <ClCompile Include="ui\NexusShortcut.cpp" />
+    <ClCompile Include="ui\Options.cpp" />
+    <ClCompile Include="ui\OptionsCommon.cpp" />
+    <ClCompile Include="ui\OptionsGeneral.cpp" />
+    <ClCompile Include="ui\OptionsQuickbar.cpp" />
+    <ClCompile Include="ui\OptionsEmotes.cpp" />
+    <ClCompile Include="ui\OptionsUnlocks.cpp" />
+    <ClCompile Include="ui\Quickbar.cpp" />
+    <ClCompile Include="..\vendor\imgui\imgui.cpp" />
+    <ClCompile Include="..\vendor\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\vendor\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\vendor\imgui\imgui_widgets.cpp" />
+  </ItemGroup>
+  <!--
+    Bundled artwork. emot3.rc and ResourcesGenerated.cpp are produced by
+    tools/gen_rc.py (see the GenerateResources target below) from the PNGs
+    in resources/. They live in src/generated/ so they're clearly tagged
+    as auto-generated and sit out of the way of hand-written modules.
+    Paths inside the .rc are computed relative to the .rc's directory by
+    the generator, so rc.exe resolves them whether it runs from src/ or
+    from src/generated/.
+  -->
+  <ItemGroup>
+    <ResourceCompile Include="generated\emot3.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <!--
+    Pre-build codegen. Runs before both ClCompile and ResourceCompile so
+    Resources.cpp's references to the manifest tables resolve, and so
+    rc.exe sees a fresh emot3.rc. Requires the 'py' Windows Python
+    launcher (ships with the standard python.org installer).
+
+    Uses Inputs/Outputs so MSBuild only runs the script when a PNG or the
+    script itself changes - incremental builds stay fast.
+  -->
+  <Target Name="GenerateResources"
+          BeforeTargets="ClCompile;ResourceCompile"
+          Inputs="$(ProjectDir)..\tools\gen_rc.py;$(ProjectDir)..\resources\emotes_official\*.png;$(ProjectDir)..\resources\emotes_ai\*.png;$(ProjectDir)..\resources\ui\*.png;$(ProjectDir)..\resources\i18n\*.json;$(ProjectDir)..\resources\emote_data\*.json"
+          Outputs="$(ProjectDir)generated\emot3.rc;$(ProjectDir)generated\ResourcesGenerated.cpp">
+    <Message Text="Generating generated\emot3.rc and generated\ResourcesGenerated.cpp from resources/" Importance="High" />
+    <Exec Command="py -3 &quot;$(ProjectDir)..\tools\gen_rc.py&quot;" />
+  </Target>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
