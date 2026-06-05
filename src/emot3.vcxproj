@@ -302,6 +302,7 @@
   <ItemGroup>
     <ClInclude Include="core\CharacterState.h" />
     <ClInclude Include="core\UnlockScan.h" />
+    <ClInclude Include="core\UpdateCheck.h" />
     <ClInclude Include="dev\DevSettings.h" />
     <ClInclude Include="dev\DevTools.h" />
     <ClInclude Include="dev\DevStateInspector.h" />
@@ -347,6 +348,7 @@
   <ItemGroup>
     <ClCompile Include="core\CharacterState.cpp" />
     <ClCompile Include="core\UnlockScan.cpp" />
+    <ClCompile Include="core\UpdateCheck.cpp" />
     <ClCompile Include="dev\DevSettings.cpp" />
     <ClCompile Include="dev\DevTools.cpp" />
     <ClCompile Include="dev\DevStateInspector.cpp" />

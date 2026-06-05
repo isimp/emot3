@@ -7,6 +7,7 @@
 #include "EmoteData.h"      // SaveEmotesJson
 #include "IconBrowse.h"     // DrainIconBrowse
 #include "UnlockScan.h"     // DrainUnlockSync (GW2-API unlock sync)
+#include "UpdateCheck.h"    // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Profiling.h"      // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 #include "DevTools.h"       // dev-tools framework toggles (only in EMOT3_DEVTOOLS builds)
 #include "DevSettings.h"    // dev-only persisted swallow toggles (stripped in EMOT3_DIST builds)
@@ -40,6 +41,8 @@ void AddonOptions() {
     }
     // Apply any completed GW2-API unlock sync + drive H&S retries (render-side).
     DrainUnlockSync();
+    // Plus-only: tick the "newer release available" check (no-op stub otherwise).
+    DrainUpdateCheck();
 
     // Developer section - the dev-tool overlay toggles + persisted swallow
     // toggles, grouped under one collapsed header (a "dropdown") at the top of

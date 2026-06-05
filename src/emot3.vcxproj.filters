@@ -47,6 +47,7 @@
     <ClCompile Include="core\Logging.cpp">        <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\CharacterState.cpp"><Filter>core</Filter></ClCompile>
     <ClCompile Include="core\UnlockScan.cpp">    <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\UpdateCheck.cpp">   <Filter>core</Filter></ClCompile>
     <ClCompile Include="dev\SendSuppress.cpp">    <Filter>dev</Filter></ClCompile>
     <ClCompile Include="dev\DevSettings.cpp">     <Filter>dev</Filter></ClCompile>
     <ClCompile Include="dev\QuickbarWheel.cpp">   <Filter>dev</Filter></ClCompile>
@@ -83,6 +84,7 @@
     <ClInclude Include="core\EmoteAction.h"> <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\CharacterState.h"><Filter>core</Filter></ClInclude>
     <ClInclude Include="core\UnlockScan.h">  <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\UpdateCheck.h"> <Filter>core</Filter></ClInclude>
     <ClInclude Include="dev\DevSettings.h">   <Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\QuickbarWheel.h"> <Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\DevTools.h">      <Filter>dev</Filter></ClInclude>

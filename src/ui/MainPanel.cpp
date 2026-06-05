@@ -6,6 +6,7 @@
 #include "EmoteData.h"
 #include "EmoteAction.h"
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
+#include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
 #include "Icons.h"
 #include "Layout.h"
@@ -570,6 +571,8 @@ void AddonRender() {
     // applies completed results) - before the visibility early-returns below so
     // it ticks even when the window is hidden. Cheap no-op when idle.
     DrainUnlockSync();
+    // Plus-only: tick the "newer release available" check (no-op stub otherwise).
+    DrainUpdateCheck();
     // Auto-hide while the fullscreen world map is open. It covers the screen,
     // so an emote panel drawn on top is just clutter. Same shape as the
     // IsGameplay gate: a per-frame suppression, not a persisted hide - the

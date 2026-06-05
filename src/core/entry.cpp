@@ -12,6 +12,7 @@
 #include "Globals.h"
 #include "CharacterState.h" // RTAPI integration + can't-emote/combat state
 #include "UnlockScan.h"      // GW2-API emote-unlock sync (Hoard & Seek / own key)
+#include "UpdateCheck.h"     // Plus-only "update available" check (no-op stub otherwise)
 #include "DevSettings.h"    // dev-only persisted settings (dev.json; stripped in EMOT3_DIST)
 #include "QuickbarWheel.h"  // dev-only click-through wheel routing
 #include "SendSuppress.h"   // dev-only keyboard swallow during emote injection (stripped in EMOT3_DIST)
@@ -160,6 +161,10 @@ void AddonLoad(AddonAPI* aApi) {
     // Subscribe to the optional Hoard & Seek proxy's response event for the
     // GW2-API emote-unlock sync. Inert when H&S isn't installed / API mode off.
     InitUnlockScan();
+
+    // Plus build only: arm the once-per-session "newer release available" check
+    // (the public build auto-updates via Nexus instead). No-op stub elsewhere.
+    InitUpdateCheck();
 
     // Register UI translations with Nexus before anything draws. Cheap;
     // parses the bundled i18n tables once. The active language is applied

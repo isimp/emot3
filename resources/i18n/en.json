@@ -29,6 +29,8 @@
   "opt.gen.notify_new_bundled": "Tell me about new built-in emotes",
   "opt.gen.notify_new_bundled.on": "show a prompt when an emot3 update adds built-in emotes you don't have.",
   "opt.gen.notify_new_bundled.off": "stay quiet; add new built-in emotes yourself under Options > Catalog.",
+  "opt.gen.update_available": "A newer emot3 (Plus) is available (%s). The Plus build updates manually - download it from the releases page.",
+  "opt.gen.update_open": "Open releases page",
 
   "opt.sec.bundled": "Built-in emotes",
   "opt.sec.clear": "Clear catalog",
@@ -391,6 +393,7 @@
   "opt.em.clear_icon_tooltip": "Clear custom path. Status drops back to the next available source (folder override, bundle, fallback).",
 
   "shortcut.presets": "Quickbar preset",
+  "shortcut.update_available": "Update to emot3 (Plus) %s",
   "shortcut.settings": "Settings...",
   "shortcut.settings_tooltip": "Open Nexus > Addons > emot3 for the full Options panel."
 }
