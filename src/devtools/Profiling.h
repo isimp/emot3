@@ -3,11 +3,11 @@
 //  Dev-only perf overlay. A dev tool, registered into the dev-tools
 //  framework (DevTools.h / RegisterBuiltinDevTools).
 //
-//  Gated by EMOT3_DEVTOOLS - present ONLY when that macro is defined
-//  (the Debug and Dev build configs). The public emot3.dll (Distribution)
-//  and emot3_plus.dll (Plus) builds don't define it, so the whole overlay
-//  compiles away. This is a separate axis from EMOT3_DIST (which strips
-//  the AV-sensitive input-swallows) - see DevTools.h.
+//  Gated by EMOT3_DEVTOOLS - present ONLY when that macro is defined (the
+//  +devtools flavor: the DevTools, PlusDevTools and Debug build configs). The
+//  public emot3.dll (Distribution) and emot3_plus.dll (Plus) builds don't define
+//  it, so the whole overlay compiles away. This is a separate flavor axis from
+//  EMOT3_PLUS (which adds the AV-sensitive input-swallows) - see DevTools.h.
 //
 //  When EMOT3_DEVTOOLS is NOT defined, PROFILE_SCOPE() and
 //  RenderProfilerOverlay() become no-ops, so PROFILE_SCOPE(...) call sites

@@ -3,6 +3,7 @@
 #include "Globals.h"
 #include "I18n.h"
 #include "Settings.h"
+#include "PlusSettings.h"   // g_PlusSettings (wheel routing; empty in base builds)
 #include "QuickbarPresets.h"
 #include "Favorites.h"      // TrimName for the preset-name entry
 #include "Layout.h"         // ToggleButton, PushInvalidInputStyle
@@ -387,6 +388,18 @@ void RenderQuickbarOptionsTab() {
             TooltipOnOff("opt.qb.ct.on", "opt.qb.ct.off", /*defaultIsOn=*/false);
         }
     }
+#ifdef EMOT3_PLUS
+    // +plus: route the mouse wheel to the Quickbar while click-through is on
+    // (consume WM_MOUSEWHEEL so the game camera doesn't also zoom). Only
+    // meaningful under click-through, so it's nested + greyed out otherwise.
+    ImGui::Indent();
+    PlusDisabledCheckbox("opt.qb.click_through_wheel",
+                         &g_PlusSettings.QbClickThroughWheel,
+                         /*enabled=*/g_Settings.QuickbarClickThrough,
+                         /*defaultIsOn=*/true,
+                         "opt.qb.click_through_wheel_disabled");
+    ImGui::Unindent();
+#endif
     ImGui::Unindent();
 
     CheckboxWithSaveAndTooltip("opt.qb.show_title", &g_Settings.ShowQuickbarTitle, /*defaultIsOn=*/true);

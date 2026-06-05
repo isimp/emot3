@@ -1,18 +1,19 @@
 # Builds emot3 on every push and pull request, and publishes release
 # assets whenever a tag matching v* is pushed.
 #
-# Three build configs are compiled on every run (breakage guard):
-#   Distribution -> emot3.dll       (public, clean: no dev tools, no swallows)
-#   Plus         -> emot3_plus.dll  (convenience input-swallows, no dev tools)
-#   Dev          -> emot3_dev.dll   (dev diagnostic tools + swallows)
-# Two gating macros drive this: EMOT3_DIST strips the AV-sensitive input-
-# swallows, EMOT3_DEVTOOLS includes the diagnostic dev tools. See the README
-# and src/emot3.vcxproj.
+# Four build configs are compiled on every run (breakage guard):
+#   Distribution -> emot3.dll              (public base: no dev tools, no swallows)
+#   Plus         -> emot3_plus.dll         (+plus: convenience input-swallows)
+#   DevTools     -> emot3_devtools.dll     (+devtools: dev diagnostic tools)
+#   PlusDevTools -> emot3_plusdevtools.dll (+plus +devtools: swallows + dev tools)
+# Two additive flavor macros drive this: EMOT3_PLUS adds the AV-sensitive input-
+# swallows, EMOT3_DEVTOOLS adds the diagnostic dev tools; base defines neither.
+# See the README and src/emot3.vcxproj.
 #
 # Artifacts (every build): emot3.dll + emot3_plus.dll. On a v* tag, ONLY the
 # public emot3.dll is published as a release asset (Nexus' GitHub updater wants a
-# single .dll on the release); emot3_plus.dll stays a build artifact, and
-# emot3_dev.dll is compiled to catch breakage but is never shipped.
+# single .dll on the release); emot3_plus.dll stays a build artifact, and the
+# +devtools builds are compiled to catch breakage but are never shipped.
 #
 # Runs entirely on GitHub-hosted windows-latest (Windows Server 2022),
 # which ships with MSBuild, the C++ Build Tools, the Windows SDK,
@@ -67,27 +68,32 @@ jobs:
       - name: Generate resource manifest
         run: py -3 tools/gen_rc.py
 
-      # Build all three configs every run so a break in any of them fails the
-      # PR, not just at release time. Each writes its own folder + DLL name
-      # (per-config TargetName / OutDir), so they never clobber each other.
+      # Build all four non-Debug configs every run so a break in any of them
+      # fails the PR, not just at release time. Each writes its own folder + DLL
+      # name (per-config TargetName / OutDir), so they never clobber each other.
       - name: Build Distribution (emot3.dll)
         run: msbuild emot3.sln /p:Configuration=Distribution /p:Platform=x64 /m
       - name: Build Plus (emot3_plus.dll)
         run: msbuild emot3.sln /p:Configuration=Plus /p:Platform=x64 /m
-      - name: Build Dev (emot3_dev.dll, breakage guard - not shipped)
-        run: msbuild emot3.sln /p:Configuration=Dev /p:Platform=x64 /m
+      - name: Build DevTools (emot3_devtools.dll, breakage guard - not shipped)
+        run: msbuild emot3.sln /p:Configuration=DevTools /p:Platform=x64 /m
+      - name: Build PlusDevTools (emot3_plusdevtools.dll, breakage guard - not shipped)
+        run: msbuild emot3.sln /p:Configuration=PlusDevTools /p:Platform=x64 /m
 
-      # Every build (push or PR) uploads the public + Plus DLLs as workflow
+      # Every build (push or PR) uploads all four non-Debug DLLs as workflow
       # artifacts - useful for grabbing a build of a feature branch without
-      # cutting a release. 14-day retention keeps storage well under the free
-      # 500 MB quota. emot3_dev.dll is intentionally not uploaded.
+      # cutting a release, and for testing the +devtools diagnostic builds. 14-day
+      # retention keeps storage well under the free 500 MB quota. The +devtools
+      # DLLs are artifacts only - never published as release assets.
       - name: Upload DLL artifacts
         uses: actions/upload-artifact@v4
         with:
           name: emot3-dll
           path: |
-            build/Distribution/x64/emot3.dll
-            build/Plus/x64/emot3_plus.dll
+            build/Distribution/emot3.dll
+            build/Plus/emot3_plus.dll
+            build/DevTools/emot3_devtools.dll
+            build/PlusDevTools/emot3_plusdevtools.dll
           retention-days: 14
           if-no-files-found: error
 
@@ -98,17 +104,17 @@ jobs:
       # a .zip the updater ignores - a public, permanent, manual download (the
       # build artifact above needs a login and expires after 14 days). Plus is a
       # distinct addon (own Signature, Provider=None) so it coexists in addons/
-      # and is never auto-updated/clobbered. emot3_dev.dll is never shipped.
+      # and is never auto-updated/clobbered. The +devtools builds are never shipped.
       - name: Package Plus build (zip - ignored by Nexus' .dll updater)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        run: Compress-Archive -Path build/Plus/x64/emot3_plus.dll -DestinationPath emot3_plus-${{ github.ref_name }}.zip
+        run: Compress-Archive -Path build/Plus/emot3_plus.dll -DestinationPath emot3_plus-${{ github.ref_name }}.zip
       - name: Publish release assets
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/Distribution/x64/emot3.dll
+            build/Distribution/emot3.dll
             emot3_plus-${{ github.ref_name }}.zip
           fail_on_unmatched_files: true
           generate_release_notes: true

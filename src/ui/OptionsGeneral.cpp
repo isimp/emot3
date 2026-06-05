@@ -1,10 +1,11 @@
 #include "Options.h"
 #include "OptionsCommon.h"
 #include "CharacterState.h"  // RTApiConnected for the precise-detection status line
-#include "EmoteAction.h"     // EmoteSendSwallowActive - dev cross-ref for "while moving"
+#include "EmoteAction.h"     // EmoteSendSwallowActive - cross-ref for "send while moving"
 #include "Globals.h"
 #include "I18n.h"
 #include "Settings.h"
+#include "PlusSettings.h"    // g_PlusSettings ("send while moving"; empty in base builds)
 #include "Layout.h"          // ToggleButton
 #include "NexusShortcut.h"   // ApplyNexusShortcut on settings changes
 #include "Logging.h"         // LOG_TRACE (setting-change audit trail)
@@ -154,6 +155,16 @@ void RenderGeneralOptionsTab() {
 
     CheckboxWithSaveAndTooltip("opt.gen.send_on_target", &g_Settings.SendTargetableOnTarget, /*defaultIsOn=*/false);
 
+#ifdef EMOT3_PLUS
+    // +plus: "send while moving". Briefly holds your keyboard during the ~150ms
+    // injection so held movement keys can't garble the command (you can click
+    // mid-move). Default off = the safe refuse-when-a-printable-key-is-held gate.
+    // Backed by plus.json; when on it disables the movement case of the "unusable
+    // emotes" presentation below (the swallow handles held keys instead).
+    PlusCheckbox("opt.gen.swallow_on_send", &g_PlusSettings.SwallowInputOnSend,
+                 /*defaultIsOn=*/false);
+#endif
+
     // ===== Icons =====
     OptionsSection(L("opt.sec.icons"));
 
@@ -219,11 +230,11 @@ void RenderGeneralOptionsTab() {
         // Extend the SAME interaction (grey or hide) to the addon's transient send
         // refusals: a GW2 text box open, or a movement key held.
         CheckboxWithSaveAndTooltip("opt.gen.unusable_textbox", &g_Settings.QuickbarUnusableTextbox, /*defaultIsOn=*/true);
-        // Movement cross-references the dev "swallow held keys" mode: while that's
-        // on, a held key no longer refuses the send (you can click mid-move), so
-        // this has no effect - show it disabled with the reason. (Swallow is
-        // compiled out of release builds, so EmoteSendSwallowActive() is always
-        // false there and the checkbox is plain.)
+        // Movement cross-references the "send while moving" setting (Sending
+        // section): while that's on, a held key no longer refuses the send (you
+        // can click mid-move), so this has no effect - show it disabled with the
+        // reason. (That setting is +plus only, so EmoteSendSwallowActive() is
+        // always false in the base build and the checkbox is plain there.)
         if (EmoteSendSwallowActive())
             DisabledCheckbox("opt.gen.unusable_movement", &g_Settings.QuickbarUnusableMovement,
                              /*enabled=*/false, /*defaultIsOn=*/true, "opt.gen.unusable_movement_swallow");

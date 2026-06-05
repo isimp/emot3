@@ -7,17 +7,17 @@
 
 #include "imgui/imgui.h"
 
-#ifndef EMOT3_DIST
-#include "UpdateCheck.h"  // custom update check + dev hooks (plus-flavored builds)
+#ifdef EMOT3_PLUS
+#include "UpdateCheck.h"  // custom update check + dev hooks (+plus builds)
 #endif
 
 // The addon definition (Name / Version / Signature / Provider / UpdateLink) is a
 // global owned by entry.cpp; read it so the readout reflects the live build.
 extern AddonDefinition AddonDef;
 
-// Tester for the update flow. Behaves per build flavor so a plus-flavored dev
-// build drives the custom GitHub check and a dist-flavored one drives Nexus'
-// native updater - see UpdateCheckDebug.h.
+// Tester for the update flow. Behaves per build flavor so a +plus dev build
+// drives the custom GitHub check and a base one drives Nexus' native updater -
+// see UpdateCheckDebug.h.
 void RenderUpdateCheckDebug() {
     if (!updchkdbg::Enabled()) return;
 
@@ -32,8 +32,8 @@ void RenderUpdateCheckDebug() {
                     (int)AddonDef.Provider);
         ImGui::Separator();
 
-#ifndef EMOT3_DIST
-        // ---- Plus-flavored: the custom GitHub update check ----
+#ifdef EMOT3_PLUS
+        // ---- +plus: the custom GitHub update check ----
         ImGui::TextUnformatted("flavor : plus  (custom GitHub update check)");
         ImGui::Text("available: %s", PlusUpdateAvailable() ? "yes" : "no");
         {
@@ -55,8 +55,8 @@ void RenderUpdateCheckDebug() {
         ImGui::TextDisabled("Run/Force light the shortcut icon badge, the Options banner,");
         ImGui::TextDisabled("and the shortcut right-click \"update\" item.");
 #else
-        // ---- Dist-flavored: Nexus' native updater ----
-        ImGui::TextUnformatted("flavor : dist  (Nexus native auto-update)");
+        // ---- base: Nexus' native updater ----
+        ImGui::TextUnformatted("flavor : base  (Nexus native auto-update)");
         ImGui::Text("update link: %s",
                     AddonDef.UpdateLink ? AddonDef.UpdateLink : "(none)");
         ImGui::TextWrapped("The public Distribution build auto-updates via Nexus' GitHub "

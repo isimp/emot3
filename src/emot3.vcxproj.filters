@@ -4,7 +4,10 @@
     <Filter Include="core">
       <UniqueIdentifier>{1a1f3b50-0001-4001-8001-000000000001}</UniqueIdentifier>
     </Filter>
-    <Filter Include="dev">
+    <Filter Include="plus">
+      <UniqueIdentifier>{1a1f3b50-000d-4001-8001-00000000000d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="devtools">
       <UniqueIdentifier>{1a1f3b50-000c-4001-8001-00000000000c}</UniqueIdentifier>
     </Filter>
     <Filter Include="data">
@@ -47,15 +50,15 @@
     <ClCompile Include="core\Logging.cpp">        <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\CharacterState.cpp"><Filter>core</Filter></ClCompile>
     <ClCompile Include="core\UnlockScan.cpp">    <Filter>core</Filter></ClCompile>
-    <ClCompile Include="core\UpdateCheck.cpp">   <Filter>core</Filter></ClCompile>
-    <ClCompile Include="dev\SendSuppress.cpp">    <Filter>dev</Filter></ClCompile>
-    <ClCompile Include="dev\DevSettings.cpp">     <Filter>dev</Filter></ClCompile>
-    <ClCompile Include="dev\QuickbarWheel.cpp">   <Filter>dev</Filter></ClCompile>
-    <ClCompile Include="dev\DevTools.cpp">        <Filter>dev</Filter></ClCompile>
-    <ClCompile Include="dev\DevStateInspector.cpp"><Filter>dev</Filter></ClCompile>
-    <ClCompile Include="dev\NotifierDebug.cpp">   <Filter>dev</Filter></ClCompile>
-    <ClCompile Include="dev\UpdateCheckDebug.cpp"><Filter>dev</Filter></ClCompile>
-    <ClCompile Include="core\Feedback.cpp">      <Filter>core</Filter></ClCompile>
+    <ClCompile Include="plus\UpdateCheck.cpp">   <Filter>plus</Filter></ClCompile>
+    <ClCompile Include="plus\PlusSettings.cpp">   <Filter>plus</Filter></ClCompile>
+    <ClCompile Include="plus\QuickbarWheel.cpp">  <Filter>plus</Filter></ClCompile>
+    <ClCompile Include="plus\SendSuppress.cpp">   <Filter>plus</Filter></ClCompile>
+    <ClCompile Include="devtools\DevTools.cpp">        <Filter>devtools</Filter></ClCompile>
+    <ClCompile Include="devtools\DevStateInspector.cpp"><Filter>devtools</Filter></ClCompile>
+    <ClCompile Include="devtools\NotifierDebug.cpp">   <Filter>devtools</Filter></ClCompile>
+    <ClCompile Include="devtools\UpdateCheckDebug.cpp"><Filter>devtools</Filter></ClCompile>
+    <ClCompile Include="ui\Feedback.cpp">         <Filter>ui</Filter></ClCompile>
     <ClCompile Include="data\EmoteData.cpp">      <Filter>data</Filter></ClCompile>
     <ClCompile Include="data\Favorites.cpp">      <Filter>data</Filter></ClCompile>
     <ClCompile Include="data\QuickbarPresets.cpp"><Filter>data</Filter></ClCompile>
@@ -85,17 +88,17 @@
     <ClInclude Include="core\EmoteAction.h"> <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\CharacterState.h"><Filter>core</Filter></ClInclude>
     <ClInclude Include="core\UnlockScan.h">  <Filter>core</Filter></ClInclude>
-    <ClInclude Include="core\UpdateCheck.h"> <Filter>core</Filter></ClInclude>
-    <ClInclude Include="dev\DevSettings.h">   <Filter>dev</Filter></ClInclude>
-    <ClInclude Include="dev\QuickbarWheel.h"> <Filter>dev</Filter></ClInclude>
-    <ClInclude Include="dev\DevTools.h">      <Filter>dev</Filter></ClInclude>
-    <ClInclude Include="dev\DevStateInspector.h"><Filter>dev</Filter></ClInclude>
-    <ClInclude Include="dev\Profiling.h">     <Filter>dev</Filter></ClInclude>
-    <ClInclude Include="dev\QuickbarDebug.h"> <Filter>dev</Filter></ClInclude>
-    <ClInclude Include="dev\NotifierDebug.h"> <Filter>dev</Filter></ClInclude>
-    <ClInclude Include="dev\UpdateCheckDebug.h"><Filter>dev</Filter></ClInclude>
-    <ClInclude Include="dev\SendSuppress.h">  <Filter>dev</Filter></ClInclude>
-    <ClInclude Include="core\Feedback.h">    <Filter>core</Filter></ClInclude>
+    <ClInclude Include="plus\UpdateCheck.h"> <Filter>plus</Filter></ClInclude>
+    <ClInclude Include="plus\PlusSettings.h">   <Filter>plus</Filter></ClInclude>
+    <ClInclude Include="plus\QuickbarWheel.h"> <Filter>plus</Filter></ClInclude>
+    <ClInclude Include="plus\SendSuppress.h">  <Filter>plus</Filter></ClInclude>
+    <ClInclude Include="devtools\DevTools.h">      <Filter>devtools</Filter></ClInclude>
+    <ClInclude Include="devtools\DevStateInspector.h"><Filter>devtools</Filter></ClInclude>
+    <ClInclude Include="devtools\Profiling.h">     <Filter>devtools</Filter></ClInclude>
+    <ClInclude Include="devtools\QuickbarDebug.h"> <Filter>devtools</Filter></ClInclude>
+    <ClInclude Include="devtools\NotifierDebug.h"> <Filter>devtools</Filter></ClInclude>
+    <ClInclude Include="devtools\UpdateCheckDebug.h"><Filter>devtools</Filter></ClInclude>
+    <ClInclude Include="ui\Feedback.h">    <Filter>ui</Filter></ClInclude>
     <ClInclude Include="core\I18n.h">        <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\Globals.h">     <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\Keybinds.h">    <Filter>core</Filter></ClInclude>

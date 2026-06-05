@@ -12,7 +12,7 @@
 #include "Logging.h"     // LOG_DEBUG (active-category switch)
 #include "Profiling.h"   // dev perf overlay
 #include "QuickbarDebug.h" // dev sizing readout (only in EMOT3_DEVTOOLS builds)
-#include "QuickbarWheel.h" // dev-only click-through wheel routing (stripped in EMOT3_DIST)
+#include "QuickbarWheel.h" // click-through wheel routing (+plus flavor only)
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"  // ImGuiWindow::ScrollbarY for hit-test
@@ -1172,8 +1172,8 @@ void QuickbarRender() {
     // without refreshing the flag).
     s_qbScrollable = !items.empty() && g_QbOverflow;
 
-    // Publish the click-through wheel-capture rect for the WndProc (dev-only;
-    // QbWheelPublish is a no-op in dist, and gated on the dev toggle inside).
+    // Publish the click-through wheel-capture rect for the WndProc (+plus only;
+    // QbWheelPublish is a no-op in base builds, and gated on the Plus toggle inside).
     // Decoupled from scrollability: capture wherever the wheel has a job, with
     // the EXACT rect it acts on, so category cycling works over the bar / empty
     // content even when the list fully fits:
@@ -1268,7 +1268,7 @@ void QuickbarRender() {
 #ifdef EMOT3_DEVTOOLS
     // Dev sizing readout: snapshot the real numbers so the fit/snap math can
     // be diagnosed from actual values (see QuickbarDebug.h). Gated by
-    // EMOT3_DEVTOOLS (the dev tools axis), not EMOT3_DIST (the swallow axis).
+    // EMOT3_DEVTOOLS (the dev tools axis), not EMOT3_PLUS (the swallow axis).
     if (qbdbg::Enabled()) {
         const ImGuiStyle& st = ImGui::GetStyle();
         float topPad = EmoteGridTopPad(g_Settings.QuickbarViewMode);

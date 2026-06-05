@@ -3,6 +3,7 @@
 #include "Globals.h"    // g_SettingsPath
 #include "I18n.h"       // L
 #include "Settings.h"   // SaveSettings
+#include "PlusSettings.h" // SavePlusSettings (+plus toggles; empty in base builds)
 #include "Logging.h"    // LOG_TRACE (setting-change audit trail)
 
 #include "imgui/imgui.h"
@@ -68,6 +69,60 @@ bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
     }
     return changed;
 }
+
+#ifdef EMOT3_PLUS
+namespace {
+// Gold "Plus" tag rendered on the same line, after a +plus setting's label, so it
+// visibly reads as an emot3 (Plus) feature in the Options UI. Same gold as the
+// update banner / chat-unbound warning. Hovering it explains the marker.
+void PlusBadge() {
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.85f, 0.75f, 0.35f, 1.0f), "Plus");
+    if (ImGui::IsItemHovered()) TooltipText("opt.plus_badge");
+}
+}  // namespace
+
+bool PlusCheckbox(const char* labelKey, bool* state, bool defaultIsOn) {
+    bool changed = ImGui::Checkbox(L(labelKey), state);
+    if (changed) {
+        LOG_TRACE("plus setting %s = %s", labelKey, *state ? "on" : "off");
+        SavePlusSettings();
+    }
+    if (ImGui::IsItemHovered())
+        TooltipOnOff(OnKey(labelKey).c_str(), OffKey(labelKey).c_str(), defaultIsOn);
+    PlusBadge();
+    return changed;
+}
+
+bool PlusDisabledCheckbox(const char* labelKey, bool* state, bool enabled,
+                          bool defaultIsOn, const char* disabledTipKey) {
+    // Same greyed-out-when-disabled dance as DisabledCheckbox, but persists to
+    // plus.json (g_PlusSettings) rather than settings.json.
+    if (!enabled) {
+        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+    }
+    bool changed = ImGui::Checkbox(L(labelKey), state);
+    bool cbHovered = ImGui::IsItemHovered();  // capture before the badge becomes the last item
+    PlusBadge();                              // dims with the row while inside the alpha push
+    if (!enabled) {
+        ImGui::PopStyleVar();
+        ImGui::PopItemFlag();
+        if (changed) { *state = !*state; changed = false; }
+    }
+    if (cbHovered) {
+        if (enabled)
+            TooltipOnOff(OnKey(labelKey).c_str(), OffKey(labelKey).c_str(), defaultIsOn);
+        else
+            TooltipText(disabledTipKey);
+    }
+    if (changed) {  // only true on an enabled change (disabled clicks were reverted)
+        LOG_TRACE("plus setting %s = %s", labelKey, *state ? "on" : "off");
+        SavePlusSettings();
+    }
+    return changed;
+}
+#endif  // EMOT3_PLUS
 
 void OptionsSection(const char* title) {
     ImGui::Spacing();
