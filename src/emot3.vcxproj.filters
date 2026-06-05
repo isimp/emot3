@@ -54,6 +54,7 @@
     <ClCompile Include="dev\DevTools.cpp">        <Filter>dev</Filter></ClCompile>
     <ClCompile Include="dev\DevStateInspector.cpp"><Filter>dev</Filter></ClCompile>
     <ClCompile Include="dev\NotifierDebug.cpp">   <Filter>dev</Filter></ClCompile>
+    <ClCompile Include="dev\UpdateCheckDebug.cpp"><Filter>dev</Filter></ClCompile>
     <ClCompile Include="core\Feedback.cpp">      <Filter>core</Filter></ClCompile>
     <ClCompile Include="data\EmoteData.cpp">      <Filter>data</Filter></ClCompile>
     <ClCompile Include="data\Favorites.cpp">      <Filter>data</Filter></ClCompile>
@@ -92,6 +93,7 @@
     <ClInclude Include="dev\Profiling.h">     <Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\QuickbarDebug.h"> <Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\NotifierDebug.h"> <Filter>dev</Filter></ClInclude>
+    <ClInclude Include="dev\UpdateCheckDebug.h"><Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\SendSuppress.h">  <Filter>dev</Filter></ClInclude>
     <ClInclude Include="core\Feedback.h">    <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\I18n.h">        <Filter>core</Filter></ClInclude>

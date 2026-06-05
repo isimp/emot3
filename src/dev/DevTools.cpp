@@ -6,6 +6,7 @@
 #include "QuickbarDebug.h"      // qbdbg::Enabled / RenderQbSizingOverlay
 #include "DevStateInspector.h"  // devstate::Enabled / devstate::Render
 #include "NotifierDebug.h"      // notifierdbg::Enabled / RenderNotifierDebug
+#include "UpdateCheckDebug.h"   // updchkdbg::Enabled / RenderUpdateCheckDebug
 
 #include "imgui/imgui.h"
 
@@ -39,6 +40,8 @@ void RegisterBuiltinDevTools() {
                       &devstate::Enabled(), devstate::Render });
     RegisterDevTool({ "notifier", "Notifier",
                       &notifierdbg::Enabled(), RenderNotifierDebug });
+    RegisterDevTool({ "updatecheck", "Update check",
+                      &updchkdbg::Enabled(), RenderUpdateCheckDebug });
 }
 
 void RenderDevToolOverlays() {

@@ -1,6 +1,9 @@
 #include "UpdateCheck.h"
 
-#ifdef EMOT3_PLUS
+// Plus-flavored builds only (Plus + Dev + Debug); the Distribution build
+// (EMOT3_DIST) uses Nexus' native updater - see UpdateCheck.h for the provisional
+// gate / naming note.
+#ifndef EMOT3_DIST
 
 #include "Globals.h"     // APIDefs, g_Unloading, InflightWorkerScope (+ Windows.h, Nexus.h)
 #include "Logging.h"
@@ -180,4 +183,30 @@ void OpenReleasesPage() {
     ShellExecuteA(nullptr, "open", kReleasesUrl, nullptr, nullptr, SW_SHOWNORMAL);
 }
 
-#endif  // EMOT3_PLUS
+#ifdef EMOT3_DEVTOOLS
+// ---- Dev-tool hooks (the "[debug] Update check" tool) -----------------
+// Present only in plus-flavored DEV builds (Dev/Debug). They drive the real
+// pipeline above so the tool tests the shipping code path, not a mock.
+
+void RunUpdateCheckNow() {
+    {   // re-arm so DrainUpdateCheck launches the worker again
+        std::lock_guard<std::mutex> lk(s_mx);
+        s_started = false; s_done = false; s_available = false;
+        s_latest.clear(); s_notified = false;
+    }
+    // Non-zero + far in the past so DrainUpdateCheck's delay gate is already
+    // satisfied -> it launches on the very next tick (no 4s wait).
+    s_firstTick = 1;
+}
+
+void ForceUpdateAvailable(const std::string& ver) {
+    std::lock_guard<std::mutex> lk(s_mx);
+    s_started = true; s_done = true; s_available = true;
+    s_latest = ver.empty() ? std::string("0.0.0-test") : ver;
+    s_notified = false;  // let DrainUpdateCheck re-badge the icon
+}
+
+void ResetUpdateCheck() { InitUpdateCheck(); }
+#endif  // EMOT3_DEVTOOLS
+
+#endif  // !EMOT3_DIST
