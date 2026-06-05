@@ -45,21 +45,41 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
 }
 
 extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
-    AddonDef.Signature   = -135791;
     AddonDef.APIVersion  = NEXUS_API_VERSION;
-    AddonDef.Name        = "emot3";
     AddonDef.Version     = { 1, 0, 0, 0 };
     AddonDef.Author      = "Morlaed";
     AddonDef.Description = "Clickable emote panel with unlock tracking.";
     AddonDef.Load        = AddonLoad;
     AddonDef.Unload      = AddonUnload;
     AddonDef.Flags       = EAddonFlags_None;
-    // In-game auto-update via Nexus' GitHub provider: it watches this repo's
-    // Releases and offers an update when the published version outranks
-    // AddonDef.Version above. Keep the release tag in lockstep with that version.
-    // Signature stays a unique negative int (self-hosted; no Raidcore listing).
+#if defined(EMOT3_DIST) && !defined(EMOT3_DEVTOOLS)
+    // Public build (emot3.dll, the Distribution config) - the ONLY build that
+    // auto-updates. In-game updates come via Nexus' GitHub provider, which offers
+    // one when a release's tag-version outranks AddonDef.Version above; keep the
+    // release tag in lockstep with that version. Signature is a unique negative
+    // int (self-hosted; no Raidcore listing).
+    AddonDef.Signature   = -135791;
+    AddonDef.Name        = "emot3";
     AddonDef.Provider    = EUpdateProvider_GitHub;
     AddonDef.UpdateLink  = "https://github.com/isimp/emot3";
+#else
+    // Every non-public build (Plus, Dev, Debug, DistributionDevTools) is a manual,
+    // opt-in variant: a DISTINCT Signature + Name so it can sit in addons/ next to
+    // the public emot3.dll (enable one at a time), and Provider=None so Nexus
+    // NEVER auto-updates or clobbers it. That keeps the input-swallow ("Plus")
+    // conveniences and the dev tools strictly opt-in - they only arrive by manually
+    // dropping the DLL in and never change underneath you. All variants share the
+    // "emot3" config directory (GetAddonDirectory below) - same settings/catalog.
+    AddonDef.Provider    = EUpdateProvider_None;
+#ifdef EMOT3_PLUS
+    AddonDef.Signature   = -135792;
+    AddonDef.Name        = "emot3 (Plus)";
+#else
+    // Dev tools present (Dev / Debug / DistributionDevTools).
+    AddonDef.Signature   = -135793;
+    AddonDef.Name        = "emot3 (Dev)";
+#endif
+#endif
     return &AddonDef;
 }
 
