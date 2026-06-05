@@ -302,7 +302,7 @@
   <ItemGroup>
     <ClInclude Include="core\CharacterState.h" />
     <ClInclude Include="core\UnlockScan.h" />
-    <ClInclude Include="core\UpdateCheck.h" />
+    <ClInclude Include="plus\UpdateCheck.h" />
     <ClInclude Include="plus\PlusSettings.h" />
     <ClInclude Include="devtools\DevTools.h" />
     <ClInclude Include="devtools\DevStateInspector.h" />
@@ -310,7 +310,7 @@
     <ClInclude Include="devtools\QuickbarDebug.h" />
     <ClInclude Include="devtools\NotifierDebug.h" />
     <ClInclude Include="devtools\UpdateCheckDebug.h" />
-    <ClInclude Include="core\Feedback.h" />
+    <ClInclude Include="ui\Feedback.h" />
     <ClInclude Include="core\EmoteAction.h" />
     <ClInclude Include="core\Globals.h" />
     <ClInclude Include="plus\QuickbarWheel.h" />
@@ -349,13 +349,13 @@
   <ItemGroup>
     <ClCompile Include="core\CharacterState.cpp" />
     <ClCompile Include="core\UnlockScan.cpp" />
-    <ClCompile Include="core\UpdateCheck.cpp" />
+    <ClCompile Include="plus\UpdateCheck.cpp" />
     <ClCompile Include="plus\PlusSettings.cpp" />
     <ClCompile Include="devtools\DevTools.cpp" />
     <ClCompile Include="devtools\DevStateInspector.cpp" />
     <ClCompile Include="devtools\NotifierDebug.cpp" />
     <ClCompile Include="devtools\UpdateCheckDebug.cpp" />
-    <ClCompile Include="core\Feedback.cpp" />
+    <ClCompile Include="ui\Feedback.cpp" />
     <ClCompile Include="core\EmoteAction.cpp" />
     <ClCompile Include="core\entry.cpp" />
     <ClCompile Include="core\Globals.cpp" />

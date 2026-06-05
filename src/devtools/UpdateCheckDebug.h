@@ -7,7 +7,7 @@
 //
 //  Flavor-aware (see UpdateCheckDebug.cpp): in a +plus dev build
 //  (PlusDevTools/Debug, EMOT3_PLUS) it drives the CUSTOM update check
-//  (core/UpdateCheck: run / force / reset, lighting the icon badge + Options
+//  (plus/UpdateCheck: run / force / reset, lighting the icon badge + Options
 //  banner + shortcut item); in the base dev build (DevTools, no EMOT3_PLUS) it
 //  exposes the NEXUS-native update path (RequestUpdate).
 // =====================================================================
