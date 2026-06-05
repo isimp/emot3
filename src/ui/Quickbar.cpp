@@ -82,17 +82,34 @@ void QbSnapSizeCallback(ImGuiSizeCallbackData* d) {
 // so it stays grabbable under click-through.
 float s_qbBarGrabPx = 0.f;   // cursor offset within the thumb at grab time
 
-// Edge-triggered wheel scroll-wrap (QuickbarScrollWrap). `s` is the post-wheel
-// (already snapped) target, `cur` the pre-wheel scroll, `maxS` the per-mode max.
-// Only wraps when the wheel pushes PAST an end the view is already parked at - a
-// mid-list overshoot just clamps (the caller still clamps after this). Wheel-only
-// by construction; the scrollbar drag never calls this. Returns `s` unchanged
-// when wrap is off or there's nothing to scroll.
-float WrapScroll(float s, float cur, float maxS, bool wrap) {
-    if (!wrap || maxS <= 1.f) return s;
-    if (s < -0.5f && cur <= 0.5f)                   return maxS;  // at top, wheel up -> bottom
-    if (s > maxS + 0.5f && cur >= maxS - 0.5f)      return 0.f;   // at bottom, wheel down -> top
-    return s;
+// One wheel event -> final scroll offset on an axis: applies the per-mode step,
+// optional cell snap, clamping, and edge-triggered wrap (QuickbarScrollWrap).
+// `wheel` is io.MouseWheel's sign (+ up/left, - down/right); `maxS` is the
+// reachable max (the caller caps it to ImGui's reported GetScrollMax*).
+//
+// Wrap fires only when the wheel pushes PAST an end AND the view is already
+// parked at that end - so a mid-list overshoot just clamps to the end and the
+// NEXT notch wraps. Both ends are symmetric.
+//
+// "Parked at the end" is tested with a tolerance, NOT `cur >= maxS - 0.5`:
+// ImGui's real scroll clamp can rest ~1px below the GetScrollMax* it reports, and
+// the cell-aligned max can sit a fraction above what's actually reachable (varies
+// with icon scale). So at rest, `cur` can be a px or so short of `maxS` and never
+// climb the rest - a 0.5px compare then stops "wrap down" from ever firing while
+// "wrap up" (the start is always exactly 0) keeps working. The tolerance is half
+// a cell when snapping (resting positions are a full cell apart, so it can't
+// misfire one cell early) and a couple px otherwise.
+float WheelScroll(float cur, float wheel, float step, float snapStep,
+                  float maxS, bool snap, bool wrap) {
+    float s = cur - wheel * step;
+    if (snap && snapStep > 1.f) s = std::round(s / snapStep) * snapStep;
+    float clamped = std::max(0.f, std::min(s, maxS));
+    if (wrap && maxS > 1.f) {
+        float endTol = (snap && snapStep > 1.f) ? snapStep * 0.5f : 2.f;
+        if (wheel < 0.f && s > maxS + 0.5f && cur >= maxS - endTol) return 0.f;    // parked at end   -> wrap to start
+        if (wheel > 0.f && s < -0.5f       && cur <= endTol)        return maxS;   // parked at start -> wrap to end
+    }
+    return clamped;
 }
 
 void QbCustomScrollbar(ImGuiWindow* child, bool axisY,
@@ -1109,21 +1126,21 @@ void QuickbarRender() {
                 if (horiz) {
                     float step = (snap && g_QbStepX > 1.f) ? g_QbStepX
                                                            : ImGui::GetFontSize() * 5.f;
-                    float maxS = ownScroll ? g_QbMaxScrollX : ImGui::GetScrollMaxX();
-                    float cur = ImGui::GetScrollX();
-                    float s = cur - qbWheel * step;
-                    if (snap && g_QbStepX > 1.f) s = std::round(s / g_QbStepX) * g_QbStepX;
-                    s = WrapScroll(s, cur, maxS, wrap);
-                    ImGui::SetScrollX(std::max(0.f, std::min(s, maxS)));
+                    // Cap the cell-aligned max to ImGui's real scroll range so the
+                    // end stays reachable (and wrap can detect it) at every scale.
+                    float maxS = ownScroll
+                        ? std::min(g_QbMaxScrollX, ImGui::GetScrollMaxX())
+                        : ImGui::GetScrollMaxX();
+                    ImGui::SetScrollX(WheelScroll(ImGui::GetScrollX(), qbWheel, step,
+                                                  g_QbStepX, maxS, snap, wrap));
                 } else {  // vertical (owned: snap / fit mode, or scroll-wrap)
                     float step = (snap && g_QbStepY > 1.f) ? g_QbStepY
                                                            : ImGui::GetFontSize() * 5.f;
-                    float maxS = ownScroll ? g_QbMaxScrollY : ImGui::GetScrollMaxY();
-                    float cur = ImGui::GetScrollY();
-                    float s = cur - qbWheel * step;
-                    if (snap && g_QbStepY > 1.f) s = std::round(s / g_QbStepY) * g_QbStepY;
-                    s = WrapScroll(s, cur, maxS, wrap);
-                    ImGui::SetScrollY(std::max(0.f, std::min(s, maxS)));
+                    float maxS = ownScroll
+                        ? std::min(g_QbMaxScrollY, ImGui::GetScrollMaxY())
+                        : ImGui::GetScrollMaxY();
+                    ImGui::SetScrollY(WheelScroll(ImGui::GetScrollY(), qbWheel, step,
+                                                  g_QbStepY, maxS, snap, wrap));
                 }
             }
         }
@@ -1277,6 +1294,8 @@ void QuickbarRender() {
         dm.availX = qbChildAvail.x;    dm.availY = qbChildAvail.y;
         dm.contentX = childWin->ContentSize.x; dm.contentY = childWin->ContentSize.y;
         dm.scrollMaxX = qbScrollMaxX;  dm.scrollMaxY = qbScrollMaxY;
+        dm.scrollX = qbScrollX;        dm.scrollY = qbScrollY;
+        dm.cellMaxX = g_QbMaxScrollX;  dm.cellMaxY = g_QbMaxScrollY;
         dm.stepX = g_QbStepX;          dm.stepY = g_QbStepY;
         dm.insetX = s_qbInsetX;        dm.insetY = s_qbInsetY;
         dm.gridTopOffset = (topPad > 0.f) ? topPad + st.ItemSpacing.y : 0.f;
