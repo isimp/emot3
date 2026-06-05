@@ -47,6 +47,23 @@ optional AI fallback, then a plain letter - so every emote shows something.
 2. Put `emot3.dll` (from the latest release) in `<GW2>/addons/`.
 3. Launch. emot3 creates `<GW2>/addons/emot3/` and asks which language to seed.
 
+emot3 auto-updates in-game through Nexus.
+
+### Plus build (optional)
+
+`emot3_plus.dll` adds power-user conveniences stripped from the public build for
+antivirus compatibility: send an emote while moving (the keyboard is briefly
+held during injection) and mouse-wheel routing while the Quickbar is
+click-through. To use it, download `emot3_plus-<version>.zip` from the
+[latest release](https://github.com/isimp/emot3/releases/latest), unzip
+`emot3_plus.dll` into `<GW2>/addons/`.
+
+It appears in Nexus as a separate **"emot3 (Plus)"** addon that shares the same
+`addons/emot3/` settings and catalog as the regular build, so **enable only one
+of the two at a time**. Plus does **not** auto-update (and is never overwritten
+by the public build) - grab a newer zip from the releases page when you want to
+update it.
+
 ## Notes
 
 - **Sending** opens chat with your GW2 command-chat keybind, types the command,
