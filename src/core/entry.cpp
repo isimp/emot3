@@ -13,7 +13,7 @@
 #include "CharacterState.h" // RTAPI integration + can't-emote/combat state
 #include "UnlockScan.h"      // GW2-API emote-unlock sync (Hoard & Seek / own key)
 #include "UpdateCheck.h"     // Plus-only "update available" check (no-op stub otherwise)
-#include "DevSettings.h"    // dev-only persisted settings (dev.json; +plus flavor only)
+#include "PlusSettings.h"   // +plus persisted settings (plus.json; +plus flavor only)
 #include "QuickbarWheel.h"  // click-through wheel routing (+plus flavor only)
 #include "SendSuppress.h"   // keyboard swallow during emote injection (+plus flavor only)
 #include "Keybinds.h"
@@ -191,9 +191,9 @@ void AddonLoad(AddonAPI* aApi) {
         g_PresetsDir = std::string(addonDir) + "\\presets";
 
 #ifdef EMOT3_PLUS
-        // +plus-only settings live in their own dev.json (never touched by a base
-        // build, so it can't be dropped by one). See DevSettings.h.
-        LoadDevSettings(std::string(addonDir) + "\\dev.json");
+        // +plus settings live in their own plus.json (never touched by a base
+        // build, so it can't be dropped by one). See PlusSettings.h.
+        LoadPlusSettings(std::string(addonDir) + "\\plus.json");
 #endif
 
         // First-run README in icons/ui/ — explains what users can drop

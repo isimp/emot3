@@ -22,7 +22,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync);
 enum class SendBusy { None, Typing, KeysHeld };
 
 // Detect the current transient busy state. checkHeldKeys gates the held-key probe
-// (dev swallow mode passes false; see EmoteSendSwallowActive). This single
+// ("send while moving" passes false; see EmoteSendSwallowActive). This single
 // detector is shared by ShouldSkipEmoteSend (the click-time refusal) and the
 // Quickbar's optional "grey while typing or moving" so the two can't diverge;
 // each maps the result to its own wording (the gate's "Emote skipped ..." toast
@@ -30,7 +30,7 @@ enum class SendBusy { None, Typing, KeysHeld };
 // short GetAsyncKeyState scan when checkHeldKeys is true.
 SendBusy CurrentSendBusy(bool checkHeldKeys);
 
-// True when dev "swallow input on emote send" mode is active (it consumes held
+// True when the +plus "send while moving" mode is active (it consumes held
 // keys during injection instead of refusing). Always false in base builds.
 // Callers gate the held-key checks on its negation.
 bool EmoteSendSwallowActive();

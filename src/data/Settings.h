@@ -179,8 +179,8 @@ struct Settings {
     // apply the SAME interaction when the addon would refuse the send right now -
     // a GW2 text box is focused (Textbox) or a movement key is held (Movement).
     // Both ON by default (a greyed button matches the send refusal). Gated under
-    // QuickbarGreyUnusable. Movement is debounced + dropped under the
-    // dev swallow setting (you can still click while moving). See Quickbar.cpp.
+    // QuickbarGreyUnusable. Movement is debounced + dropped under the +plus
+    // "send while moving" setting (you can still click while moving). See Quickbar.cpp.
     bool                          QuickbarUnusableTextbox  = true;
     bool                          QuickbarUnusableMovement = true;
     // Nexus quick-access shortcut (the little icon row at the top of the

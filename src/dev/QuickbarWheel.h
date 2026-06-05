@@ -1,6 +1,6 @@
 #pragma once
 // =====================================================================
-//  Dev-only click-through wheel routing.
+//  Click-through wheel routing - a +plus feature.
 //
 //  Under click-through the Quickbar renders NoInputs (clicks fall to the
 //  game), so ImGui won't capture the mouse - a wheel over the QB would
@@ -15,11 +15,11 @@
 //  dev overlays (Profiling.h / QuickbarDebug.h). In base builds these are
 //  no-op stubs and the Quickbar falls back to its original grace-period
 //  click-through scrolling (no input swallow). Gated at runtime by the
-//  persisted dev setting g_DevSettings.QbClickThroughWheel (DevSettings.h).
+//  persisted Plus setting g_PlusSettings.QbClickThroughWheel (PlusSettings.h).
 //
 //  Touch points: the guarded call in entry.cpp's WndProc; the
-//  QbWheelPublish / QbWheelDrain calls in Quickbar.cpp; the dev toggle in
-//  Options.cpp.
+//  QbWheelPublish / QbWheelDrain calls in Quickbar.cpp; the wheel-routing
+//  toggle in Options > Quickbar (under "Click-through empty area").
 // =====================================================================
 #ifndef NOMINMAX
 #define NOMINMAX

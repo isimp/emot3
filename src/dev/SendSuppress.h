@@ -1,6 +1,6 @@
 #pragma once
 // =====================================================================
-//  Dev-only keyboard-swallow during emote injection.
+//  Keyboard-swallow during emote injection - the +plus "send while moving".
 //
 //  Recovers the original "click whenever" send mode: while an emote
 //  command is being injected, the user's real keystrokes are CONSUMED in
@@ -12,12 +12,12 @@
 //  compiled in only for the +plus flavor (EMOT3_PLUS) - exactly like the
 //  click-through wheel routing (QuickbarWheel.h). In base builds these are
 //  inert no-op stubs and the send falls back to the refuse-when-unsafe gate
-//  (ShouldSkipEmoteSend). Gated at runtime by the persisted dev setting
-//  g_DevSettings.SwallowInputOnSend (DevSettings.h).
+//  (ShouldSkipEmoteSend). Gated at runtime by the persisted Plus setting
+//  g_PlusSettings.SwallowInputOnSend (PlusSettings.h).
 //
 //  Touch points: the guarded call in entry.cpp's WndProc; the
 //  SendSuppressScope around the injection worker in EmoteAction.cpp; the
-//  dev toggle in Options.cpp.
+//  "Send while moving" toggle in Options > General > Sending.
 // =====================================================================
 #ifndef NOMINMAX
 #define NOMINMAX

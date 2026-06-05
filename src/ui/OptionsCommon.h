@@ -30,6 +30,21 @@ bool CheckboxWithSaveAndTooltip(const char* labelKey, bool* state, bool defaultI
 bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
                       bool defaultIsOn, const char* disabledTipKey);
 
+#ifdef EMOT3_PLUS
+// +plus settings checkboxes - same look as the g_Settings helpers above, but
+// backed by g_PlusSettings / SavePlusSettings (plus.json) instead of g_Settings.
+// Used for the two shipped input-swallow toggles (Quickbar wheel routing,
+// General "send while moving"). The tooltip is the On/Off two-liner from
+// `<labelKey>.on` / `.off` (defaultIsOn marks the default). Returns the
+// "changed this frame" so callers can chain extra work.
+bool PlusCheckbox(const char* labelKey, bool* state, bool defaultIsOn);
+// Disabled-aware sibling (greys out + reverts a click when `enabled` is false,
+// with a prose `disabledTipKey` explaining why) - mirrors DisabledCheckbox but
+// persists to plus.json. Returns true only on an enabled change.
+bool PlusDisabledCheckbox(const char* labelKey, bool* state, bool enabled,
+                          bool defaultIsOn, const char* disabledTipKey);
+#endif  // EMOT3_PLUS
+
 // Muted section header + hairline that groups a tab's controls ("Layout",
 // "Window", "Look", ...) without the weight of a CollapsingHeader.
 void OptionsSection(const char* title);

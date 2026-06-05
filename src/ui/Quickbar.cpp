@@ -1172,8 +1172,8 @@ void QuickbarRender() {
     // without refreshing the flag).
     s_qbScrollable = !items.empty() && g_QbOverflow;
 
-    // Publish the click-through wheel-capture rect for the WndProc (dev-only;
-    // QbWheelPublish is a no-op in dist, and gated on the dev toggle inside).
+    // Publish the click-through wheel-capture rect for the WndProc (+plus only;
+    // QbWheelPublish is a no-op in base builds, and gated on the Plus toggle inside).
     // Decoupled from scrollability: capture wherever the wheel has a job, with
     // the EXACT rect it acts on, so category cycling works over the bar / empty
     // content even when the list fully fits:

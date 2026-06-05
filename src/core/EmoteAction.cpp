@@ -5,7 +5,7 @@
 #include "Settings.h"
 #include "EmoteData.h"
 #include "SendSuppress.h"   // keyboard swallow during emote injection (stub in base builds)
-#include "DevSettings.h"    // g_DevSettings (whole header empty in base builds)
+#include "PlusSettings.h"   // g_PlusSettings (whole header empty in base builds)
 #include "CharacterState.h" // CurrentEmoteBlock / EmoteBlockKey (mounted + RTAPI states)
 #include "Feedback.h"       // ShowFeedback - in-window refusal line (replaces SendAlert)
 
@@ -20,8 +20,8 @@ namespace {
 // when the pipeline would garble the injected command, or when it's
 // misconfigured. Returns the i18n key to alert with via *outKey when it
 // returns true; caller's responsibility to surface it. checkHeldKeys gates
-// the held-printable-key check (4): the dev-only swallow mode passes false
-// because it consumes held keys during injection instead of refusing.
+// the held-printable-key check (4): the +plus "send while moving" mode passes
+// false because it consumes held keys during injection instead of refusing.
 //
 // Priority: can't-emote state first (mounted/swimming/downed/... - the send is
 // a guaranteed no-op, gated on the "grey out unusable" setting; see
@@ -78,7 +78,7 @@ bool ShouldSkipEmoteSend(const char** outKey, bool checkHeldKeys) {
 
 bool EmoteSendSwallowActive() {
 #ifdef EMOT3_PLUS
-    return g_DevSettings.SwallowInputOnSend;
+    return g_PlusSettings.SwallowInputOnSend;
 #else
     return false;  // swallow mode is compiled out of base builds
 #endif
@@ -94,8 +94,8 @@ SendBusy CurrentSendBusy(bool checkHeldKeys) {
     //    the canonical case. GetAsyncKeyState (not io.KeysDown[]) per
     //    nexus-addon-dev.md "Detecting game / input state": Nexus only feeds keys
     //    to ImGui when ImGui wants the keyboard. Modifiers alone don't type, so
-    //    they're not gated. Skipped when checkHeldKeys is false (dev swallow mode
-    //    consumes held keys during injection instead of refusing - so a held key
+    //    they're not gated. Skipped when checkHeldKeys is false ("send while
+    //    moving" consumes held keys during injection instead of refusing - so a held key
     //    must NOT show the cell as unusable; you can still click it).
     //
     //    GUARD ON FOREGROUND: GetAsyncKeyState reads the OS-wide physical key
@@ -126,12 +126,12 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
 
     // Send mode. Default (and the only mode in base builds): the refuse-when-
     // unsafe gate below. +plus builds can opt into the old "swallow keyboard
-    // during injection" mode via g_DevSettings.SwallowInputOnSend - the AV-
+    // during injection" mode via g_PlusSettings.SwallowInputOnSend - the AV-
     // flagged input-consume is compiled in only for the +plus flavor, so
     // swallowMode is always false elsewhere (the #ifdef leaves it default-false).
     bool swallowMode = false;
 #ifdef EMOT3_PLUS
-    swallowMode = g_DevSettings.SwallowInputOnSend;
+    swallowMode = g_PlusSettings.SwallowInputOnSend;
 #endif
 
     // Refuse rather than garble. The check is at click time only - late typing
@@ -162,10 +162,10 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
             return;
         }
 
-        // Dev-only: swallow the user's keyboard for the whole injection window
+        // +plus: swallow the user's keyboard for the whole injection window
         // (RAII - cleaned up on every g_Unloading early-return below) so held
         // keys can't interleave with our WM_CHAR stream. Inert when swallowMode
-        // is false (refuse mode) and a no-op stub in distribution builds. The
+        // is false (refuse mode) and a no-op stub in base builds. The
         // window is exactly the injection's existing trimmed timings - it adds
         // no time, and SendToGameOnly bypasses our WndProc so our own injected
         // chars are never consumed.

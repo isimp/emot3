@@ -302,7 +302,7 @@
     <ClInclude Include="core\CharacterState.h" />
     <ClInclude Include="core\UnlockScan.h" />
     <ClInclude Include="core\UpdateCheck.h" />
-    <ClInclude Include="dev\DevSettings.h" />
+    <ClInclude Include="data\PlusSettings.h" />
     <ClInclude Include="dev\DevTools.h" />
     <ClInclude Include="dev\DevStateInspector.h" />
     <ClInclude Include="dev\Profiling.h" />
@@ -349,7 +349,7 @@
     <ClCompile Include="core\CharacterState.cpp" />
     <ClCompile Include="core\UnlockScan.cpp" />
     <ClCompile Include="core\UpdateCheck.cpp" />
-    <ClCompile Include="dev\DevSettings.cpp" />
+    <ClCompile Include="data\PlusSettings.cpp" />
     <ClCompile Include="dev\DevTools.cpp" />
     <ClCompile Include="dev\DevStateInspector.cpp" />
     <ClCompile Include="dev\NotifierDebug.cpp" />

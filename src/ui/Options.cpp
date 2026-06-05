@@ -10,7 +10,6 @@
 #include "UpdateCheck.h"    // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Profiling.h"      // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 #include "DevTools.h"       // dev-tools framework toggles (only in EMOT3_DEVTOOLS builds)
-#include "DevSettings.h"    // persisted swallow toggles (+plus flavor only)
 
 #include "imgui/imgui.h"
 
@@ -44,48 +43,18 @@ void AddonOptions() {
     // Plus-only: tick the "newer release available" check (no-op stub otherwise).
     DrainUpdateCheck();
 
-    // Developer section - the dev-tool overlay toggles + persisted swallow
-    // toggles, grouped under one collapsed header (a "dropdown") at the top of
-    // the addon options, just below Nexus' keybind list. Two independent flavor
-    // axes live here: the [debug] overlay toggles (+devtools, EMOT3_DEVTOOLS) and
-    // the [dev] input-swallow toggles (+plus, EMOT3_PLUS). The header + its
-    // trailing separator only exist when at least one is compiled in, so a public
-    // base build (neither flavor) shows nothing here. Raw English labels
-    // on purpose - dev-only, never translated. See DevTools.h / DevSettings.h.
-#if defined(EMOT3_DEVTOOLS) || defined(EMOT3_PLUS)
+    // Developer section - the dev-tool overlay toggles ("[debug] ..."), grouped
+    // under one collapsed header (a "dropdown") at the top of the addon options,
+    // just below Nexus' keybind list. Only the +devtools flavor compiles this in,
+    // so a public base build shows nothing here. Raw English labels on purpose -
+    // dev-only, never translated. See DevTools.h. (The +plus input-swallow
+    // toggles are NOT here - they're shipped, user-facing settings: wheel routing
+    // lives in the Quickbar tab, "send while moving" in General > Sending.)
+#ifdef EMOT3_DEVTOOLS
     if (ImGui::CollapsingHeader("Developer##emot3dev")) {
         ImGui::Indent();
-#ifdef EMOT3_DEVTOOLS
-        // Dev-tool overlay toggles ("[debug] ..."), one per registered tool.
-        // Not persisted. See DevTools.h.
+        // One "[debug] <label>" checkbox per registered tool. Not persisted.
         RenderDevToolToggles();
-#endif
-#ifdef EMOT3_PLUS
-        // Persisted dev SWALLOW toggles (dev.json) - a separate axis from the
-        // overlays above. The input-swallow routing they control consumes input
-        // in the WndProc (AV-sensitive), so they're compiled in only for the
-        // +plus flavor along with their settings.
-        if (ImGui::Checkbox("[dev] Click-through wheel routing",
-                            &g_DevSettings.QbClickThroughWheel))
-            SaveDevSettings();
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(
-                "On: in click-through mode, the mouse wheel over the Quickbar\n"
-                "scrolls/cycles it and the game camera doesn't zoom.\n"
-                "Off: the wheel passes through to the game like clicks do.\n"
-                "Dev-only (consumes WM_MOUSEWHEEL); stripped from release builds.");
-        if (ImGui::Checkbox("[dev] Swallow input during emote send",
-                            &g_DevSettings.SwallowInputOnSend))
-            SaveDevSettings();
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(
-                "On: after you click an emote, your keyboard is swallowed for the\n"
-                "~150ms injection so held keys (WASD) can't garble the command -\n"
-                "you can click while moving. Still refuses if GW2 chat is focused.\n"
-                "Off (default): instead of swallowing, the send is refused when a\n"
-                "printable key is held (the safe, release-build behavior).\n"
-                "Dev-only (consumes keyboard in the WndProc); stripped from releases.");
-#endif
         ImGui::Unindent();
     }
     ImGui::Separator();

@@ -3,7 +3,7 @@
 #ifdef EMOT3_PLUS
 
 #include "Globals.h"      // g_GameHwnd
-#include "DevSettings.h"  // g_DevSettings
+#include "PlusSettings.h"  // g_PlusSettings
 
 #include <windowsx.h>     // GET_X_LPARAM / GET_Y_LPARAM / GET_WHEEL_DELTA_WPARAM
 #include <atomic>
@@ -41,7 +41,7 @@ bool QbWheelConsume(HWND /*hWnd*/, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void QbWheelPublish(bool wantWheel, float x, float y, float w, float h) {
-    bool active = wantWheel && g_DevSettings.QbClickThroughWheel;
+    bool active = wantWheel && g_PlusSettings.QbClickThroughWheel;
     if (active) {
         s_x.store(x, std::memory_order_relaxed);
         s_y.store(y, std::memory_order_relaxed);
