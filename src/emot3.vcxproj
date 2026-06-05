@@ -340,9 +340,10 @@
     <ClInclude Include="..\vendor\imgui\imstb_truetype.h" />
     <ClInclude Include="..\vendor\mumble\Mumble.h" />
     <ClInclude Include="..\vendor\nexus\Nexus.h" />
-    <!-- Vendored single headers (committed, not submodules): optional runtime
-         deps we read by struct layout / events. Listed so they show in the IDE
-         tree; headers aren't compiled, so this has no build effect. -->
+    <!-- Headers for optional runtime deps we read by struct layout / events.
+         RTAPI.h comes from the vendor/rtapi submodule; HoardAndSeekAPI.h is a
+         committed minimal mirror (see its header for provenance). Listed so they
+         show in the IDE tree; headers aren't compiled, so no build effect. -->
     <ClInclude Include="..\vendor\rtapi\RTAPI.h" />
     <ClInclude Include="..\vendor\hoardandseek\HoardAndSeekAPI.h" />
   </ItemGroup>
