@@ -203,6 +203,101 @@ void QbCustomScrollbar(ImGuiWindow* child, bool axisY,
                           grab, std::min(thumbThick, thumbLen) * 0.5f);
     }
 }
+
+// Purely visual scroll-edge hints: a hint at the start/end of the active scroll
+// axis when more content lies that way. Drawn on the FOREGROUND draw list (the
+// grid is a child window that composites ABOVE the parent, so a parent-window
+// overlay lands behind the cells - the same z-order trap the feedback overlay
+// hit; foreground renders last, on top). Clamped to the content rect, with NO
+// layout reservation (the fit-to-grid snap math must stay untouched) and NO input
+// (no g_QbIconRects - not draggable). Per-end gated: start edge (top/left) only
+// when scrolled in, end edge (bottom/right) only when more remains. Hints are
+// mutually exclusive with the scrollbar (the EQbScrollIndicator combo), so the
+// gutter is normally 0 here. Two renderers by background mode:
+//   bg shown  -> a SUBTLE dark inner shadow (depth cue; kept light so it doesn't
+//                bury the icons - the deep shadow occluded them).
+//   bg hidden -> a dampened accent edge LINE + soft inward GLOW (colour, not a
+//                dark veil, so it survives over the game world).
+// `bordered` (Text-only mode: cells are full bordered buttons): the hint sits
+// right on the button frames, so the hard line is DROPPED (glow only) and the
+// shadow eased, to avoid doubling up with / darkening the borders.
+void QbScrollEdgeHints(bool axisY, float scroll, float scrollMax,
+                       ImVec2 childPos, ImVec2 childSize,
+                       float gutter, bool flatten, bool highContrast,
+                       bool wrap, bool bordered) {
+    // scrollMax is the CELL-ALIGNED max (g_QbMaxScroll*), where the last whole
+    // row/column sits flush - NOT ImGui's GetScrollMax*, which carries trailing
+    // item-spacing the user can never scroll to, so the end hint would never
+    // clear. With wheel-wrap on, either end always leads somewhere (it loops), so
+    // both hints stay lit whenever content overflows.
+    constexpr float kEps = 1.0f;                  // sub-pixel/snapped scroll guard
+    bool showStart = wrap || scroll > kEps;
+    bool showEnd   = wrap || scroll < scrollMax - kEps;
+    if (!showStart && !showEnd) return;
+
+    // Content rect, trimmed on the CROSS axis by the reserved scrollbar gutter so
+    // the hint never paints over the slim bar (vertical scroll -> bar on the
+    // right; horizontal -> bar on the bottom). gutter is 0 when no bar is active.
+    ImVec2 mn = childPos;
+    ImVec2 mx = ImVec2(childPos.x + childSize.x, childPos.y + childSize.y);
+    if (axisY) mx.x -= gutter;
+    else       mx.y -= gutter;
+    if (mx.x - mn.x < 1.f || mx.y - mn.y < 1.f) return;
+
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+
+    if (!flatten) {
+        // Background shown: a dark inner shadow - present enough to read clearly,
+        // still soft enough (over a ~20px falloff) not to bury the icons. Eased in
+        // Text-only mode, where it would otherwise darken the bordered buttons.
+        const float band = 20.f;
+        float aEdge = (highContrast ? 0.68f : 0.55f) * (bordered ? 0.55f : 1.0f);
+        ImU32 edge = ImGui::GetColorU32(ImVec4(0.f, 0.f, 0.f, aEdge));
+        ImU32 fade = edge & ~IM_COL32_A_MASK;
+        if (axisY) {
+            if (showStart) dl->AddRectFilledMultiColor(mn, ImVec2(mx.x, mn.y + band), edge, edge, fade, fade);
+            if (showEnd)   dl->AddRectFilledMultiColor(ImVec2(mn.x, mx.y - band), mx, fade, fade, edge, edge);
+        } else {
+            if (showStart) dl->AddRectFilledMultiColor(mn, ImVec2(mn.x + band, mx.y), edge, fade, fade, edge);
+            if (showEnd)   dl->AddRectFilledMultiColor(ImVec2(mx.x - band, mn.y), mx, fade, edge, edge, fade);
+        }
+        return;
+    }
+
+    // Background hidden: a dampened accent edge line + soft inward glow. Muted
+    // slate-blue (not neon) so it isn't shiny; highContrast nudges it bolder. The
+    // glow is a multi-colour rect (accent at the edge -> transparent inward); the
+    // line is a thin filled rect right on the edge, drawn on top.
+    bool  strong = highContrast;
+    bool  drawLine = !bordered;                   // line clashes with button frames
+    float band   = 20.f;                          // glow depth inward
+    float lineW  = 2.0f;
+    // Without the hard line (Text-only), nudge the glow up a touch so the cue
+    // doesn't disappear.
+    float aGlow  = (strong ? 0.32f : 0.22f) + (drawLine ? 0.f : 0.08f);
+    ImU32 glowE  = ImGui::GetColorU32(ImVec4(0.48f, 0.62f, 0.80f, aGlow));
+    ImU32 glowF  = glowE & ~IM_COL32_A_MASK;      // accent, alpha 0
+    ImU32 line   = ImGui::GetColorU32(ImVec4(0.60f, 0.74f, 0.90f, strong ? 0.85f : 0.68f));
+    if (axisY) {
+        if (showStart) {
+            dl->AddRectFilledMultiColor(mn, ImVec2(mx.x, mn.y + band), glowE, glowE, glowF, glowF);
+            if (drawLine) dl->AddRectFilled(mn, ImVec2(mx.x, mn.y + lineW), line);
+        }
+        if (showEnd) {
+            dl->AddRectFilledMultiColor(ImVec2(mn.x, mx.y - band), mx, glowF, glowF, glowE, glowE);
+            if (drawLine) dl->AddRectFilled(ImVec2(mn.x, mx.y - lineW), mx, line);
+        }
+    } else {
+        if (showStart) {
+            dl->AddRectFilledMultiColor(mn, ImVec2(mn.x + band, mx.y), glowE, glowF, glowF, glowE);
+            if (drawLine) dl->AddRectFilled(mn, ImVec2(mn.x + lineW, mx.y), line);
+        }
+        if (showEnd) {
+            dl->AddRectFilledMultiColor(ImVec2(mx.x - band, mn.y), mx, glowF, glowE, glowE, glowF);
+            if (drawLine) dl->AddRectFilled(ImVec2(mx.x - lineW, mn.y), mx, line);
+        }
+    }
+}
 }  // namespace
 
 void QuickbarRender() {
@@ -401,7 +496,7 @@ void QuickbarRender() {
     // clip. Pure free mode (neither snap) keeps the old gate.
     const bool ownScroll = g_Settings.QuickbarSnapWindow ||
                            g_Settings.QuickbarSnapScroll;
-    if (ownScroll || !g_Settings.ShowQuickbarScrollbar)
+    if (ownScroll || g_Settings.QuickbarScrollIndicator != EQbScrollIndicator::Scrollbar)
         qbFlags |= ImGuiWindowFlags_NoScrollbar;
 
     // Click-through: if the cursor isn't over any rect we captured last
@@ -895,7 +990,7 @@ void QuickbarRender() {
     // window-snap callback's gating (the size constraints).
     const bool  fitScroll   = g_Settings.QuickbarSnapWindow;
     const bool  horizScroll = g_Settings.QuickbarHorizontalScroll;
-    const bool  showBar     = g_Settings.ShowQuickbarScrollbar;
+    const bool  showBar     = g_Settings.QuickbarScrollIndicator == EQbScrollIndicator::Scrollbar;
     const float qbScrSz     = ImGui::GetStyle().ScrollbarSize;
     // Same-frame overflow prediction. The cell renderer (Cells.cpp's
     // RenderEmoteSection) will compute the exact same GridFit downstream
@@ -1131,6 +1226,30 @@ void QuickbarRender() {
             g_QbIconRects.emplace_back(
                 ImVec2(qbChildPos.x,                 qbChildPos.y + qbChildSize.y - scrSz),
                 ImVec2(qbChildPos.x + qbChildSize.x, qbChildPos.y + qbChildSize.y));
+    }
+
+    // Purely visual scroll-edge hints (no g_QbIconRects - not interactive). Drawn
+    // on the foreground list (see the helper), no layout reservation. Adapts to
+    // the active scroll axis (horizScroll -> X, else Y). The end-gate uses the
+    // cell-aligned max in BOTH modes (g_QbMaxScroll*), so the bottom/right hint
+    // clears flush on the last whole row/column. Gutter trim keeps it off the bar:
+    // the reserved custom-bar gutter in owned mode, ImGui's own bar width in free.
+    if (g_Settings.QuickbarScrollIndicator == EQbScrollIndicator::Hints
+            && g_QbOverflow && !items.empty() && childWin) {
+        float hScroll = horizScroll ? qbScrollX      : qbScrollY;
+        float hMax    = horizScroll ? g_QbMaxScrollX : g_QbMaxScrollY;
+        float hGutter;
+        if (barActive) {
+            hGutter = qbGutter;
+        } else {
+            bool imBar = horizScroll ? childWin->ScrollbarX : childWin->ScrollbarY;
+            hGutter = imBar ? ImGui::GetStyle().ScrollbarSize : 0.f;
+        }
+        QbScrollEdgeHints(/*axisY=*/!horizScroll, hScroll, hMax,
+                          qbChildPos, qbChildSize, hGutter,
+                          flattenChrome, g_Settings.QuickbarHighContrast,
+                          /*wrap=*/g_Settings.QuickbarScrollWrap,
+                          /*bordered=*/g_Settings.QuickbarViewMode == EViewMode::TextOnly);
     }
 
     // Measure the chrome inset (window size minus the child's content avail,

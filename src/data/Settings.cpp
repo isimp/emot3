@@ -77,7 +77,7 @@ static DevStateRegistrar s_settingsSection("Settings (key flags)", [] {
 //       },
 //       "look": {
 //         "high_contrast": false,
-//         "show_scrollbar": true,
+//         "scroll_indicator": 1,        // 0 off, 1 edge hints, 2 scrollbar
 //         "show_tooltips": true
 //       },
 //       "interaction": {
@@ -220,6 +220,14 @@ bool SanitizeSettings(Settings& s) {
             s.QuickbarCombatBehavior = v; changed = true;
         }
     }
+    {
+        EQbScrollIndicator v = NormalizeScrollIndicator((int)s.QuickbarScrollIndicator);
+        if (v != s.QuickbarScrollIndicator) {
+            LOG_WARNING("settings: quickbar.scroll_indicator %d invalid -> %d",
+                        (int)s.QuickbarScrollIndicator, (int)v);
+            s.QuickbarScrollIndicator = v; changed = true;
+        }
+    }
 
     // Unlock key-source enum is 0/1; clamp any out-of-range hand edit to 0.
     if (s.UnlockApiKeySource < 0 || s.UnlockApiKeySource > 1) {
@@ -319,6 +327,10 @@ EQbCombat NormalizeQbCombat(int raw) {
     return (raw >= 0 && raw <= 2) ? (EQbCombat)raw : EQbCombat::Off;
 }
 
+EQbScrollIndicator NormalizeScrollIndicator(int raw) {
+    return (raw >= 0 && raw <= 2) ? (EQbScrollIndicator)raw : EQbScrollIndicator::Scrollbar;
+}
+
 float MinIconScaleForMode(EViewMode mode) {
     // Full / TextOnly / Compact reserve vertical room for a label and break
     // below 1×; Icon has no label and scales freely from 0.5×.
@@ -393,7 +405,9 @@ bool LoadSettings(const std::string& path) {
 
     const json& qbLook = GetObj(qb, "look");
     s.QuickbarHighContrast  = GetBool(qbLook, "high_contrast",  s.QuickbarHighContrast);
-    s.ShowQuickbarScrollbar = GetBool(qbLook, "show_scrollbar", s.ShowQuickbarScrollbar);
+    // Raw int; SanitizeSettings runs NormalizeScrollIndicator to clamp it.
+    s.QuickbarScrollIndicator = (EQbScrollIndicator)GetInt(qbLook, "scroll_indicator",
+                                                           (int)s.QuickbarScrollIndicator);
     s.ShowQuickbarTooltips  = GetBool(qbLook, "show_tooltips",  s.ShowQuickbarTooltips);
 
     const json& qbInter = GetObj(qb, "interaction");
@@ -526,8 +540,8 @@ void SaveSettings(const std::string& path) {
 
     f << "    \"look\": {\n";
     f << "      \"high_contrast\": "  << B(s.QuickbarHighContrast)  << ",\n";
-    f << "      \"show_scrollbar\": " << B(s.ShowQuickbarScrollbar) << ",\n";
-    f << "      \"show_tooltips\": "  << B(s.ShowQuickbarTooltips)  << "\n";
+    f << "      \"scroll_indicator\": " << (int)s.QuickbarScrollIndicator << ",\n";
+    f << "      \"show_tooltips\": "  << B(s.ShowQuickbarTooltips)    << "\n";
     f << "    },\n";
 
     f << "    \"interaction\": {\n";
