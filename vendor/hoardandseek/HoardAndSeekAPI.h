@@ -1,10 +1,21 @@
 #pragma once
 #include <cstdint>
 
-// Minimal mirror of the public Hoard & Seek integration header
-// (PieOrCake/hoard_and_seek, include/HoardAndSeekAPI.h). Only the pieces emot3
-// uses for the generic authenticated-API proxy are reproduced here; the struct
-// layouts are byte-identical to upstream so the event payloads read correctly.
+// Minimal mirror of the public Hoard & Seek integration header.
+//
+//   Upstream : https://github.com/PieOrCake/hoard_and_seek
+//   File     : include/HoardAndSeekAPI.h
+//   Pinned   : release v0.10.1.0  (HOARD_API_VERSION 3)
+//
+// Upstream's own integration guidance is "just copy the header" - there is no
+// link-time dependency; addons communicate purely via Nexus events. Its full
+// header declares ~a dozen request/response structs; we deliberately reproduce
+// ONLY the pieces emot3 uses (the generic authenticated-API proxy:
+// EV_HOARD_QUERY_API + HoardQueryApiRequest/Response) rather than vendor the lot.
+//
+// The struct layouts below are byte-identical to upstream so the event payloads
+// read correctly. If HOARD_API_VERSION ever changes upstream, re-verify these
+// layouts against include/HoardAndSeekAPI.h at the new release before bumping.
 //
 // H&S is an optional dependency: when it isn't installed nothing raises/handles
 // these events, so the path is simply inert.

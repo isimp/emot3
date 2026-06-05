@@ -10,3 +10,6 @@
 [submodule "vendor/nlohmann_json"]
 	path = vendor/nlohmann_json
 	url = https://github.com/nlohmann/json
+[submodule "vendor/rtapi"]
+	path = vendor/rtapi
+	url = https://github.com/TyrianDeveloperCollective/GW2-RealTime-API-Releases
