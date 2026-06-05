@@ -856,7 +856,8 @@ void RenderEmoteSection(const std::vector<CellInfo>& items, bool allowReorder,
             float        fullY = avail.y + (w && w->ScrollbarX ? sb : 0.f);
             int  rowsFull   = std::max(1, (int)((fullY + spacingY + kGridFitEps) / (cellH + spacingY)));
             bool willOverflowX  = (int)items.size() > rowsFull;
-            bool willDrawXScrl  = willOverflowX && g_Settings.ShowQuickbarScrollbar;
+            bool willDrawXScrl  = willOverflowX &&
+                g_Settings.QuickbarScrollIndicator == EQbScrollIndicator::Scrollbar;
             float effectiveY = willDrawXScrl ? std::max(cellH, fullY - sb) : fullY;
             rows = std::max(1, (int)((effectiveY + spacingY + kGridFitEps) / (cellH + spacingY)));
             cols = ((int)items.size() + rows - 1) / rows;
@@ -898,7 +899,8 @@ void RenderEmoteSection(const std::vector<CellInfo>& items, bool allowReorder,
             int   colsFull  = fitCols(fullX);
             int   rowsFull  = ((int)items.size() + colsFull - 1) / colsFull;
             float gridHFull = rowsFull * (cellH + spacingY) - spacingY;
-            bool  willY     = (gridHFull > avail.y) && g_Settings.ShowQuickbarScrollbar;
+            bool  willY     = (gridHFull > avail.y) &&
+                g_Settings.QuickbarScrollIndicator == EQbScrollIndicator::Scrollbar;
             cols = fitCols(willY ? std::max(cellW, fullX - sb) : fullX);
             rows = ((int)items.size() + cols - 1) / cols;
         } else {

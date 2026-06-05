@@ -32,6 +32,14 @@ enum class EUnusableBehavior { Grey = 0, Hide = 1 };
 // in combat everywhere else); Hide removes the whole bar until combat ends.
 enum class EQbCombat { Off = 0, Grey = 1, Hide = 2 };
 
+// What signals there is more scrollable content. Mutually exclusive so the
+// scrollbar and the edge hints never fight for the same edge:
+//   Off       — nothing; the wheel still scrolls.
+//   Hints     — a lit accent edge line + soft glow (no draggable bar).
+//   Scrollbar — the visible bar (custom slim-pill in owned mode, ImGui's
+//               standard bar in pure free mode).
+enum class EQbScrollIndicator { Off = 0, Hints = 1, Scrollbar = 2 };
+
 struct FavoriteCategory {
     std::string              Name;
     std::vector<std::string> Emotes;  // emote IDs in user order
@@ -89,8 +97,9 @@ struct Settings {
     // against the game world. Doesn't touch icon/full/compact cells —
     // their artwork already carries enough contrast on its own.
     bool                          QuickbarHighContrast     = false;
-    bool                          ShowQuickbarScrollbar    = true;   // visible scrollbar (wheel scrolls either way)
-    bool                          QuickbarScrollEdgeHints  = true;   // fade (bg on) / chevrons (bg off) at scrollable edges
+    // Off / Hints / Scrollbar — mutually exclusive (see EQbScrollIndicator).
+    // Default Scrollbar: the familiar visible bar.
+    EQbScrollIndicator            QuickbarScrollIndicator  = EQbScrollIndicator::Scrollbar;
     bool                          QuickbarHorizontalScroll = false;  // column-major layout + horizontal scrollbar
     // Drag-snap the Quickbar window to whole-cell multiples on both axes so it
     // frames an exact grid (no partial cells, no premature scrollbar). On by
@@ -235,6 +244,11 @@ EUnusableBehavior NormalizeUnusableBehavior(int raw);
 // Map a raw integer to a valid EQbCombat (Off/Grey/Hide), falling back to Off
 // (the default) when out of range. Same shape as NormalizeViewMode.
 EQbCombat NormalizeQbCombat(int raw);
+
+// Map a raw integer to a valid EQbScrollIndicator (Off/Hints/Scrollbar),
+// falling back to Scrollbar (the default) when out of range. Shared by the
+// settings and Quickbar-preset loaders, same as NormalizeViewMode.
+EQbScrollIndicator NormalizeScrollIndicator(int raw);
 
 // Minimum icon scale for a view mode. Full / TextOnly / Compact need a 1.0
 // floor — their label area (two-line name / centered text line / alpha strip)

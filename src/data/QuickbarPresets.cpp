@@ -93,8 +93,7 @@ json PresetToJson(const QuickbarPreset& p) {
     s["show_title"]                     = p.ShowTitle;
     s["click_through"]                  = p.ClickThrough;
     s["high_contrast"]                  = p.HighContrast;
-    s["show_scrollbar"]                 = p.ShowScrollbar;
-    s["scroll_edge_hints"]              = p.ScrollEdgeHints;
+    s["scroll_indicator"]               = (int)p.ScrollIndicator;
     s["show_tooltips"]                  = p.ShowTooltips;
     s["wheel_cycles_category"]          = (int)p.WheelCycle;
     s["wheel_cycle_wrap"]               = p.WheelCycleWrap;
@@ -137,8 +136,8 @@ QuickbarPreset ParsePresetJson(const json& j) {
     p.ShowTitle        = GetBool (s, "show_title",                    p.ShowTitle);
     p.ClickThrough     = GetBool (s, "click_through",                 p.ClickThrough);
     p.HighContrast     = GetBool (s, "high_contrast",                 p.HighContrast);
-    p.ShowScrollbar    = GetBool (s, "show_scrollbar",                p.ShowScrollbar);
-    p.ScrollEdgeHints  = GetBool (s, "scroll_edge_hints",             p.ScrollEdgeHints);
+    p.ScrollIndicator  = NormalizeScrollIndicator(
+                             GetInt(s, "scroll_indicator", (int)p.ScrollIndicator));
     p.ShowTooltips     = GetBool (s, "show_tooltips",                 p.ShowTooltips);
     // Value-bearing field: normalize so a hand-edited / out-of-range preset
     // can't carry a bad enum into g_Settings on apply (same discipline as
@@ -226,8 +225,7 @@ void CaptureQuickbarPreset(QuickbarPreset& p) {
     p.ShowTitle        = s.ShowQuickbarTitle;
     p.ClickThrough     = s.QuickbarClickThrough;
     p.HighContrast     = s.QuickbarHighContrast;
-    p.ShowScrollbar    = s.ShowQuickbarScrollbar;
-    p.ScrollEdgeHints  = s.QuickbarScrollEdgeHints;
+    p.ScrollIndicator  = s.QuickbarScrollIndicator;
     p.ShowTooltips     = s.ShowQuickbarTooltips;
     p.WheelCycle       = s.QuickbarWheelCycle;
     p.WheelCycleWrap   = s.QuickbarWheelCycleWrap;
@@ -255,8 +253,7 @@ void ApplyQuickbarPreset(const QuickbarPreset& p) {
     s.ShowQuickbarTitle                 = p.ShowTitle;
     s.QuickbarClickThrough              = p.ClickThrough;
     s.QuickbarHighContrast              = p.HighContrast;
-    s.ShowQuickbarScrollbar             = p.ShowScrollbar;
-    s.QuickbarScrollEdgeHints           = p.ScrollEdgeHints;
+    s.QuickbarScrollIndicator           = p.ScrollIndicator;
     s.ShowQuickbarTooltips              = p.ShowTooltips;
     s.QuickbarWheelCycle                = p.WheelCycle;
     s.QuickbarWheelCycleWrap            = p.WheelCycleWrap;
@@ -289,8 +286,7 @@ bool QuickbarPresetMatchesCurrent(const QuickbarPreset& p) {
         p.ShowTitle        == s.ShowQuickbarTitle &&
         p.ClickThrough     == s.QuickbarClickThrough &&
         p.HighContrast     == s.QuickbarHighContrast &&
-        p.ShowScrollbar    == s.ShowQuickbarScrollbar &&
-        p.ScrollEdgeHints  == s.QuickbarScrollEdgeHints &&
+        p.ScrollIndicator  == s.QuickbarScrollIndicator &&
         p.ShowTooltips     == s.ShowQuickbarTooltips &&
         p.WheelCycle       == s.QuickbarWheelCycle &&
         p.WheelCycleWrap   == s.QuickbarWheelCycleWrap &&

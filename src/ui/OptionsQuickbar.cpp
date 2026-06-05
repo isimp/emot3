@@ -291,13 +291,36 @@ void RenderQuickbarOptionsTab() {
     // ===== Scrolling ===== (what content does inside the window)
     OptionsSection(L("opt.sec.scrolling"));
 
+    // What signals "there's more": off / edge hints / scrollbar - mutually
+    // exclusive so the bar and the hints never share an edge. Enum value maps
+    // straight to the item index (0/1/2), same as the wheel/combat combos.
+    // Sits at the top of the section as its headline choice.
+    {
+        const char* indNames[] = { L("opt.qb.scroll_ind_off"),
+                                   L("opt.qb.scroll_ind_hints"),
+                                   L("opt.qb.scroll_ind_bar") };
+        int indIdx = (int)g_Settings.QuickbarScrollIndicator;
+        ImGui::Text("%s", L("opt.qb.scroll_indicator"));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.f);
+        if (ImGui::Combo("##qbscrollind", &indIdx, indNames, IM_ARRAYSIZE(indNames))) {
+            g_Settings.QuickbarScrollIndicator = (EQbScrollIndicator)indIdx;
+            LOG_TRACE("setting quickbar.scroll_indicator = %d", (int)g_Settings.QuickbarScrollIndicator);
+            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        }
+        if (ImGui::IsItemHovered()) {
+            static const TooltipOption kIndOpts[] = {
+                { "opt.qb.scroll_ind_off",   "opt.qb.scroll_ind_off.desc",   false },
+                { "opt.qb.scroll_ind_hints", "opt.qb.scroll_ind_hints.desc", false },
+                { "opt.qb.scroll_ind_bar",   "opt.qb.scroll_ind_bar.desc",   true  },
+            };
+            TooltipOptions("opt.qb.scroll_indicator.intro", kIndOpts, IM_ARRAYSIZE(kIndOpts));
+        }
+    }
+
     CheckboxWithSaveAndTooltip("opt.qb.hscroll", &g_Settings.QuickbarHorizontalScroll, /*defaultIsOn=*/false);
 
     CheckboxWithSaveAndTooltip("opt.qb.snap_scroll", &g_Settings.QuickbarSnapScroll, /*defaultIsOn=*/true);
-
-    CheckboxWithSaveAndTooltip("opt.qb.show_scrollbar", &g_Settings.ShowQuickbarScrollbar, /*defaultIsOn=*/true);
-
-    CheckboxWithSaveAndTooltip("opt.qb.scroll_edge_hints", &g_Settings.QuickbarScrollEdgeHints, /*defaultIsOn=*/true);
 
     CheckboxWithSaveAndTooltip("opt.qb.scroll_wrap", &g_Settings.QuickbarScrollWrap, /*defaultIsOn=*/false);
 
