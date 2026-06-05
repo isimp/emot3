@@ -6,8 +6,12 @@
 #include "Settings.h"
 #include "QuickbarPresets.h"
 #include "Options.h"        // ApplyQbCloseOnEsc (preset apply re-registers it)
+#include "UpdateCheck.h"    // Plus update hint (PlusUpdateAvailable / OpenReleasesPage; stubs otherwise)
 
 #include "imgui/imgui.h"
+
+#include <cstdio>
+#include <string>
 
 namespace {
 
@@ -38,6 +42,25 @@ bool s_registered = false;
 // "Settings..." pointer aimed at Nexus' addon Options panel (which has
 // no programmatic open API).
 void ShortcutContextMenu() {
+    // Plus-only nudge: when a newer release exists, a green attention item that
+    // copies the GitHub releases link to the clipboard (the Plus build doesn't
+    // auto-update; we copy rather than ShellExecute a browser, which would alt-tab
+    // / minimize a fullscreen client). The shortcut icon is already badged via
+    // QuickAccess.Notify. PlusUpdateAvailable() is a false stub in non-Plus builds,
+    // so this compiles away there.
+    if (PlusUpdateAvailable()) {
+        char label[128];
+        std::snprintf(label, sizeof(label), L("shortcut.update_available"),
+                      PlusLatestVersion().c_str());
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.80f, 0.45f, 1.f));
+        bool go = ImGui::MenuItem(label);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered())
+            TooltipText("shortcut.update_copy_tooltip");
+        if (go) ImGui::SetClipboardText(ReleasesUrl());
+        ImGui::Separator();
+    }
+
     const char* mainLabel = g_Settings.ShowWindow
         ? L("opt.gen.hide_main")
         : L("opt.gen.show_main");

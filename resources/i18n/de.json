@@ -29,6 +29,8 @@
   "opt.gen.notify_new_bundled": "Über neue mitgelieferte Emotes informieren",
   "opt.gen.notify_new_bundled.on": "zeigt einen Hinweis, wenn ein emot3-Update mitgelieferte Emotes bringt, die du noch nicht hast.",
   "opt.gen.notify_new_bundled.off": "bleibt still; neue mitgelieferte Emotes fügst du selbst unter Optionen > Katalog hinzu.",
+  "opt.gen.update_available": "Eine neuere Version von emot3 (Plus) ist verfügbar (%s). Die Plus-Variante aktualisiert sich manuell - kopiere den Link unten und hole sie von der Releases-Seite.",
+  "opt.gen.update_copy": "Link kopieren",
 
   "options.ui_language.label": "Sprache der Oberfläche",
   "options.ui_language.auto": "Automatisch (Nexus folgen)",
@@ -390,6 +392,8 @@
   "opt.em.clear_icon_tooltip": "Eigenen Pfad löschen. Der Status fällt auf die nächste verfügbare Quelle zurück (Ordner-Override, Bündel, Ersatz).",
 
   "shortcut.presets": "Quickbar-Profil",
+  "shortcut.update_available": "Auf emot3 (Plus) %s aktualisieren",
+  "shortcut.update_copy_tooltip": "Kopiert den Download-Link in die Zwischenablage.",
   "shortcut.settings": "Einstellungen...",
   "shortcut.settings_tooltip": "Öffne Nexus > Addons > emot3 für das vollständige Optionsfenster."
 }

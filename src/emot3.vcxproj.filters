@@ -47,12 +47,14 @@
     <ClCompile Include="core\Logging.cpp">        <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\CharacterState.cpp"><Filter>core</Filter></ClCompile>
     <ClCompile Include="core\UnlockScan.cpp">    <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\UpdateCheck.cpp">   <Filter>core</Filter></ClCompile>
     <ClCompile Include="dev\SendSuppress.cpp">    <Filter>dev</Filter></ClCompile>
     <ClCompile Include="dev\DevSettings.cpp">     <Filter>dev</Filter></ClCompile>
     <ClCompile Include="dev\QuickbarWheel.cpp">   <Filter>dev</Filter></ClCompile>
     <ClCompile Include="dev\DevTools.cpp">        <Filter>dev</Filter></ClCompile>
     <ClCompile Include="dev\DevStateInspector.cpp"><Filter>dev</Filter></ClCompile>
     <ClCompile Include="dev\NotifierDebug.cpp">   <Filter>dev</Filter></ClCompile>
+    <ClCompile Include="dev\UpdateCheckDebug.cpp"><Filter>dev</Filter></ClCompile>
     <ClCompile Include="core\Feedback.cpp">      <Filter>core</Filter></ClCompile>
     <ClCompile Include="data\EmoteData.cpp">      <Filter>data</Filter></ClCompile>
     <ClCompile Include="data\Favorites.cpp">      <Filter>data</Filter></ClCompile>
@@ -83,6 +85,7 @@
     <ClInclude Include="core\EmoteAction.h"> <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\CharacterState.h"><Filter>core</Filter></ClInclude>
     <ClInclude Include="core\UnlockScan.h">  <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\UpdateCheck.h"> <Filter>core</Filter></ClInclude>
     <ClInclude Include="dev\DevSettings.h">   <Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\QuickbarWheel.h"> <Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\DevTools.h">      <Filter>dev</Filter></ClInclude>
@@ -90,6 +93,7 @@
     <ClInclude Include="dev\Profiling.h">     <Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\QuickbarDebug.h"> <Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\NotifierDebug.h"> <Filter>dev</Filter></ClInclude>
+    <ClInclude Include="dev\UpdateCheckDebug.h"><Filter>dev</Filter></ClInclude>
     <ClInclude Include="dev\SendSuppress.h">  <Filter>dev</Filter></ClInclude>
     <ClInclude Include="core\Feedback.h">    <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\I18n.h">        <Filter>core</Filter></ClInclude>

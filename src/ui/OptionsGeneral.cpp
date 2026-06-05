@@ -8,6 +8,7 @@
 #include "Layout.h"          // ToggleButton
 #include "NexusShortcut.h"   // ApplyNexusShortcut on settings changes
 #include "Logging.h"         // LOG_TRACE (setting-change audit trail)
+#include "UpdateCheck.h"     // Plus update banner (PlusUpdateAvailable / OpenReleasesPage; stubs otherwise)
 #include "Profiling.h"       // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 
 #include "imgui/imgui.h"
@@ -19,6 +20,24 @@
 
 void RenderGeneralOptionsTab() {
     PROFILE_SCOPE("opt.general");  // dev perf overlay
+
+    // Plus-only: a newer release is available. The public build auto-updates via
+    // Nexus; the Plus build is manual, so surface a banner with the releases link +
+    // a "copy link" button (we copy rather than open a browser - keeps the player
+    // in-game). PlusUpdateAvailable() is a false stub in non-Plus builds, so this
+    // whole block compiles away there.
+    if (PlusUpdateAvailable()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+        ImGui::TextWrapped(L("opt.gen.update_available"), PlusLatestVersion().c_str());
+        ImGui::PopStyleColor();
+        ImGui::TextDisabled("%s", ReleasesUrl());
+        if (ImGui::Button(L("opt.gen.update_copy")))
+            ImGui::SetClipboardText(ReleasesUrl());
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
     // Primary visibility toggle at the top of the tab - same
     // affordance as the Quickbar tab's main toggle, same primary-
     // action styling (bumped frame padding + Spacing + inline
