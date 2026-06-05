@@ -1,9 +1,8 @@
 #include "UpdateCheck.h"
 
-// Plus-flavored builds only (Plus + Dev + Debug); the Distribution build
-// (EMOT3_DIST) uses Nexus' native updater - see UpdateCheck.h for the provisional
-// gate / naming note.
-#ifndef EMOT3_DIST
+// +plus builds only (Plus / PlusDevTools / Debug); base builds use Nexus' native
+// updater - see UpdateCheck.h for the gate rationale.
+#ifdef EMOT3_PLUS
 
 #include "Globals.h"     // APIDefs, g_Unloading, InflightWorkerScope (+ Windows.h, Nexus.h)
 #include "Logging.h"
@@ -205,4 +204,4 @@ void ForceUpdateAvailable(const std::string& ver) {
 void ResetUpdateCheck() { InitUpdateCheck(); }
 #endif  // EMOT3_DEVTOOLS
 
-#endif  // !EMOT3_DIST
+#endif  // EMOT3_PLUS

@@ -1,6 +1,6 @@
 #include "DevSettings.h"
 
-#ifndef EMOT3_DIST
+#ifdef EMOT3_PLUS
 
 #include "JsonUtil.h"
 #include "Logging.h"
@@ -52,4 +52,4 @@ void SaveDevSettings() {
     f << j.dump(2) << "\n";
 }
 
-#endif  // EMOT3_DIST
+#endif  // EMOT3_PLUS

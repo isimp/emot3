@@ -3,13 +3,13 @@
 //  Dev-only settings, persisted to addons/emot3/dev.json.
 //
 //  Deliberately separate from settings.json: these toggle dev-only
-//  behaviour that is compiled OUT of distribution builds (EMOT3_DIST),
-//  so keeping them in their own file means a release build never reads
+//  behaviour that is compiled in only for the +plus flavor (EMOT3_PLUS),
+//  so keeping them in their own file means a base build never reads
 //  or writes them. settings.json stays clean for end users, and a dev's
-//  values are never dropped by running a release build (which doesn't
-//  touch dev.json at all). The whole header is empty in dist builds.
+//  values are never dropped by running a base build (which doesn't
+//  touch dev.json at all). The whole header is empty in base builds.
 // =====================================================================
-#ifndef EMOT3_DIST
+#ifdef EMOT3_PLUS
 
 #include <string>
 
@@ -36,4 +36,4 @@ void LoadDevSettings(const std::string& path);
 // Write the current g_DevSettings back to the stashed path (on toggle change).
 void SaveDevSettings();
 
-#endif  // EMOT3_DIST
+#endif  // EMOT3_PLUS

@@ -10,7 +10,7 @@
 #include "UpdateCheck.h"    // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Profiling.h"      // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 #include "DevTools.h"       // dev-tools framework toggles (only in EMOT3_DEVTOOLS builds)
-#include "DevSettings.h"    // dev-only persisted swallow toggles (stripped in EMOT3_DIST builds)
+#include "DevSettings.h"    // persisted swallow toggles (+plus flavor only)
 
 #include "imgui/imgui.h"
 
@@ -46,13 +46,13 @@ void AddonOptions() {
 
     // Developer section - the dev-tool overlay toggles + persisted swallow
     // toggles, grouped under one collapsed header (a "dropdown") at the top of
-    // the addon options, just below Nexus' keybind list. Two independent axes
-    // live here: the [debug] overlay toggles (EMOT3_DEVTOOLS) and the [dev]
-    // input-swallow toggles (stripped by EMOT3_DIST). The header + its trailing
-    // separator only exist when at least one axis is compiled in, so a public
-    // Distribution build (both stripped) shows nothing here. Raw English labels
+    // the addon options, just below Nexus' keybind list. Two independent flavor
+    // axes live here: the [debug] overlay toggles (+devtools, EMOT3_DEVTOOLS) and
+    // the [dev] input-swallow toggles (+plus, EMOT3_PLUS). The header + its
+    // trailing separator only exist when at least one is compiled in, so a public
+    // base build (neither flavor) shows nothing here. Raw English labels
     // on purpose - dev-only, never translated. See DevTools.h / DevSettings.h.
-#if defined(EMOT3_DEVTOOLS) || !defined(EMOT3_DIST)
+#if defined(EMOT3_DEVTOOLS) || defined(EMOT3_PLUS)
     if (ImGui::CollapsingHeader("Developer##emot3dev")) {
         ImGui::Indent();
 #ifdef EMOT3_DEVTOOLS
@@ -60,11 +60,11 @@ void AddonOptions() {
         // Not persisted. See DevTools.h.
         RenderDevToolToggles();
 #endif
-#ifndef EMOT3_DIST
+#ifdef EMOT3_PLUS
         // Persisted dev SWALLOW toggles (dev.json) - a separate axis from the
         // overlays above. The input-swallow routing they control consumes input
-        // in the WndProc (AV-sensitive), so they're stripped from EMOT3_DIST
-        // builds along with their settings.
+        // in the WndProc (AV-sensitive), so they're compiled in only for the
+        // +plus flavor along with their settings.
         if (ImGui::Checkbox("[dev] Click-through wheel routing",
                             &g_DevSettings.QbClickThroughWheel))
             SaveDevSettings();

@@ -13,9 +13,9 @@
 #include "CharacterState.h" // RTAPI integration + can't-emote/combat state
 #include "UnlockScan.h"      // GW2-API emote-unlock sync (Hoard & Seek / own key)
 #include "UpdateCheck.h"     // Plus-only "update available" check (no-op stub otherwise)
-#include "DevSettings.h"    // dev-only persisted settings (dev.json; stripped in EMOT3_DIST)
-#include "QuickbarWheel.h"  // dev-only click-through wheel routing
-#include "SendSuppress.h"   // dev-only keyboard swallow during emote injection (stripped in EMOT3_DIST)
+#include "DevSettings.h"    // dev-only persisted settings (dev.json; +plus flavor only)
+#include "QuickbarWheel.h"  // click-through wheel routing (+plus flavor only)
+#include "SendSuppress.h"   // keyboard swallow during emote injection (+plus flavor only)
 #include "Keybinds.h"
 #include "Logging.h"
 #include "I18n.h"
@@ -53,8 +53,8 @@ extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.Load        = AddonLoad;
     AddonDef.Unload      = AddonUnload;
     AddonDef.Flags       = EAddonFlags_None;
-#if defined(EMOT3_DIST) && !defined(EMOT3_DEVTOOLS)
-    // Public build (emot3.dll, the Distribution config) - the ONLY build that
+#if !defined(EMOT3_PLUS) && !defined(EMOT3_DEVTOOLS)
+    // Public build (emot3.dll, the base Distribution config) - the ONLY build that
     // auto-updates. In-game updates come via Nexus' GitHub provider, which offers
     // one when a release's tag-version outranks AddonDef.Version above; keep the
     // release tag in lockstep with that version. Signature is a unique negative
@@ -64,21 +64,22 @@ extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.Provider    = EUpdateProvider_GitHub;
     AddonDef.UpdateLink  = "https://github.com/isimp/emot3";
 #else
-    // Every non-public build (Plus, Dev, Debug, DistributionDevTools) is a manual,
+    // Every flavored build (Plus, DevTools, PlusDevTools, Debug) is a manual,
     // opt-in variant: a DISTINCT Signature + Name so it can sit in addons/ next to
     // the public emot3.dll (enable one at a time), and Provider=None so Nexus
-    // NEVER auto-updates or clobbers it. That keeps the input-swallow ("Plus")
+    // NEVER auto-updates or clobbers it. That keeps the input-swallow (+plus)
     // conveniences and the dev tools strictly opt-in - they only arrive by manually
     // dropping the DLL in and never change underneath you. All variants share the
     // "emot3" config directory (GetAddonDirectory below) - same settings/catalog.
     AddonDef.Provider    = EUpdateProvider_None;
-#ifdef EMOT3_PLUS
-    AddonDef.Signature   = -135792;
-    AddonDef.Name        = "emot3 (Plus)";
-#else
-    // Dev tools present (Dev / Debug / DistributionDevTools).
+#ifdef EMOT3_DEVTOOLS
+    // Any +devtools build (DevTools / PlusDevTools / Debug).
     AddonDef.Signature   = -135793;
     AddonDef.Name        = "emot3 (Dev)";
+#else
+    // Plus: input-swallow conveniences, no dev tools.
+    AddonDef.Signature   = -135792;
+    AddonDef.Name        = "emot3 (Plus)";
 #endif
 #endif
     return &AddonDef;
@@ -117,20 +118,20 @@ static void OnKeybind(const char* identifier, bool isRelease) {
 
 // ---- Addon load / unload ----------------------------------------------
 
-// Build/release flavor, derived from the two gating macros, logged at load so a
-// shared log identifies which DLL is running: "dist" = public build (input
-// swallows stripped via EMOT3_DIST), "plus" = swallows kept; "+devtools" = the
-// diagnostic dev tools (EMOT3_DEVTOOLS) compiled in. The addon's Signature/Name
-// stay identical across every build - only the DLL filename and this tag differ.
+// Build flavor, derived from the two additive gating macros, logged at load so a
+// shared log identifies which DLL is running: "base" = public build (no input
+// swallows), "plus" = the +plus swallow conveniences (EMOT3_PLUS) compiled in;
+// "+devtools" = the diagnostic dev tools (EMOT3_DEVTOOLS) compiled in. Signature/
+// Name vary by flavor (see GetAddonDef) - only base auto-updates.
 static const char* Emot3BuildTag() {
-#if defined(EMOT3_DIST) && defined(EMOT3_DEVTOOLS)
-    return "dist+devtools";
-#elif defined(EMOT3_DIST)
-    return "dist";
-#elif defined(EMOT3_DEVTOOLS)
+#if defined(EMOT3_PLUS) && defined(EMOT3_DEVTOOLS)
     return "plus+devtools";
-#else
+#elif defined(EMOT3_DEVTOOLS)
+    return "devtools";
+#elif defined(EMOT3_PLUS)
     return "plus";
+#else
+    return "base";
 #endif
 }
 
@@ -189,9 +190,9 @@ void AddonLoad(AddonAPI* aApi) {
         // LoadQuickbarPresets below, the first time it's missing.
         g_PresetsDir = std::string(addonDir) + "\\presets";
 
-#ifndef EMOT3_DIST
-        // Dev-only settings live in their own dev.json (never touched by a
-        // distribution build, so it can't be dropped by one). See DevSettings.h.
+#ifdef EMOT3_PLUS
+        // +plus-only settings live in their own dev.json (never touched by a base
+        // build, so it can't be dropped by one). See DevSettings.h.
         LoadDevSettings(std::string(addonDir) + "\\dev.json");
 #endif
 
@@ -382,15 +383,15 @@ static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     // refusal in SendOrFillEmote - see EmoteAction.cpp's ShouldSkipEmoteSend.)
     if (!g_GameHwnd) g_GameHwnd = hWnd;
 
-#ifndef EMOT3_DIST
-    // Dev-only: route the mouse wheel to the Quickbar under click-through and
+#ifdef EMOT3_PLUS
+    // +plus only: route the mouse wheel to the Quickbar under click-through and
     // consume it so the game doesn't also zoom. The input-swallow (return 0) is
-    // compiled out of distribution builds - see QuickbarWheel.h. The whole
+    // compiled in only for the +plus flavor - see QuickbarWheel.h. The whole
     // WM_MOUSEWHEEL handling lives in the module; this is just the seam.
     if (QbWheelConsume(hWnd, uMsg, wParam, lParam)) return 0;
-    // Dev-only: while an emote is being injected in swallow mode, consume the
-    // user's real keyboard so held keys can't garble the command. Stripped from
-    // distribution (no keyboard-consume reachable in shipped binaries).
+    // +plus only: while an emote is being injected in swallow mode, consume the
+    // user's real keyboard so held keys can't garble the command. Absent from
+    // base builds (no keyboard-consume reachable in the public binary).
     if (SendSuppressConsume(uMsg)) return 0;
 #endif
     return uMsg;

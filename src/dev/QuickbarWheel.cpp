@@ -1,6 +1,6 @@
 #include "QuickbarWheel.h"
 
-#ifndef EMOT3_DIST
+#ifdef EMOT3_PLUS
 
 #include "Globals.h"      // g_GameHwnd
 #include "DevSettings.h"  // g_DevSettings
@@ -55,10 +55,10 @@ float QbWheelDrain() {
     return s_pendingRaw.exchange(0, std::memory_order_relaxed) / 120.f;
 }
 
-#else  // ---- distribution build: no input swallow, no capture ----
+#else  // ---- base build: no input swallow, no capture ----
 
 bool  QbWheelConsume(HWND, UINT, WPARAM, LPARAM) { return false; }
 void  QbWheelPublish(bool, float, float, float, float) {}
 float QbWheelDrain() { return 0.f; }
 
-#endif  // EMOT3_DIST
+#endif  // EMOT3_PLUS

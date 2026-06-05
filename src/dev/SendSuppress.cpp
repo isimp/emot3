@@ -1,6 +1,6 @@
 #include "SendSuppress.h"
 
-#ifndef EMOT3_DIST
+#ifdef EMOT3_PLUS
 
 #include <atomic>
 
@@ -34,10 +34,10 @@ bool SendSuppressConsume(UINT msg) {
     }
 }
 
-#else  // ---- distribution build: no input swallow at all ----
+#else  // ---- base build: no input swallow at all ----
 
 SendSuppressScope::SendSuppressScope(bool active) : active_(active) {}
 SendSuppressScope::~SendSuppressScope() {}
 bool SendSuppressConsume(UINT) { return false; }
 
-#endif  // EMOT3_DIST
+#endif  // EMOT3_PLUS

@@ -3,11 +3,11 @@
 //  Dev-tools framework (Layer 1) - the registry that hosts every
 //  diagnostic overlay.
 //
-//  Gated by EMOT3_DEVTOOLS (defined only by the Debug and Dev build
-//  configs - see src/emot3.vcxproj). When it is NOT defined the whole
-//  framework compiles to no-op stubs, so nothing of the dev tools ships
+//  Gated by EMOT3_DEVTOOLS, the +devtools flavor (the DevTools, PlusDevTools
+//  and Debug build configs - see src/emot3.vcxproj). When it is NOT defined the
+//  whole framework compiles to no-op stubs, so nothing of the dev tools ships
 //  in the public emot3.dll (Distribution) or the emot3_plus.dll (Plus)
-//  builds. This is a SEPARATE axis from EMOT3_DIST, which strips the
+//  builds. This is a SEPARATE flavor axis from EMOT3_PLUS, which adds the
 //  AV-sensitive input-swallows (QuickbarWheel / SendSuppress); a build
 //  can have either, both, or neither.
 //

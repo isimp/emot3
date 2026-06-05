@@ -4,8 +4,8 @@
 #include "Logging.h"
 #include "Settings.h"
 #include "EmoteData.h"
-#include "SendSuppress.h"   // dev-only keyboard swallow (stub in EMOT3_DIST)
-#include "DevSettings.h"    // g_DevSettings (whole header empty in EMOT3_DIST)
+#include "SendSuppress.h"   // keyboard swallow during emote injection (stub in base builds)
+#include "DevSettings.h"    // g_DevSettings (whole header empty in base builds)
 #include "CharacterState.h" // CurrentEmoteBlock / EmoteBlockKey (mounted + RTAPI states)
 #include "Feedback.h"       // ShowFeedback - in-window refusal line (replaces SendAlert)
 
@@ -77,10 +77,10 @@ bool ShouldSkipEmoteSend(const char** outKey, bool checkHeldKeys) {
 } // namespace
 
 bool EmoteSendSwallowActive() {
-#ifdef EMOT3_DIST
-    return false;  // swallow mode is compiled out of distribution builds
-#else
+#ifdef EMOT3_PLUS
     return g_DevSettings.SwallowInputOnSend;
+#else
+    return false;  // swallow mode is compiled out of base builds
 #endif
 }
 
@@ -124,13 +124,13 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
     if (useSync)                     cmd += " *";
     bool send = g_Settings.SendOnClick;
 
-    // Send mode. Default (and the only mode in releases): the refuse-when-
-    // unsafe gate below. Dev builds can opt into the old "swallow keyboard
+    // Send mode. Default (and the only mode in base builds): the refuse-when-
+    // unsafe gate below. +plus builds can opt into the old "swallow keyboard
     // during injection" mode via g_DevSettings.SwallowInputOnSend - the AV-
-    // flagged input-consume is compiled out of distribution, so swallowMode is
-    // always false there (the #ifndef leaves it default-false).
+    // flagged input-consume is compiled in only for the +plus flavor, so
+    // swallowMode is always false elsewhere (the #ifdef leaves it default-false).
     bool swallowMode = false;
-#ifndef EMOT3_DIST
+#ifdef EMOT3_PLUS
     swallowMode = g_DevSettings.SwallowInputOnSend;
 #endif
 

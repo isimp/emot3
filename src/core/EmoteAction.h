@@ -31,7 +31,7 @@ enum class SendBusy { None, Typing, KeysHeld };
 SendBusy CurrentSendBusy(bool checkHeldKeys);
 
 // True when dev "swallow input on emote send" mode is active (it consumes held
-// keys during injection instead of refusing). Always false in EMOT3_DIST.
+// keys during injection instead of refusing). Always false in base builds.
 // Callers gate the held-key checks on its negation.
 bool EmoteSendSwallowActive();
 
