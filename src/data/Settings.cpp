@@ -394,6 +394,7 @@ bool LoadSettings(const std::string& path) {
     const json& qbLook = GetObj(qb, "look");
     s.QuickbarHighContrast  = GetBool(qbLook, "high_contrast",  s.QuickbarHighContrast);
     s.ShowQuickbarScrollbar = GetBool(qbLook, "show_scrollbar", s.ShowQuickbarScrollbar);
+    s.QuickbarScrollEdgeHints = GetBool(qbLook, "scroll_edge_hints", s.QuickbarScrollEdgeHints);
     s.ShowQuickbarTooltips  = GetBool(qbLook, "show_tooltips",  s.ShowQuickbarTooltips);
 
     const json& qbInter = GetObj(qb, "interaction");
@@ -526,8 +527,9 @@ void SaveSettings(const std::string& path) {
 
     f << "    \"look\": {\n";
     f << "      \"high_contrast\": "  << B(s.QuickbarHighContrast)  << ",\n";
-    f << "      \"show_scrollbar\": " << B(s.ShowQuickbarScrollbar) << ",\n";
-    f << "      \"show_tooltips\": "  << B(s.ShowQuickbarTooltips)  << "\n";
+    f << "      \"show_scrollbar\": " << B(s.ShowQuickbarScrollbar)   << ",\n";
+    f << "      \"scroll_edge_hints\": " << B(s.QuickbarScrollEdgeHints) << ",\n";
+    f << "      \"show_tooltips\": "  << B(s.ShowQuickbarTooltips)    << "\n";
     f << "    },\n";
 
     f << "    \"interaction\": {\n";

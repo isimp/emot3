@@ -297,6 +297,8 @@ void RenderQuickbarOptionsTab() {
 
     CheckboxWithSaveAndTooltip("opt.qb.show_scrollbar", &g_Settings.ShowQuickbarScrollbar, /*defaultIsOn=*/true);
 
+    CheckboxWithSaveAndTooltip("opt.qb.scroll_edge_hints", &g_Settings.QuickbarScrollEdgeHints, /*defaultIsOn=*/true);
+
     CheckboxWithSaveAndTooltip("opt.qb.scroll_wrap", &g_Settings.QuickbarScrollWrap, /*defaultIsOn=*/false);
 
     // ===== Window ===== (the frame: size, move, chrome)

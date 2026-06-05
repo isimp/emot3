@@ -33,6 +33,7 @@ struct QuickbarPreset {
     bool      ClickThrough     = false;
     bool      HighContrast     = false;
     bool      ShowScrollbar    = true;
+    bool      ScrollEdgeHints  = true;
     bool      ShowTooltips     = true;
     EWheelCycle WheelCycle     = EWheelCycle::OverBar;
     bool      WheelCycleWrap   = true;

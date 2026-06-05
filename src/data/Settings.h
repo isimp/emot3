@@ -90,6 +90,7 @@ struct Settings {
     // their artwork already carries enough contrast on its own.
     bool                          QuickbarHighContrast     = false;
     bool                          ShowQuickbarScrollbar    = true;   // visible scrollbar (wheel scrolls either way)
+    bool                          QuickbarScrollEdgeHints  = true;   // fade (bg on) / chevrons (bg off) at scrollable edges
     bool                          QuickbarHorizontalScroll = false;  // column-major layout + horizontal scrollbar
     // Drag-snap the Quickbar window to whole-cell multiples on both axes so it
     // frames an exact grid (no partial cells, no premature scrollbar). On by

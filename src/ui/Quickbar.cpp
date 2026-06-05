@@ -203,6 +203,88 @@ void QbCustomScrollbar(ImGuiWindow* child, bool axisY,
                           grab, std::min(thumbThick, thumbLen) * 0.5f);
     }
 }
+
+// Purely visual scroll-edge hints: a hint at the start/end of the active scroll
+// axis when more content lies that way. Drawn after EndChild in the PARENT draw
+// list, clamped to the content rect, with NO layout reservation (the fit-to-grid
+// snap math must stay untouched) and NO input (no g_QbIconRects - not draggable).
+// Per-end gated: start edge (top/left) only when scrolled in, end edge
+// (bottom/right) only when more remains. Hybrid renderer: a gradient that fades
+// to WindowBg when the background is shown, accent chevrons (a positive mark that
+// survives over the game world) when it's hidden - mirroring the no-bg legibility
+// pattern used by the resize grip + PushHighContrastButtonStyles.
+void QbScrollEdgeHints(bool axisY, float scroll, float scrollMax,
+                       ImVec2 childPos, ImVec2 childSize,
+                       float gutter, bool flatten, bool highContrast) {
+    constexpr float kEps = 0.5f;                  // sub-pixel/snapped scroll guard
+    bool showStart = scroll > kEps;
+    bool showEnd   = scroll < scrollMax - kEps;
+    if ((!showStart && !showEnd) || scrollMax <= 0.f) return;
+
+    // Content rect, trimmed on the CROSS axis by the reserved scrollbar gutter so
+    // the hint never paints over the slim bar (vertical scroll -> bar on the
+    // right; horizontal -> bar on the bottom). gutter is 0 when no bar is active.
+    ImVec2 mn = childPos;
+    ImVec2 mx = ImVec2(childPos.x + childSize.x, childPos.y + childSize.y);
+    if (axisY) mx.x -= gutter;
+    else       mx.y -= gutter;
+    if (mx.x - mn.x < 1.f || mx.y - mn.y < 1.f) return;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    if (!flatten) {
+        // Background shown: fade to WindowBg (opaque at the very edge -> clear
+        // inward), so the partial cells read as slipping under the frame.
+        const float band = 16.f;
+        ImU32 edge = ImGui::GetColorU32(ImGuiCol_WindowBg);
+        ImU32 fade = edge & ~IM_COL32_A_MASK;     // same RGB, alpha 0
+        if (axisY) {
+            if (showStart) dl->AddRectFilledMultiColor(
+                mn, ImVec2(mx.x, mn.y + band), edge, edge, fade, fade);
+            if (showEnd)   dl->AddRectFilledMultiColor(
+                ImVec2(mn.x, mx.y - band), mx, fade, fade, edge, edge);
+        } else {
+            if (showStart) dl->AddRectFilledMultiColor(
+                mn, ImVec2(mn.x + band, mx.y), edge, fade, fade, edge);
+            if (showEnd)   dl->AddRectFilledMultiColor(
+                ImVec2(mx.x - band, mn.y), mx, fade, edge, edge, fade);
+        }
+        return;
+    }
+
+    // Background hidden: accent chevrons pointing toward the off-screen content,
+    // with a dark outline so they survive over bright AND dark game backdrops.
+    float aFill = highContrast ? 0.95f : 0.78f;
+    ImU32 acc   = ImGui::GetColorU32(ImVec4(0.40f, 0.68f, 1.00f, aFill));
+    ImU32 back  = ImGui::GetColorU32(ImVec4(0.f, 0.f, 0.f, highContrast ? 0.85f : 0.65f));
+    float s     = highContrast ? 9.f : 7.f;       // half-base = height
+    float inset = 5.f;
+    auto chevron = [&](ImVec2 a, ImVec2 b, ImVec2 c) {
+        dl->AddTriangle(a, b, c, back, 2.0f);     // dark outline
+        dl->AddTriangleFilled(a, b, c, acc);
+    };
+    if (axisY) {
+        float cx = (mn.x + mx.x) * 0.5f;
+        if (showStart)  // top edge -> point up
+            chevron(ImVec2(cx, mn.y + inset),
+                    ImVec2(cx - s, mn.y + inset + s),
+                    ImVec2(cx + s, mn.y + inset + s));
+        if (showEnd)    // bottom edge -> point down
+            chevron(ImVec2(cx, mx.y - inset),
+                    ImVec2(cx - s, mx.y - inset - s),
+                    ImVec2(cx + s, mx.y - inset - s));
+    } else {
+        float cy = (mn.y + mx.y) * 0.5f;
+        if (showStart)  // left edge -> point left
+            chevron(ImVec2(mn.x + inset, cy),
+                    ImVec2(mn.x + inset + s, cy - s),
+                    ImVec2(mn.x + inset + s, cy + s));
+        if (showEnd)    // right edge -> point right
+            chevron(ImVec2(mx.x - inset, cy),
+                    ImVec2(mx.x - inset - s, cy - s),
+                    ImVec2(mx.x - inset - s, cy + s));
+    }
+}
 }  // namespace
 
 void QuickbarRender() {
@@ -1131,6 +1213,27 @@ void QuickbarRender() {
             g_QbIconRects.emplace_back(
                 ImVec2(qbChildPos.x,                 qbChildPos.y + qbChildSize.y - scrSz),
                 ImVec2(qbChildPos.x + qbChildSize.x, qbChildPos.y + qbChildSize.y));
+    }
+
+    // Purely visual scroll-edge hints (no g_QbIconRects - not interactive). Same
+    // region/list as the custom bar: parent draw list, post-EndChild, no layout
+    // reservation. Adapts to the active scroll axis (horizScroll -> X, else Y).
+    // Owned mode mirrors the custom bar's cell-aligned max + reserved gutter; free
+    // mode uses ImGui's actual scroll max and trims past ImGui's own bar if shown.
+    if (g_Settings.QuickbarScrollEdgeHints && g_QbOverflow && !items.empty() && childWin) {
+        float hScroll = horizScroll ? qbScrollX : qbScrollY;
+        float hMax, hGutter;
+        if (barActive) {
+            hMax    = horizScroll ? g_QbMaxScrollX : g_QbMaxScrollY;
+            hGutter = qbGutter;
+        } else {
+            hMax = horizScroll ? qbScrollMaxX : qbScrollMaxY;
+            bool imBar = horizScroll ? childWin->ScrollbarX : childWin->ScrollbarY;
+            hGutter = imBar ? ImGui::GetStyle().ScrollbarSize : 0.f;
+        }
+        QbScrollEdgeHints(/*axisY=*/!horizScroll, hScroll, hMax,
+                          qbChildPos, qbChildSize, hGutter,
+                          flattenChrome, g_Settings.QuickbarHighContrast);
     }
 
     // Measure the chrome inset (window size minus the child's content avail,
