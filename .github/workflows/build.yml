@@ -80,17 +80,20 @@ jobs:
       - name: Build PlusDevTools (emot3_plusdevtools.dll, breakage guard - not shipped)
         run: msbuild emot3.sln /p:Configuration=PlusDevTools /p:Platform=x64 /m
 
-      # Every build (push or PR) uploads the public + Plus DLLs as workflow
+      # Every build (push or PR) uploads all four non-Debug DLLs as workflow
       # artifacts - useful for grabbing a build of a feature branch without
-      # cutting a release. 14-day retention keeps storage well under the free
-      # 500 MB quota. The +devtools builds are intentionally not uploaded.
+      # cutting a release, and for testing the +devtools diagnostic builds. 14-day
+      # retention keeps storage well under the free 500 MB quota. The +devtools
+      # DLLs are artifacts only - never published as release assets.
       - name: Upload DLL artifacts
         uses: actions/upload-artifact@v4
         with:
           name: emot3-dll
           path: |
-            build/Distribution/x64/emot3.dll
-            build/Plus/x64/emot3_plus.dll
+            build/Distribution/emot3.dll
+            build/Plus/emot3_plus.dll
+            build/DevTools/emot3_devtools.dll
+            build/PlusDevTools/emot3_plusdevtools.dll
           retention-days: 14
           if-no-files-found: error
 
@@ -105,13 +108,13 @@ jobs:
       - name: Package Plus build (zip - ignored by Nexus' .dll updater)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        run: Compress-Archive -Path build/Plus/x64/emot3_plus.dll -DestinationPath emot3_plus-${{ github.ref_name }}.zip
+        run: Compress-Archive -Path build/Plus/emot3_plus.dll -DestinationPath emot3_plus-${{ github.ref_name }}.zip
       - name: Publish release assets
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/Distribution/x64/emot3.dll
+            build/Distribution/emot3.dll
             emot3_plus-${{ github.ref_name }}.zip
           fail_on_unmatched_files: true
           generate_release_notes: true

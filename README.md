@@ -98,7 +98,7 @@ py -3 tools/gen_rc.py
 msbuild emot3.sln /p:Configuration=PlusDevTools /p:Platform=x64
 ```
 
-Output: `build\PlusDevTools\x64\emot3_plusdevtools.dll`. Each configuration writes to its own `build\<Configuration>\x64\` folder, so builds never clobber each other and switching configs stays incremental. The MSBuild pre-build target also runs `gen_rc.py` automatically, so the explicit step above is only needed for a clean first build.
+Output: `build\PlusDevTools\emot3_plusdevtools.dll`. Each configuration writes to its own `build\<Configuration>\` folder (x64-only, so the platform isn't in the path), so builds never clobber each other and switching configs stays incremental. The MSBuild pre-build target also runs `gen_rc.py` automatically, so the explicit step above is only needed for a clean first build.
 
 ### Build configurations
 
@@ -112,9 +112,9 @@ A build is a **base** plus two independent, additive flavors — **+plus** (the 
 | **PlusDevTools** | `emot3_plusdevtools.dll` | ✓ | ✓ | Local diagnostic build — the default for development. |
 | **Debug** | `emot3_debug.dll` | ✓ | ✓ | Unoptimized + debug CRT, for stepping through code. |
 
-CI builds the four non-Debug configs on every push and pull request, uploads `emot3.dll` + `emot3_plus.dll` as artifacts, and on a `v*` tag publishes `emot3.dll` as a release asset (Nexus auto-updates from a single release DLL; grab `emot3_plus.dll` from the build artifacts). See [`.github/workflows/build.yml`](.github/workflows/build.yml).
+CI builds the four non-Debug configs on every push and pull request, uploads all four DLLs as workflow artifacts, and on a `v*` tag publishes `emot3.dll` (loose, for Nexus auto-update) + `emot3_plus-<tag>.zip` as release assets. (The +devtools DLLs stay workflow artifacts — handy for debugging — and are never published.) See [`.github/workflows/build.yml`](.github/workflows/build.yml).
 
-+devtools builds include diagnostic overlays (performance, Quickbar sizing, runtime state inspector); see [`src/dev/`](src/dev/). +plus builds include input-swallow features stripped from the public build for AV compatibility; see [`src/dev/QuickbarWheel.cpp`](src/dev/QuickbarWheel.cpp) and [`src/dev/SendSuppress.cpp`](src/dev/SendSuppress.cpp).
++devtools builds include diagnostic overlays (performance, Quickbar sizing, runtime state inspector); see [`src/devtools/`](src/devtools/). +plus builds include input-swallow features stripped from the public build for AV compatibility; see [`src/plus/QuickbarWheel.cpp`](src/plus/QuickbarWheel.cpp) and [`src/plus/SendSuppress.cpp`](src/plus/SendSuppress.cpp).
 
 ## Credits
 

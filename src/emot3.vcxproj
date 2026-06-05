@@ -5,11 +5,12 @@
       EMOT3_PLUS     - the +plus flavor: the input-SWALLOW conveniences
                        (QuickbarWheel + SendSuppress + the plus.json toggles).
                        They consume input in the WndProc (AV-sensitive), so the
-                       base build leaves them out. See src/dev/QuickbarWheel.h.
+                       base build leaves them out. Code lives in src/plus/.
       EMOT3_DEVTOOLS - the +devtools flavor: the diagnostic dev TOOLS (perf
                        overlay, QB sizing readout, runtime state inspector,
-                       notifier / update-check testers). See src/dev/DevTools.h.
-                       (All dev-only code lives in src/dev/, on the include path.)
+                       notifier / update-check testers). Code lives in src/devtools/.
+                       (Both flavor folders are on the include path; includes
+                       stay flat - see AdditionalIncludeDirectories.)
     base = neither macro = the public build.
 
     Five configurations (-> output DLL):
@@ -115,13 +116,13 @@
   <PropertyGroup Label="UserMacros" />
   <!--
     Output layout, shared by all configs via the $(Configuration) macro:
-    build\<Config>\x64\<dll>, intermediates in build\<Config>\x64\obj\.
-    Per-config folders give each config its own incremental-build database,
-    so switching configs doesn't force a full rebuild.
+    build\<Config>\<dll>, intermediates in build\<Config>\obj\. (x64-only, so
+    the platform isn't in the path.) Per-config folders give each config its own
+    incremental-build database, so switching configs doesn't force a full rebuild.
   -->
   <PropertyGroup>
-    <OutDir>$(SolutionDir)build\$(Configuration)\$(Platform)\</OutDir>
-    <IntDir>$(SolutionDir)build\$(Configuration)\$(Platform)\obj\</IntDir>
+    <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\$(Configuration)\obj\</IntDir>
   </PropertyGroup>
   <!--
     Per-config DLL name (TargetName), so each flavor's DLL is distinct and CI /
@@ -168,7 +169,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;EMOT3_PLUS;EMOT3_DEVTOOLS;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>core;devtools;plus;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
@@ -194,7 +195,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;EMOT3_PLUS;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>core;devtools;plus;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
@@ -212,7 +213,7 @@
   <!--
     PlusDevTools = Plus +devtools: EMOT3_PLUS + EMOT3_DEVTOOLS - the swallow
     conveniences AND the diagnostic dev tools (perf overlay, QB sizing readout,
-    runtime state inspector, ...) compiled in. See src/dev/DevTools.h. The local
+    runtime state inspector, ...) compiled in. See src/devtools/DevTools.h. The local
     diagnostic build -> emot3_plusdevtools.dll. Optimization/CRT/link as Plus.
   -->
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='PlusDevTools|x64'">
@@ -224,7 +225,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;EMOT3_PLUS;EMOT3_DEVTOOLS;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>core;devtools;plus;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
@@ -253,7 +254,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>core;devtools;plus;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
@@ -283,7 +284,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;EMOT3_DEVTOOLS;EMOT3_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>core;dev;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>core;devtools;plus;data;ui;resources;generated;..\vendor;..\vendor\nlohmann_json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
@@ -302,18 +303,18 @@
     <ClInclude Include="core\CharacterState.h" />
     <ClInclude Include="core\UnlockScan.h" />
     <ClInclude Include="core\UpdateCheck.h" />
-    <ClInclude Include="data\PlusSettings.h" />
-    <ClInclude Include="dev\DevTools.h" />
-    <ClInclude Include="dev\DevStateInspector.h" />
-    <ClInclude Include="dev\Profiling.h" />
-    <ClInclude Include="dev\QuickbarDebug.h" />
-    <ClInclude Include="dev\NotifierDebug.h" />
-    <ClInclude Include="dev\UpdateCheckDebug.h" />
+    <ClInclude Include="plus\PlusSettings.h" />
+    <ClInclude Include="devtools\DevTools.h" />
+    <ClInclude Include="devtools\DevStateInspector.h" />
+    <ClInclude Include="devtools\Profiling.h" />
+    <ClInclude Include="devtools\QuickbarDebug.h" />
+    <ClInclude Include="devtools\NotifierDebug.h" />
+    <ClInclude Include="devtools\UpdateCheckDebug.h" />
     <ClInclude Include="core\Feedback.h" />
     <ClInclude Include="core\EmoteAction.h" />
     <ClInclude Include="core\Globals.h" />
-    <ClInclude Include="dev\QuickbarWheel.h" />
-    <ClInclude Include="dev\SendSuppress.h" />
+    <ClInclude Include="plus\QuickbarWheel.h" />
+    <ClInclude Include="plus\SendSuppress.h" />
     <ClInclude Include="core\I18n.h" />
     <ClInclude Include="core\Keybinds.h" />
     <ClInclude Include="core\Logging.h" />
@@ -349,17 +350,17 @@
     <ClCompile Include="core\CharacterState.cpp" />
     <ClCompile Include="core\UnlockScan.cpp" />
     <ClCompile Include="core\UpdateCheck.cpp" />
-    <ClCompile Include="data\PlusSettings.cpp" />
-    <ClCompile Include="dev\DevTools.cpp" />
-    <ClCompile Include="dev\DevStateInspector.cpp" />
-    <ClCompile Include="dev\NotifierDebug.cpp" />
-    <ClCompile Include="dev\UpdateCheckDebug.cpp" />
+    <ClCompile Include="plus\PlusSettings.cpp" />
+    <ClCompile Include="devtools\DevTools.cpp" />
+    <ClCompile Include="devtools\DevStateInspector.cpp" />
+    <ClCompile Include="devtools\NotifierDebug.cpp" />
+    <ClCompile Include="devtools\UpdateCheckDebug.cpp" />
     <ClCompile Include="core\Feedback.cpp" />
     <ClCompile Include="core\EmoteAction.cpp" />
     <ClCompile Include="core\entry.cpp" />
     <ClCompile Include="core\Globals.cpp" />
-    <ClCompile Include="dev\QuickbarWheel.cpp" />
-    <ClCompile Include="dev\SendSuppress.cpp" />
+    <ClCompile Include="plus\QuickbarWheel.cpp" />
+    <ClCompile Include="plus\SendSuppress.cpp" />
     <ClCompile Include="core\I18n.cpp" />
     <ClCompile Include="core\Logging.cpp" />
     <ClCompile Include="data\EmoteData.cpp" />
