@@ -32,7 +32,7 @@ inline void        InitUpdateCheck()    {}
 inline void        DrainUpdateCheck()   {}
 inline bool        PlusUpdateAvailable(){ return false; }
 inline std::string PlusLatestVersion()  { return std::string(); }
-inline void        OpenReleasesPage()   {}
+inline const char* ReleasesUrl()        { return ""; }
 
 #else
 
@@ -52,8 +52,10 @@ bool PlusUpdateAvailable();
 // Returned by value (the worker writes it on another thread).
 std::string PlusLatestVersion();
 
-// Open the GitHub releases page in the default browser (manual download).
-void OpenReleasesPage();
+// The GitHub releases URL (for display + clipboard copy). Callers paste it via
+// ImGui::SetClipboardText - we deliberately don't ShellExecute a browser, which
+// would alt-tab (and can minimize an exclusive-fullscreen client).
+const char* ReleasesUrl();
 
 #ifdef EMOT3_DEVTOOLS
 // Dev-tool hooks (only the "[debug] Update check" tool calls these; present in

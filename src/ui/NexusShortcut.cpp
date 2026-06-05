@@ -43,9 +43,11 @@ bool s_registered = false;
 // no programmatic open API).
 void ShortcutContextMenu() {
     // Plus-only nudge: when a newer release exists, a green attention item that
-    // opens the GitHub releases page (the Plus build doesn't auto-update). The
-    // shortcut icon is already badged via QuickAccess.Notify. PlusUpdateAvailable()
-    // is a false stub in non-Plus builds, so this compiles away there.
+    // copies the GitHub releases link to the clipboard (the Plus build doesn't
+    // auto-update; we copy rather than ShellExecute a browser, which would alt-tab
+    // / minimize a fullscreen client). The shortcut icon is already badged via
+    // QuickAccess.Notify. PlusUpdateAvailable() is a false stub in non-Plus builds,
+    // so this compiles away there.
     if (PlusUpdateAvailable()) {
         char label[128];
         std::snprintf(label, sizeof(label), L("shortcut.update_available"),
@@ -53,7 +55,9 @@ void ShortcutContextMenu() {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.80f, 0.45f, 1.f));
         bool go = ImGui::MenuItem(label);
         ImGui::PopStyleColor();
-        if (go) OpenReleasesPage();
+        if (ImGui::IsItemHovered())
+            TooltipText("shortcut.update_copy_tooltip");
+        if (go) ImGui::SetClipboardText(ReleasesUrl());
         ImGui::Separator();
     }
 

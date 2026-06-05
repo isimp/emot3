@@ -22,15 +22,17 @@ void RenderGeneralOptionsTab() {
     PROFILE_SCOPE("opt.general");  // dev perf overlay
 
     // Plus-only: a newer release is available. The public build auto-updates via
-    // Nexus; the Plus build is manual, so surface a banner + a button to the
-    // releases page. PlusUpdateAvailable() is a false stub in non-Plus builds, so
-    // this whole block compiles away there.
+    // Nexus; the Plus build is manual, so surface a banner with the releases link +
+    // a "copy link" button (we copy rather than open a browser - keeps the player
+    // in-game). PlusUpdateAvailable() is a false stub in non-Plus builds, so this
+    // whole block compiles away there.
     if (PlusUpdateAvailable()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
         ImGui::TextWrapped(L("opt.gen.update_available"), PlusLatestVersion().c_str());
         ImGui::PopStyleColor();
-        if (ImGui::Button(L("opt.gen.update_open")))
-            OpenReleasesPage();
+        ImGui::TextDisabled("%s", ReleasesUrl());
+        if (ImGui::Button(L("opt.gen.update_copy")))
+            ImGui::SetClipboardText(ReleasesUrl());
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();

@@ -11,14 +11,12 @@
 #include <nlohmann/json.hpp>
 
 #include <winhttp.h>
-#include <shellapi.h>
 
 #include <mutex>
 #include <string>
 #include <thread>
 
 #pragma comment(lib, "winhttp.lib")
-#pragma comment(lib, "shell32.lib")
 
 // The addon definition (with the live Version) is a global owned by entry.cpp.
 extern AddonDefinition AddonDef;
@@ -179,9 +177,7 @@ std::string PlusLatestVersion() {
     return s_latest;
 }
 
-void OpenReleasesPage() {
-    ShellExecuteA(nullptr, "open", kReleasesUrl, nullptr, nullptr, SW_SHOWNORMAL);
-}
+const char* ReleasesUrl() { return kReleasesUrl; }
 
 #ifdef EMOT3_DEVTOOLS
 // ---- Dev-tool hooks (the "[debug] Update check" tool) -----------------
