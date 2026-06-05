@@ -276,6 +276,7 @@
   "opt.gen.swallow_on_send": "Senden während der Bewegung",
   "opt.gen.swallow_on_send.on": "hält deine Tastatur während des ~150ms-Sendens kurz an, damit gehaltene Bewegungstasten den Befehl nicht verfälschen - du kannst während der Bewegung klicken. Bei fokussiertem GW2-Textfeld wird weiterhin verweigert.",
   "opt.gen.swallow_on_send.off": "das Senden wird verweigert, solange eine druckbare Taste gehalten wird (sicherer).",
+  "opt.plus_badge": "Eine emot3-(Plus)-Funktion - nur im Plus-Build enthalten.",
   "opt.gen.show_target_dot": "Zielpunkt anzeigen",
   "opt.gen.precise_state": "Präzise Erkennung (RealTime API)",
   "opt.gen.precise_state.on": "blockiert Emotes auch im kampfunfähigen Zustand, beim Schwimmen, unter Wasser, beim Gleiten oder Fliegen. Erfordert das GW2-RealTime-API-Addon.",

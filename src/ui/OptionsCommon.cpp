@@ -71,6 +71,17 @@ bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
 }
 
 #ifdef EMOT3_PLUS
+namespace {
+// Gold "Plus" tag rendered on the same line, after a +plus setting's label, so it
+// visibly reads as an emot3 (Plus) feature in the Options UI. Same gold as the
+// update banner / chat-unbound warning. Hovering it explains the marker.
+void PlusBadge() {
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.85f, 0.75f, 0.35f, 1.0f), "Plus");
+    if (ImGui::IsItemHovered()) TooltipText("opt.plus_badge");
+}
+}  // namespace
+
 bool PlusCheckbox(const char* labelKey, bool* state, bool defaultIsOn) {
     bool changed = ImGui::Checkbox(L(labelKey), state);
     if (changed) {
@@ -79,6 +90,7 @@ bool PlusCheckbox(const char* labelKey, bool* state, bool defaultIsOn) {
     }
     if (ImGui::IsItemHovered())
         TooltipOnOff(OnKey(labelKey).c_str(), OffKey(labelKey).c_str(), defaultIsOn);
+    PlusBadge();
     return changed;
 }
 
@@ -91,12 +103,14 @@ bool PlusDisabledCheckbox(const char* labelKey, bool* state, bool enabled,
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
     }
     bool changed = ImGui::Checkbox(L(labelKey), state);
+    bool cbHovered = ImGui::IsItemHovered();  // capture before the badge becomes the last item
+    PlusBadge();                              // dims with the row while inside the alpha push
     if (!enabled) {
         ImGui::PopStyleVar();
         ImGui::PopItemFlag();
         if (changed) { *state = !*state; changed = false; }
     }
-    if (ImGui::IsItemHovered()) {
+    if (cbHovered) {
         if (enabled)
             TooltipOnOff(OnKey(labelKey).c_str(), OffKey(labelKey).c_str(), defaultIsOn);
         else

@@ -277,6 +277,7 @@
   "opt.gen.swallow_on_send": "Send while moving",
   "opt.gen.swallow_on_send.on": "briefly holds your keyboard during the ~150ms send so held movement keys can't garble the command - you can click mid-move. Still refused while a GW2 text box is focused.",
   "opt.gen.swallow_on_send.off": "the send is refused while a printable key is held (safer).",
+  "opt.plus_badge": "An emot3 (Plus) feature - included only in the Plus build.",
   "opt.gen.show_target_dot": "Show target dot",
   "opt.gen.precise_state": "Precise detection (RealTime API)",
   "opt.gen.precise_state.on": "also blocks emotes while downed, swimming, underwater, gliding, or flying. Requires the GW2 RealTime API addon.",
