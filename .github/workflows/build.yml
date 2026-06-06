@@ -1,7 +1,19 @@
-# Builds emot3 on every push and pull request, and publishes release
-# assets whenever a tag matching v* is pushed.
+# Builds emot3 and publishes release assets whenever a tag matching v* is pushed.
 #
-# Four build configs are compiled on every run (breakage guard):
+# Build matrix is asymmetric by event type to cut PR-CI time roughly in half:
+#   pull_request -> DevTools + PlusDevTools only (the +devtools artifact is the
+#                   only one we ever grab to test a PR in-game; the public-shape
+#                   Distribution/Plus DLLs are wasted compile time on a PR since
+#                   the +devtools macro is purely additive on top of the base
+#                   flavor — if DevTools/PlusDevTools build, the base shape
+#                   almost certainly does too. Accepted risk: a #ifndef
+#                   EMOT3_DEVTOOLS path could break undetected until the next
+#                   main-push run catches it).
+#   push: main  -> all four (Distribution + Plus + DevTools + PlusDevTools).
+#                   Safety net for direct-to-main version-bump commits.
+#   push: v*    -> all four + release-asset publish.
+#
+# Configs:
 #   Distribution -> emot3.dll              (public base: no dev tools, no swallows)
 #   Plus         -> emot3_plus.dll         (+plus: convenience input-swallows)
 #   DevTools     -> emot3_devtools.dll     (+devtools: dev diagnostic tools)
@@ -10,10 +22,12 @@
 # swallows, EMOT3_DEVTOOLS adds the diagnostic dev tools; base defines neither.
 # See the README and src/emot3.vcxproj.
 #
-# Artifacts (every build): emot3.dll + emot3_plus.dll. On a v* tag, ONLY the
-# public emot3.dll is published as a release asset (Nexus' GitHub updater wants a
-# single .dll on the release); emot3_plus.dll stays a build artifact, and the
-# +devtools builds are compiled to catch breakage but are never shipped.
+# Release assets (v* tag): emot3.dll (loose, for Nexus auto-update) +
+# emot3_plus-<tag>.zip. The +devtools builds stay workflow artifacts only.
+#
+# Doc-only main pushes skip CI via paths-ignore (**/*.md, LICENSE) since none
+# of those files affect a DLL. Tag pushes ignore path filters by GitHub Actions
+# design, so releases still fire regardless of which files the bump touched.
 #
 # Runs entirely on GitHub-hosted windows-latest (Windows Server 2022),
 # which ships with MSBuild, the C++ Build Tools, the Windows SDK,
@@ -28,6 +42,10 @@ name: Build
 on:
   push:
     branches: [main]
+    # Doc-only main pushes don't affect any DLL — skip CI entirely. Tag pushes
+    # ignore paths-ignore by GitHub Actions design, so releases still fire on
+    # v* regardless of which files the bump commit touched.
+    paths-ignore: ['**/*.md', 'LICENSE']
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -68,32 +86,45 @@ jobs:
       - name: Generate resource manifest
         run: py -3 tools/gen_rc.py
 
-      # Build all four non-Debug configs every run so a break in any of them
-      # fails the PR, not just at release time. Each writes its own folder + DLL
-      # name (per-config TargetName / OutDir), so they never clobber each other.
-      - name: Build Distribution (emot3.dll)
+      # Build matrix: PRs only build the +devtools flavors (DevTools +
+      # PlusDevTools); main/tag pushes build all four. The +devtools macro is
+      # additive on top of the base flavor, so PlusDevTools building strongly
+      # implies Plus does too — same DevTools -> Distribution. Each config
+      # writes its own folder + DLL name (per-config TargetName / OutDir), so
+      # they never clobber each other.
+      - name: Build Distribution (emot3.dll, main/tag only)
+        if: github.event_name != 'pull_request'
         run: msbuild emot3.sln /p:Configuration=Distribution /p:Platform=x64 /m
-      - name: Build Plus (emot3_plus.dll)
+      - name: Build Plus (emot3_plus.dll, main/tag only)
+        if: github.event_name != 'pull_request'
         run: msbuild emot3.sln /p:Configuration=Plus /p:Platform=x64 /m
-      - name: Build DevTools (emot3_devtools.dll, breakage guard - not shipped)
+      - name: Build DevTools (emot3_devtools.dll)
         run: msbuild emot3.sln /p:Configuration=DevTools /p:Platform=x64 /m
-      - name: Build PlusDevTools (emot3_plusdevtools.dll, breakage guard - not shipped)
+      - name: Build PlusDevTools (emot3_plusdevtools.dll)
         run: msbuild emot3.sln /p:Configuration=PlusDevTools /p:Platform=x64 /m
 
-      # Every build (push or PR) uploads all four non-Debug DLLs as workflow
-      # artifacts - useful for grabbing a build of a feature branch without
-      # cutting a release, and for testing the +devtools diagnostic builds. 14-day
-      # retention keeps storage well under the free 500 MB quota. The +devtools
-      # DLLs are artifacts only - never published as release assets.
-      - name: Upload DLL artifacts
+      # Artifact upload is split to match the asymmetric build matrix:
+      # +devtools artifacts always upload (every event), public-shape artifacts
+      # only on main/tag pushes. 14-day retention keeps storage well under the
+      # free 500 MB quota. The +devtools DLLs stay artifacts only - never
+      # published as release assets.
+      - name: Upload +devtools DLL artifacts (every run)
         uses: actions/upload-artifact@v4
         with:
-          name: emot3-dll
+          name: emot3-devtools-builds
+          path: |
+            build/DevTools/emot3_devtools.dll
+            build/PlusDevTools/emot3_plusdevtools.dll
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload public DLL artifacts (main/tag only)
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: emot3-public-builds
           path: |
             build/Distribution/emot3.dll
             build/Plus/emot3_plus.dll
-            build/DevTools/emot3_devtools.dll
-            build/PlusDevTools/emot3_plusdevtools.dll
           retention-days: 14
           if-no-files-found: error
 
