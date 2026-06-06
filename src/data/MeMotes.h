@@ -106,3 +106,37 @@ inline bool IsMeMoteRenderable(const MeMote& m) {
 // caller (Options UI) appends a uniqueness suffix and falls back to a
 // "me_mote_N" placeholder when the source string normalizes to nothing.
 std::string NormalizeMeMoteId(std::string s);
+
+// --- Bundled /me-mote seed table -----------------------------------------
+//
+// resources/me_mote_data/me_motes_i18n.json bundles a handful of "I'd type
+// this in chat anyway, no animation matches" /me-motes (LFG, Ready check,
+// Need healer, ...) so the first-run experience isn't an empty section.
+// The first-run language dialog seeds BOTH catalogs: SeedDefaultEmotes for
+// the official catalog, then SeedBundledMeMotes(lang) for the /me-motes.
+// The Options > /me-motes tab also exposes a "Restore bundled" button that
+// re-runs the same idempotent-by-Id seeder, mirroring the OptionsEmotes
+// "Restore built-in emotes" affordance.
+
+// Seed g_MeMotes from the bundled seed table for `lang` (e.g. "de").
+// Idempotent by Id: a /me-mote whose Id already exists is skipped (so a user
+// rename of a sample stays renamed; a deleted sample reappears on Restore).
+// Per-entry English fallback when `lang` has no data for that entry, so
+// FR/ES players still get usable samples until those translations land.
+// Returns the count added.
+int SeedBundledMeMotes(const std::string& lang);
+
+// Language codes the bundled /me-mote table carries (its "languages" array),
+// e.g. {"en","de"}. Sibling to AvailableEmoteLanguages(); lets a caller
+// reason about whether the user's chosen language has localized samples or
+// will fall back to English.
+std::vector<std::string> AvailableMeMoteLanguages();
+
+// GW2 chat caps each transmitted line at ~199 characters; "/me " (4 chars) is
+// prepended at send time, so the usable BODY budget per /me-mote variant is
+// 195. Lives next to the schema so the editor warning + any send-time clip
+// guard reference the same constant. The Options editor uses this to color a
+// live char counter under each body input (gray <=80%, amber >80%, red >cap)
+// — long bodies still save and send, but the editor surfaces the truncation
+// risk to the author rather than letting it bite in-game.
+constexpr int kMeMoteBodyCharBudget = 195;

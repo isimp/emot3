@@ -54,6 +54,12 @@ extern const int         kEmoteDataCount;
 // presets/ folder on first run (see QuickbarPresets.cpp BuildDefaultPresets).
 extern const BundledData kPresets[];
 extern const int         kPresetsCount;
+// /me-mote seed table (resources/me_mote_data/*.json). Currently a single
+// file with stem "me_motes_i18n". Consumed by data/MeMotes.cpp's
+// LoadBundledMeMotesTable + SeedBundledMeMotes (id-keyed first-run seed,
+// language-aware, EN fallback). Mirrors the kEmoteData consumer pattern.
+extern const BundledData kMeMoteData[];
+extern const int         kMeMoteDataCount;
 
 // Return the Win32 RCDATA id for `command` in the given table, or 0 if
 // the command isn't bundled. Accepts both "/wave" and "wave" forms;

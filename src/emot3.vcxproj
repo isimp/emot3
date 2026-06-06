@@ -421,7 +421,7 @@
   -->
   <Target Name="GenerateResources"
           BeforeTargets="ClCompile;ResourceCompile"
-          Inputs="$(ProjectDir)..\tools\gen_rc.py;$(ProjectDir)..\resources\emotes_official\*.png;$(ProjectDir)..\resources\emotes_ai\*.png;$(ProjectDir)..\resources\ui\*.png;$(ProjectDir)..\resources\i18n\*.json;$(ProjectDir)..\resources\emote_data\*.json;$(ProjectDir)..\resources\presets\*.json"
+          Inputs="$(ProjectDir)..\tools\gen_rc.py;$(ProjectDir)..\resources\emotes_official\*.png;$(ProjectDir)..\resources\emotes_ai\*.png;$(ProjectDir)..\resources\ui\*.png;$(ProjectDir)..\resources\i18n\*.json;$(ProjectDir)..\resources\emote_data\*.json;$(ProjectDir)..\resources\presets\*.json;$(ProjectDir)..\resources\me_mote_data\*.json"
           Outputs="$(ProjectDir)generated\emot3.rc;$(ProjectDir)generated\ResourcesGenerated.cpp">
     <Message Text="Generating generated\emot3.rc and generated\ResourcesGenerated.cpp from resources/" Importance="High" />
     <Exec Command="py -3 &quot;$(ProjectDir)..\tools\gen_rc.py&quot;" />

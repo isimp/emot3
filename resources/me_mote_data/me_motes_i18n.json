@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "languages": ["en", "de"],
+  "_note": "Bundled /me-mote seed table. Each entry: id (stable key) + per-language { name, aliases?, text_default, text_you?, text_all? }. The seeder copies entries that aren't already in the user's catalog (matched by id) when SeedBundledMeMotes(lang) runs (entry.cpp's AddonLoad after the user picks an emote language). Bodies carry the variant text only — '/me ' is prepended at send time in SendOrFillMeMote. The first-run lane is 'I'd type this in chat anyway, no animation matches' — group-coordination calls (LFG, Ready check, Need healer, etc.), not duplicates of animated emotes (/wave, /sigh). Falls back to 'en' when a language is absent for the chosen entry. EN + DE shipped now; FR/ES land as future translation passes (the loader's EN fallback keeps the catalog usable until then).",
+  "me_motes": [
+    {
+      "id": "lfg",
+      "by_lang": {
+        "en": {
+          "name": "LFG",
+          "aliases": "group party form",
+          "text_default": "is looking for a group",
+          "text_you": "asks you to join the group",
+          "text_all": "calls out for a group"
+        },
+        "de": {
+          "name": "Gruppensuche",
+          "aliases": "gruppe party suche",
+          "text_default": "sucht eine Gruppe",
+          "text_you": "fragt dich, ob du der Gruppe beitreten möchtest",
+          "text_all": "ruft nach einer Gruppe"
+        }
+      }
+    },
+    {
+      "id": "need_help",
+      "by_lang": {
+        "en": {
+          "name": "Need help",
+          "aliases": "help assist",
+          "text_default": "needs help",
+          "text_you": "asks you for help",
+          "text_all": "asks the group for help"
+        },
+        "de": {
+          "name": "Hilfe gesucht",
+          "aliases": "hilfe helfen assist",
+          "text_default": "braucht Hilfe",
+          "text_you": "bittet dich um Hilfe",
+          "text_all": "bittet die Gruppe um Hilfe"
+        }
+      }
+    },
+    {
+      "id": "brb",
+      "by_lang": {
+        "en": {
+          "name": "BRB",
+          "aliases": "brb back moment",
+          "text_default": "will be right back",
+          "text_all": "tells the group they'll be right back"
+        },
+        "de": {
+          "name": "BRB",
+          "aliases": "brb gleich zurueck moment",
+          "text_default": "ist gleich wieder da",
+          "text_all": "sagt der Gruppe, dass er gleich wieder da ist"
+        }
+      }
+    },
+    {
+      "id": "to_waypoint",
+      "by_lang": {
+        "en": {
+          "name": "To waypoint",
+          "aliases": "waypoint wp port",
+          "text_default": "is heading to the waypoint",
+          "text_all": "tells the group to meet at the waypoint"
+        },
+        "de": {
+          "name": "Zum Wegpunkt",
+          "aliases": "wegpunkt wp port treffen",
+          "text_default": "geht zum Wegpunkt",
+          "text_all": "sagt der Gruppe, sich am Wegpunkt zu treffen"
+        }
+      }
+    },
+    {
+      "id": "ready_to_pull",
+      "by_lang": {
+        "en": {
+          "name": "Ready to pull",
+          "aliases": "pull start engage",
+          "text_default": "is ready to pull",
+          "text_all": "asks the group if they're ready to pull"
+        },
+        "de": {
+          "name": "Bereit zum Pull",
+          "aliases": "pull start engagieren angriff",
+          "text_default": "ist bereit zum Pull",
+          "text_all": "fragt die Gruppe, ob sie bereit zum Pull sind"
+        }
+      }
+    },
+    {
+      "id": "mount_up",
+      "by_lang": {
+        "en": {
+          "name": "Mount up",
+          "aliases": "mount mounts move",
+          "text_default": "is mounting up",
+          "text_all": "tells the group to mount up"
+        },
+        "de": {
+          "name": "Aufsteigen",
+          "aliases": "mount reittier aufsitzen",
+          "text_default": "steigt aufs Reittier",
+          "text_all": "sagt der Gruppe, aufzusteigen"
+        }
+      }
+    }
+  ]
+}

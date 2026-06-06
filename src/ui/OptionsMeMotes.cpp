@@ -1,5 +1,6 @@
 #include "OptionsMeMotes.h"
 
+#include "EmoteData.h"   // g_EmoteLanguage (Restore-bundled language pick)
 #include "Favorites.h"   // RemoveRefFromCategories on delete
 #include "Globals.h"
 #include "I18n.h"        // L(), TooltipText
@@ -148,10 +149,20 @@ void Persist() {
 // fields like TextDefault and Name); invalidTooltipKey shows a tooltip on
 // hover when invalid (e.g. "Name cannot be empty.").
 //
+// charBudget > 0 renders a small "N / budget" line directly under the input
+// in the same cell. Color thresholds: 0 .. 80% of budget = muted gray; > 80%
+// .. budget = amber; > budget = red plus the "will be cut off" warning.
+// Drives the GW2 chat-line-length (kMeMoteBodyCharBudget = 195) warning for
+// the three body fields; pass 0 for non-body fields so the line is omitted.
+// Counting is `buf.size()` (UTF-8 byte count) — close enough for an
+// author-side guide; GW2's exact rule at multibyte edge cases is fuzzy and
+// the warning is non-blocking either way (long bodies still save + send).
+//
 // Returns true iff a commit fired (caller persists outside the mutex).
 bool FieldRow(const char* labelKey, const char* hintKey, const char* idSuffix,
               std::string& buf, std::string& stored, bool required,
-              const char* invalidTooltipKey = nullptr)
+              const char* invalidTooltipKey = nullptr,
+              int charBudget = 0)
 {
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
@@ -185,6 +196,37 @@ bool FieldRow(const char* labelKey, const char* hintKey, const char* idSuffix,
     }
     if (invalid && invalidTooltipKey && ImGui::IsItemHovered())
         TooltipText(invalidTooltipKey);
+
+    // Char-count line, in the same cell directly under the input. Captured
+    // `active` above so the count rendering doesn't shift IsItemActive() off
+    // the InputText (the commit check below still reads the input's state).
+    // Same for IsItemHovered() — its single tooltip call above already fired.
+    if (charBudget > 0) {
+        const int n      = (int)buf.size();
+        const int warnAt = (charBudget * 80) / 100;   // 156 for 195
+        const bool over  = (n > charBudget);
+        ImVec4 color;
+        if (n <= warnAt) {
+            // Same disabled tone the existing icon-status row uses — reads as
+            // an informational subline rather than a warning at small counts.
+            color = ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
+        } else if (!over) {
+            color = ImVec4(0.92f, 0.78f, 0.32f, 1.0f);   // amber — "getting close"
+        } else {
+            color = ImVec4(1.0f, 0.45f, 0.40f, 1.0f);    // red   — "over the cap"
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        if (over) {
+            // Snap into one line by truncating the "N / budget" counter onto
+            // the warning text, so the count is read together with the
+            // consequence. The %d in the localized string formats the budget.
+            ImGui::Text("%d / %d  — %s", n, charBudget,
+                        L("opt.mm.body_truncate_warn"));
+        } else {
+            ImGui::Text("%d / %d", n, charBudget);
+        }
+        ImGui::PopStyleColor();
+    }
 
     bool committed = false;
     if (dirty && !active && !invalid) {
@@ -263,6 +305,22 @@ void RenderMeMotesTab() {
         Persist();                    // outside the lock
         s_newIdBuf[0] = '\0';         // clear input on commit
     }
+
+    // "Restore bundled" sits on the same SameLine row as Add — visually pairs
+    // the two "grow the catalog" affordances. Mirrors OptionsEmotes' Restore
+    // button. Idempotent by Id: never duplicates, never overwrites a user-
+    // edited sample. Non-destructive, so no confirmation popup. Seeds in the
+    // user's emote language (g_EmoteLanguage); if that's not set yet (truly
+    // fresh install where the first-run dialog hasn't been used), falls back
+    // to "en" — the loader's per-entry EN fallback handles missing languages.
+    ImGui::SameLine();
+    if (ImGui::Button(L("opt.mm.restore_bundled"))) {
+        std::string lang = g_EmoteLanguage.empty() ? std::string("en")
+                                                   : g_EmoteLanguage;
+        int added = SeedBundledMeMotes(lang);
+        if (added > 0) Persist();
+    }
+    if (ImGui::IsItemHovered()) TooltipText("opt.mm.restore_bundled_tooltip");
 
     // Snapshot Ids under the mutex so per-row work doesn't hold it across
     // ImGui draws. Sort by Id for stable display order (matches catalog).
@@ -531,7 +589,8 @@ void RenderMeMotesTab() {
                 if (FieldRow("opt.mm.lbl_text_default", "opt.mm.text_default_hint",
                              "mm_text_default", rb.textDefault, newVal,
                              /*required=*/true,
-                             /*invalidTooltipKey=*/"opt.mm.text_default_empty")) {
+                             /*invalidTooltipKey=*/"opt.mm.text_default_empty",
+                             /*charBudget=*/kMeMoteBodyCharBudget)) {
                     std::lock_guard<std::mutex> lk(g_MeMotesMutex);
                     if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
                         if (m->TextDefault != newVal) {
@@ -553,7 +612,9 @@ void RenderMeMotesTab() {
                 std::string newVal = stored;
                 if (FieldRow("opt.mm.lbl_text_you", "opt.mm.text_you_hint",
                              "mm_text_you", rb.textYou, newVal,
-                             /*required=*/false)) {
+                             /*required=*/false,
+                             /*invalidTooltipKey=*/nullptr,
+                             /*charBudget=*/kMeMoteBodyCharBudget)) {
                     std::lock_guard<std::mutex> lk(g_MeMotesMutex);
                     if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
                         if (m->TextYou != newVal) {
@@ -575,7 +636,9 @@ void RenderMeMotesTab() {
                 std::string newVal = stored;
                 if (FieldRow("opt.mm.lbl_text_all", "opt.mm.text_all_hint",
                              "mm_text_all", rb.textAll, newVal,
-                             /*required=*/false)) {
+                             /*required=*/false,
+                             /*invalidTooltipKey=*/nullptr,
+                             /*charBudget=*/kMeMoteBodyCharBudget)) {
                     std::lock_guard<std::mutex> lk(g_MeMotesMutex);
                     if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
                         if (m->TextAll != newVal) {

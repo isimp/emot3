@@ -480,6 +480,16 @@ static void RenderEmptyCatalogDialog() {
         if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
         MarkEmotesDirty();
         LoadEmoteTextures();
+        // First-run: seed bundled /me-motes too so the catalog isn't an empty
+        // "Add some under Options" hint. Idempotent by Id (a returning user
+        // who hit Restore once already has the samples — this is a no-op).
+        // EN fallback is automatic for languages the seed table doesn't carry
+        // yet (only EN + DE today).
+        int added = SeedBundledMeMotes(langs[sel]);
+        if (added > 0 && !g_MeMotesJsonPath.empty()) {
+            SaveMeMotesJson(g_MeMotesJsonPath);
+            MarkMeMotesDirty();
+        }
     }
 
     ImGui::Spacing();

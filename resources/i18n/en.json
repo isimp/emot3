@@ -177,6 +177,9 @@
   "opt.mm.text_all_hint": "Right-click \"Send (all)\" body (optional)",
   "opt.mm.icon_none": "(no custom icon — letter fallback)",
   "opt.mm.icon_custom_prefix": "Custom: ",
+  "opt.mm.restore_bundled": "Restore bundled",
+  "opt.mm.restore_bundled_tooltip": "Adds the bundled sample /me-motes (LFG, Ready check, Need healer, ...) that aren't already in your catalog. Idempotent — never duplicates a /me-mote you have, never overwrites one you've edited.",
+  "opt.mm.body_truncate_warn": "will be cut off in chat (GW2 line limit ~199 chars; /me prefix takes 4)",
 
   "opt.currently_visible": "currently visible",
   "opt.currently_hidden": "currently hidden",

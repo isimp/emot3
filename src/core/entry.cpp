@@ -282,8 +282,25 @@ void AddonLoad(AddonAPI* aApi) {
     // /me-motes are a SEPARATE catalog from emotes (see data/MeMotes.h). Loaded
     // in parallel; missing file = empty list (first-time users have zero).
     ClearMeMotes();
+    bool meMotesLoaded = false;
     if (!g_MeMotesJsonPath.empty()) {
-        LoadMeMotesJson(g_MeMotesJsonPath);
+        meMotesLoaded = LoadMeMotesJson(g_MeMotesJsonPath);
+    }
+    // Upgrade hook: a returning user with seeded emotes (g_EmoteLanguage set)
+    // but no me_motes.json on disk (the feature is newer than their install)
+    // gets the bundled samples seeded automatically in their existing emote
+    // language. Truly-fresh installs land here with g_EmoteLanguage empty —
+    // skipped, then seeded later by MainPanel's first-run dialog when the
+    // user picks a language and clicks Add (alongside SeedDefaultEmotes).
+    // A user who manually emptied me_motes.json (file exists but loads zero
+    // entries) is NOT reseeded here — we only seed when the file genuinely
+    // didn't exist, so deliberate clears stick.
+    if (!meMotesLoaded && !g_EmoteLanguage.empty() && !g_MeMotesJsonPath.empty()) {
+        int added = SeedBundledMeMotes(g_EmoteLanguage);
+        if (added > 0) {
+            SaveMeMotesJson(g_MeMotesJsonPath);
+            MarkMeMotesDirty();
+        }
     }
 
     EnsureDefaultCategory();  // always at least one favorites category

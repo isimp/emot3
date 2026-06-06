@@ -2,6 +2,7 @@
 #include "Globals.h"     // g_MeMotesVersion (DevStateRegistrar reads it)
 #include "JsonUtil.h"
 #include "Logging.h"
+#include "Resources.h"   // kMeMoteData bundled seed table
 
 #ifdef EMOT3_DEVTOOLS
 #include "DevStateInspector.h"
@@ -12,6 +13,8 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <map>
+#include <unordered_set>
 
 std::vector<MeMote> g_MeMotes;
 std::mutex          g_MeMotesMutex;
@@ -79,7 +82,154 @@ void TokenizeAliases(const std::string& raw, std::vector<std::string>& out) {
     flush();
 }
 
+// --- Bundled /me-mote seed table -----------------------------------------
+//
+// Lives in resources/me_mote_data/me_motes_i18n.json, bundled into the DLL,
+// so the per-language sample bodies (Name, aliases, text_default/you/all)
+// are data and not code. Same shape philosophy as the bundled
+// emote-localization table in EmoteData.cpp: parse once on first use, cache
+// in a file-static, look up by id + language with per-entry English
+// fallback. The seeder writes entries into g_MeMotes that aren't already
+// present (idempotent by Id) so a user-edited sample stays edited and a
+// deleted sample reappears on Restore.
+
+struct SeedLangEntry {                 // one language's data for a sample
+    std::string              name;
+    std::string              aliases;  // raw whitespace-separated form (TokenizeAliases applies)
+    std::string              textDefault;
+    std::string              textYou;
+    std::string              textAll;
+};
+
+struct SeedEntry {                     // one /me-mote in the bundled table
+    std::string id;
+    std::map<std::string, SeedLangEntry> byLang;  // lang code -> data
+};
+
+bool                     s_seedLoaded = false;
+std::vector<SeedEntry>   s_seed;
+std::vector<std::string> s_seedLangs;
+
+void LoadBundledMeMotesTable() {
+    if (s_seedLoaded) return;
+    s_seedLoaded = true;  // even on failure — don't retry every call
+
+    const void* data = nullptr; size_t size = 0;
+    if (!TryLoadBundledData(kMeMoteData, kMeMoteDataCount, "me_motes_i18n",
+                            data, size)) {
+        // Non-critical: the user can still hand-create /me-motes via the
+        // editor, and a missing bundle just means no first-run samples.
+        // Logged at WARNING so a packaging slip is visible without scaring
+        // users who never run with the bundle (Distribution always ships it).
+        LOG_WARNING("me_motes_i18n bundled table missing — no /me-mote samples to seed");
+        return;
+    }
+    json j;
+    try {
+        j = json::parse(static_cast<const char*>(data),
+                        static_cast<const char*>(data) + size);
+    } catch (const json::parse_error& e) {
+        LOG_WARNING("me_motes_i18n parse error at byte %zu: %s",
+                    (size_t)e.byte, e.what());
+        return;
+    }
+    if (j.contains("languages") && j["languages"].is_array()) {
+        for (const auto& l : j["languages"])
+            if (l.is_string()) s_seedLangs.push_back(l.get<std::string>());
+    }
+    if (!j.contains("me_motes") || !j["me_motes"].is_array()) {
+        LOG_WARNING("me_motes_i18n has no \"me_motes\" array");
+        return;
+    }
+    for (const auto& item : j["me_motes"]) {
+        if (!item.is_object()) continue;
+        SeedEntry e;
+        e.id = jsonutil::GetString(item, "id", std::string());
+        // Normalize once at ingress (matches the LoadMeMotesJson discipline)
+        // so a hand-edited bundle id with mixed case still matches the
+        // catalog's id format.
+        e.id = NormalizeMeMoteId(e.id);
+        if (e.id.empty()) continue;
+        if (!item.contains("by_lang") || !item["by_lang"].is_object()) continue;
+        const json& byLang = item["by_lang"];
+        for (auto it = byLang.begin(); it != byLang.end(); ++it) {
+            if (!it.value().is_object()) continue;
+            const std::string& code = it.key();
+            SeedLangEntry le;
+            le.name        = jsonutil::GetString(it.value(), "name",         std::string());
+            le.aliases     = jsonutil::GetString(it.value(), "aliases",      std::string());
+            le.textDefault = jsonutil::GetString(it.value(), "text_default", std::string());
+            le.textYou     = jsonutil::GetString(it.value(), "text_you",     std::string());
+            le.textAll     = jsonutil::GetString(it.value(), "text_all",     std::string());
+            // text_default is required per the runtime invariant (left-click
+            // sends it). An entry missing it is unrenderable, so skip it
+            // here rather than seeding a broken sample.
+            if (le.textDefault.empty()) continue;
+            e.byLang[code] = std::move(le);
+        }
+        if (e.byLang.empty()) continue;
+        s_seed.push_back(std::move(e));
+    }
+    LOG_INFO("me_motes_i18n: %d /me-mote sample(s), %d language(s)",
+             (int)s_seed.size(), (int)s_seedLangs.size());
+}
+
+// Resolve one entry to the chosen language with per-entry English fallback:
+// if the entry has no data for `lang`, return its English data; if it has
+// neither, return nullptr (skipped at seed time). Matches the EmoteData
+// fallback rule — keeps FR/ES players functional with EN samples until
+// translations land.
+const SeedLangEntry* ResolveSeedForLang(const SeedEntry& e, const std::string& lang) {
+    auto it = e.byLang.find(lang);
+    if (it != e.byLang.end()) return &it->second;
+    auto en = e.byLang.find("en");
+    if (en != e.byLang.end()) return &en->second;
+    return nullptr;
+}
+
 } // namespace
+
+std::vector<std::string> AvailableMeMoteLanguages() {
+    LoadBundledMeMotesTable();
+    return s_seedLangs;
+}
+
+int SeedBundledMeMotes(const std::string& lang) {
+    LoadBundledMeMotesTable();
+    if (s_seed.empty()) return 0;
+    int added = 0, skipped = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        // Build a quick id set for the existence check — N is small (a dozen
+        // samples, maybe a few user-authored ones) but the unordered_set
+        // keeps the inner loop O(1) instead of O(N^2).
+        std::unordered_set<std::string> present;
+        present.reserve(g_MeMotes.size());
+        for (const auto& m : g_MeMotes) present.insert(m.Id);
+
+        for (const auto& entry : s_seed) {
+            if (present.count(entry.id)) { ++skipped; continue; }
+            const SeedLangEntry* src = ResolveSeedForLang(entry, lang);
+            if (!src) { ++skipped; continue; }   // no EN either — skip
+            MeMote m;
+            m.Id          = entry.id;
+            m.Name        = src->name;
+            m.TextDefault = src->textDefault;
+            m.TextYou     = src->textYou;
+            m.TextAll     = src->textAll;
+            // Tokenize the aliases string at ingress (matches the editor's
+            // ParseAliases output form, so the on-disk file looks the same
+            // whether the entry came from a seed or a hand-add).
+            TokenizeAliases(src->aliases, m.Aliases);
+            g_MeMotes.push_back(std::move(m));
+            present.insert(entry.id);
+            ++added;
+        }
+    }
+    LOG_INFO("Bundled /me-motes: %d added, %d skipped (id already present or no data), language '%s'",
+             added, skipped, lang.c_str());
+    return added;
+}
 
 std::string NormalizeMeMoteId(std::string s) {
     // Step 1: trim ASCII whitespace (same isws as Trim above, inline so the
