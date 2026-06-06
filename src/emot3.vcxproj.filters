@@ -101,6 +101,7 @@
     <ClInclude Include="devtools\NotifierDebug.h"> <Filter>devtools</Filter></ClInclude>
     <ClInclude Include="devtools\UpdateCheckDebug.h"><Filter>devtools</Filter></ClInclude>
     <ClInclude Include="devtools\MemoryMonitor.h">    <Filter>devtools</Filter></ClInclude>
+    <ClInclude Include="devtools\AirborneTuner.h">    <Filter>devtools</Filter></ClInclude>
     <ClInclude Include="ui\Feedback.h">    <Filter>ui</Filter></ClInclude>
     <ClInclude Include="core\I18n.h">        <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\Globals.h">     <Filter>core</Filter></ClInclude>
