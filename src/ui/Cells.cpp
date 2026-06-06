@@ -951,7 +951,53 @@ void RenderEmoteSection(const std::vector<CellInfo>& items, bool allowReorder,
     HandleGridDropZone(items, g, allowReorder, categoryIdx, isQuickbar,
                        preview, showPreview);
 
-    for (int j = 0; j < (int)items.size(); ++j) {
+    // Visible-range cull. RenderEmoteCell is the per-frame render hot path
+    // (texture lookup, label ellipsize/shaping, draw-list strip in Compact/Full,
+    // a full Button/ImageButton). ImGui clips the *output* of off-screen cells
+    // but still pays their *build* cost, so for a long scrolled catalog most of
+    // mp.draw/qb.draw is wasted on cells nobody can see. Cells are uniform-pitch
+    // (stepX/stepY) and absolutely positioned, so the scroll viewport maps to a
+    // CONTIGUOUS index range under either fill order (GridLayout::cellColRow: a
+    // row holds [r*cols,(r+1)*cols); a column holds [c*rows,(c+1)*rows)). We skip
+    // everything outside it. This is leaner than ImGuiListClipper here: the grid
+    // is absolutely positioned (clipper assumes cursor-advance flow) and the
+    // horizontal Quickbar is column-major (clipper is row-only). Safe because the
+    // full-extent end Dummy below still sets ContentSize (scrollbar range
+    // unchanged), and the drop zone + insertion preview are grid-math, not these
+    // cells (reorder unaffected). When nothing overflows the range resolves to
+    // all cells (a no-op). +/-1 band of overscan keeps a partial edge row/col
+    // drawn so nothing pops in mid-scroll. Stacked main-panel sections each have
+    // their own baseY, so a section wholly above/below the fold yields an empty
+    // range and is skipped entirely.
+    int jStart = 0, jEnd = (int)items.size();
+    {
+        const ImGuiWindow* win  = ImGui::GetCurrentWindow();
+        const ImRect&      clip = win->InnerClipRect;   // visible content, screen space
+        constexpr int      kOverscan = 1;
+        if (horizontal) {                                // column-major: cull X band
+            const float viewL = clip.Min.x - win->Pos.x + win->Scroll.x;
+            const float viewR = clip.Max.x - win->Pos.x + win->Scroll.x;
+            int firstCol = (int)std::floor((viewL - baseX) / stepX) - kOverscan;
+            int lastCol  = (int)std::floor((viewR - baseX) / stepX) + kOverscan;
+            firstCol = std::max(0, firstCol);
+            lastCol  = std::min(cols - 1, lastCol);
+            if (firstCol > lastCol) { jStart = jEnd = 0; }            // off-screen section
+            else { jStart = firstCol * rows;
+                   jEnd   = std::min((int)items.size(), (lastCol + 1) * rows); }
+        } else {                                         // row-major: cull Y band
+            const float viewT = clip.Min.y - win->Pos.y + win->Scroll.y;
+            const float viewB = clip.Max.y - win->Pos.y + win->Scroll.y;
+            int firstRow = (int)std::floor((viewT - baseY) / stepY) - kOverscan;
+            int lastRow  = (int)std::floor((viewB - baseY) / stepY) + kOverscan;
+            firstRow = std::max(0, firstRow);
+            lastRow  = std::min(rows - 1, lastRow);
+            if (firstRow > lastRow) { jStart = jEnd = 0; }            // off-screen section
+            else { jStart = firstRow * cols;
+                   jEnd   = std::min((int)items.size(), (lastRow + 1) * cols); }
+        }
+    }
+
+    for (int j = jStart; j < jEnd; ++j) {
         int col, row;
         g.cellColRow(j, col, row);
         float cellX = baseX + col * stepX;
