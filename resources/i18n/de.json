@@ -142,6 +142,7 @@
 
   "opt.mm.hlp_top": "Eigene /me-Chat-Emotes („/me-motes“). Lege pro Eintrag bis zu drei Varianten an (Standard, Du, Alle) und wähle im Rechtsklick-Menü, welche gesendet wird. GW2 stellt den Zielnamen Addons nicht zur Verfügung — schreibe jede Variante daher passend zum Kontext.",
   "opt.mm.btn_add": "/me-mote hinzufügen",
+  "opt.mm.count": "%d /me-motes",
   "opt.mm.empty": "Noch keine /me-motes. Klicke auf „/me-mote hinzufügen“, um eine anzulegen.",
   "opt.mm.id_tooltip": "Stabile ID — Favoriten und JSON nutzen sie als Schlüssel. Den Anzeigenamen unten kannst du ändern; die ID bleibt, damit Verweise nicht brechen.",
   "opt.mm.lbl_name": "Name",
@@ -175,6 +176,7 @@
   "opt.sec.bundled": "Mitgelieferte Emotes",
   "opt.sec.clear": "Katalog leeren",
   "opt.sec.add_emote": "Zum Katalog hinzufügen",
+  "opt.sec.add_me_mote": "Zu /me-motes hinzufügen",
 
   "opt.qb.hide": "Quickbar ausblenden",
   "opt.qb.show": "Quickbar anzeigen",

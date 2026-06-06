@@ -145,6 +145,7 @@
 
   "opt.mm.hlp_top": "Custom free-form chat emotes that send via GW2's /me command. Set up to three variants per /me-mote (default, you, all) and pick which to fire from the cell's right-click menu. GW2 doesn't expose the current target name to addons, so it can't be auto-filled — write each variant for its context.",
   "opt.mm.btn_add": "Add /me-mote",
+  "opt.mm.count": "%d /me-motes",
   "opt.mm.empty": "No /me-motes yet. Click \"Add /me-mote\" to create one.",
   "opt.mm.id_tooltip": "Stable id — favorites and the JSON file key on it. Rename the display Name below; the id stays put so references don't break.",
   "opt.mm.lbl_name": "Name",
@@ -176,6 +177,7 @@
   "opt.sec.qb_categories": "Quickbar categories",
   "opt.sec.unlocks": "Unlocks",
   "opt.sec.add_emote": "Add to catalog",
+  "opt.sec.add_me_mote": "Add to /me-motes",
 
   "opt.qb.hide": "Hide Quickbar",
   "opt.qb.show": "Show Quickbar",

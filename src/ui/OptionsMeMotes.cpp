@@ -202,7 +202,11 @@ void RenderMeMotesTab() {
     ImGui::TextWrapped("%s", L("opt.mm.hlp_top"));
     ImGui::Spacing();
 
-    // ---- "Add /me-mote" button -----------------------------------------
+    // ---- "Add /me-mote" section heading + button -----------------------
+    // Mirrors the OptionsEmotes "Add to catalog" section: an OptionsSection
+    // heading marks this as the everyday action, set apart from the list
+    // below by the same hairline + spacing pattern.
+    OptionsSection(L("opt.sec.add_me_mote"));
     if (ImGui::Button(L("opt.mm.btn_add"))) {
         std::string newId;
         {
@@ -219,16 +223,36 @@ void RenderMeMotesTab() {
     ImGui::Spacing();
 
     // Snapshot Ids under the mutex so the per-row work doesn't hold it across
-    // ImGui draws.
+    // ImGui draws. Sort by Id so the display order is stable regardless of
+    // insertion (g_MeMotes itself stays in on-disk order — only the rendering
+    // walks the sorted view).
     std::vector<std::string> ids;
     {
         std::lock_guard<std::mutex> lk(g_MeMotesMutex);
         ids.reserve(g_MeMotes.size());
         for (const auto& m : g_MeMotes) ids.push_back(m.Id);
     }
-    if (ids.empty()) {
-        ImGui::TextDisabled("%s", L("opt.mm.empty"));
-        return;
+    std::sort(ids.begin(), ids.end());
+
+    // ---- List toolbar: count (left) + Expand all / Collapse all (right) ---
+    // One-shot from the bulk buttons: 1 = open every row this frame, -1 =
+    // close every row, 0 = no-op. Mirrors OptionsEmotes s_setAllOpen.
+    static int s_setAllOpen = 0;
+    {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled(L("opt.mm.count"), (int)ids.size());
+
+        const ImGuiStyle& st = ImGui::GetStyle();
+        float wExpand   = ImGui::CalcTextSize(L("opt.em.expand_all")).x   + st.FramePadding.x * 2.f;
+        float wCollapse = ImGui::CalcTextSize(L("opt.em.collapse_all")).x + st.FramePadding.x * 2.f;
+        float total     = wExpand + wCollapse + st.ItemSpacing.x;
+        ImGui::SameLine();
+        float avail = ImGui::GetContentRegionAvail().x;
+        if (avail > total)
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
+        if (ImGui::SmallButton(L("opt.em.expand_all")))   s_setAllOpen =  1;
+        ImGui::SameLine();
+        if (ImGui::SmallButton(L("opt.em.collapse_all"))) s_setAllOpen = -1;
     }
 
     // Width of the shared label column — max of every field-label width so
@@ -247,6 +271,20 @@ void RenderMeMotesTab() {
 
     std::string deleteId;   // deferred — set inside the loop, applied after
 
+    // ---- Scrollable, bordered, fixed-height list ----------------------
+    // Same dimensions + chrome as OptionsEmotes's "##emotelist" so the two
+    // editors feel identical — the bordered child reserves its 320-px slot
+    // even when empty, which keeps the tab layout from jumping as /me-motes
+    // are added or removed.
+    ImGui::BeginChild("##memotelist", ImVec2(0, 320.f), true);
+
+    if (ids.empty()) {
+        ImGui::TextDisabled("%s", L("opt.mm.empty"));
+        ImGui::EndChild();
+        s_setAllOpen = 0;  // reset; nothing to apply to
+        return;
+    }
+
     for (const std::string& id : ids) {
         // Snapshot the live row's display label (Name; falls back to Id).
         // The body block re-takes the mutex when it mutates.
@@ -263,8 +301,11 @@ void RenderMeMotesTab() {
 
         ImGui::PushID(id.c_str());
 
-        // ---- Row header: ArrowButton + colored Id + Delete -------------
+        // Apply a queued Expand all / Collapse all before reading state.
         bool& rowOpen = s_rowOpen[id];
+        if (s_setAllOpen != 0) rowOpen = (s_setAllOpen > 0);
+
+        // ---- Row header: ArrowButton + colored Id + Delete -------------
         if (ImGui::ArrowButton("##expand", rowOpen ? ImGuiDir_Down : ImGuiDir_Right))
             rowOpen = !rowOpen;
         ImGui::SameLine();
@@ -470,6 +511,8 @@ void RenderMeMotesTab() {
 
         ImGui::PopID();
     }
+    ImGui::EndChild();   // ##memotelist
+    s_setAllOpen = 0;    // consume the one-shot bulk toggle
 
     // Deferred delete — applied after the iteration so the snapshot doesn't
     // shift mid-loop.
