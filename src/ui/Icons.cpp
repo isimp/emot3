@@ -166,31 +166,24 @@ void DrawTargetableDot(float dotSz, float alphaMul) {
 }
 
 void DrawMeMoteIndicator(float indSz, float alphaMul) {
-    if (indSz < 4.f) return;  // unreadable speck - skip below the threshold
+    // /me-motes and IsTargetable are mutually exclusive (the Emote-only
+    // target dot draws via DrawTargetableDot above, which never runs on a
+    // /me-mote cell), so the two indicators share the same top-right anchor.
+    // Sourced from the bundled (or user-overridden) UI icon "me_mote_dot.png"
+    // - drop a PNG under addons/emot3/icons/ui/ to replace it, same path as
+    // every other UI override (see entry.cpp's icons/ui/README.txt).
+    Texture* tex = APIDefs ? APIDefs->Textures.Get("EMOT3_UI_ME_MOTE") : nullptr;
+    if (!tex || !tex->Resource) return;
+    if (indSz < 4.f) return;
 
-    // Top-LEFT corner so this never collides with the target dot's top-right
-    // anchor (and /me-mote cells can't be IsTargetable anyway). Same pad
-    // formula as DrawTargetableDot so the inset matches visually.
     ImVec2 imin = ImGui::GetItemRectMin();
     ImVec2 imax = ImGui::GetItemRectMax();
-    (void)imax;
     float pad = std::max(2.5f, indSz * 0.3f);
 
-    ImVec2 mn(imin.x + pad, imin.y + pad);
+    ImVec2 mn(imax.x - indSz - pad, imin.y + pad);
     ImVec2 mx(mn.x + indSz, mn.y + indSz);
-    ImVec2 center((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
-    float radius = indSz * 0.5f;
-
     int a = (int)(255 * alphaMul);
-    // Accent fill — a chat-blue distinct from the target dot's
-    // white/yellow. Subtle dark outline so it stays visible against light
-    // icon backgrounds.
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddCircleFilled(center, radius,
-                        IM_COL32(72, 156, 252, a),
-                        /*num_segments=*/12);
-    dl->AddCircle(center, radius,
-                  IM_COL32(18, 36, 72, (int)(180 * alphaMul)),
-                  /*num_segments=*/12,
-                  /*thickness=*/std::max(1.f, indSz * 0.06f));
+    ImGui::GetWindowDrawList()->AddImage((ImTextureID)tex->Resource, mn, mx,
+                 ImVec2(0, 0), ImVec2(1, 1),
+                 IM_COL32(255, 255, 255, a));
 }

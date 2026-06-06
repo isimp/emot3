@@ -259,12 +259,13 @@ void LoadUiIconOverrides() {
     // icon row regardless of what users drop into icons/ui/. The
     // README.txt we write next to this folder calls out the same rule.
     static const UiBinding kBindings[] = {
-        { "EMOT3_UI_STAR",           "star",       true  },
-        { "EMOT3_UI_PAPERCLIP",      "paperclip",  true  },
-        { "EMOT3_UI_LOCK",           "lock",       true  },
-        { "EMOT3_UI_TARGET",         "target_dot", true  },
-        { "EMOT3_UI_SHORTCUT",       "icon",       false },
-        { "EMOT3_UI_SHORTCUT_HOVER", "icon_hover", false },
+        { "EMOT3_UI_STAR",           "star",        true  },
+        { "EMOT3_UI_PAPERCLIP",      "paperclip",   true  },
+        { "EMOT3_UI_LOCK",           "lock",        true  },
+        { "EMOT3_UI_TARGET",         "target_dot",  true  },
+        { "EMOT3_UI_ME_MOTE",        "me_mote_dot", true  },
+        { "EMOT3_UI_SHORTCUT",       "icon",        false },
+        { "EMOT3_UI_SHORTCUT_HOVER", "icon_hover",  false },
     };
 
     for (const auto& b : kBindings) {
