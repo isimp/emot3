@@ -273,13 +273,26 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
     float alphaMul = blocked ? 0.40f : 1.f;
     bool dimmed    = blocked;
 
+    // /me-mote indicator (top-left accent). Sized like the target dot so it
+    // tracks the icon-scale slider; same per-mode reference so it reads the
+    // same in every view mode.
+    const bool showIndicator = g_Settings.ShowMeMoteIndicator;
+    float indSz = 0.f;
+    if (showIndicator) {
+        float indRef = (mode == EViewMode::TextOnly) ? cellH : iconSz;
+        indSz = indRef * (mode == EViewMode::TextOnly ? 0.45f : 0.24f);
+    }
+
     ImGui::PushID(m.Id.c_str());
     if (dimmed) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
                                      ImGui::GetStyle().Alpha * alphaMul);
 
     bool clicked = false;
     if (mode == EViewMode::TextOnly) {
+        // Reserve label space for the indicator the same way the Emote path
+        // reserves it for the target dot.
         float labelMaxW = cellW - 12.f;
+        if (showIndicator) labelMaxW -= indSz + 6.f;
         const auto& cached = TextCache::EllipsizeCached(m.Id, m.Name, mode, labelMaxW);
         ImGui::SetCursorPos(ImVec2(cellX, cellY));
         int hiContrastPushes = 0;
@@ -320,6 +333,10 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
                         cached.label.c_str());
         }
     }
+
+    // /me-mote indicator overlay — anchored to the last submitted item (the
+    // button), so it scales with the button automatically.
+    if (showIndicator) DrawMeMoteIndicator(indSz, alphaMul);
 
     if (isQuickbar) {
         g_QbIconRects.emplace_back(ImGui::GetItemRectMin(),

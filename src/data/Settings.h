@@ -212,6 +212,11 @@ struct Settings {
     // suffix with " @"). On by default. Applies to both the main panel and
     // the Quickbar (drawn in RenderEmoteCell).
     bool                          ShowTargetDot        = true;
+    // Show the small corner accent marking /me-motes (drawn top-left, distinct
+    // colour from the target dot's top-right anchor). On by default — makes
+    // /me-motes visually distinguishable from regular Emotes in mixed
+    // favourites / Quickbar categories.
+    bool                          ShowMeMoteIndicator  = true;
     // Block emotes that can't currently be used: refuse the send (toast) + grey
     // or hide the Quickbar. On by default. Always covers mounted (MumbleLink).
     // With QuickbarPreciseStateDetection + the RealTime API addon it also covers

@@ -454,6 +454,7 @@ bool LoadSettings(const std::string& path) {
     s.SendTargetableOnTarget = GetBool(general, "send_targetable_on_target", s.SendTargetableOnTarget);
     s.UseAIIconFallback = GetBool(general, "use_ai_icon_fallback", s.UseAIIconFallback);
     s.ShowTargetDot     = GetBool(general, "show_target_dot",       s.ShowTargetDot);
+    s.ShowMeMoteIndicator = GetBool(general, "show_me_mote_indicator", s.ShowMeMoteIndicator);
     s.QuickbarGreyUnusable = GetBool(general, "quickbar_grey_unusable", s.QuickbarGreyUnusable);
     s.QuickbarPreciseStateDetection = GetBool(general, "quickbar_precise_state",
                                               s.QuickbarPreciseStateDetection);
@@ -623,6 +624,7 @@ void SaveSettings(const std::string& path) {
     f << "    \"send_targetable_on_target\": " << B(s.SendTargetableOnTarget) << ",\n";
     f << "    \"use_ai_icon_fallback\": "  << B(s.UseAIIconFallback) << ",\n";
     f << "    \"show_target_dot\": "        << B(s.ShowTargetDot)     << ",\n";
+    f << "    \"show_me_mote_indicator\": " << B(s.ShowMeMoteIndicator) << ",\n";
     f << "    \"quickbar_grey_unusable\": " << B(s.QuickbarGreyUnusable) << ",\n";
     f << "    \"quickbar_precise_state\": " << B(s.QuickbarPreciseStateDetection) << ",\n";
     f << "    \"quickbar_unusable_behavior\": " << (int)s.QuickbarUnusableBehavior << ",\n";

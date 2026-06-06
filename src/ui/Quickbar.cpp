@@ -1068,19 +1068,24 @@ void QuickbarRender() {
                 } else {  // MeMote
                     auto it = meMotesById.find(ref.Id);
                     if (it == meMotesById.end()) continue;
+                    // Half-filled /me-mote (empty Name or empty TextDefault):
+                    // invisible until both required fields land. Ref stays in
+                    // storage; completing it pops the cell back into view.
+                    if (!IsMeMoteRenderable(*it->second)) continue;
                     items.push_back({ nullptr, it->second, (int)i, /*unlocked=*/true, std::string() });
                 }
             }
         } else if (activeCat.kind == QbCatKind::MeMotes) {
-            // Dedicated /me-motes category: surface every /me-mote, sorted
-            // by Name (or Id when Name empty).
-            for (const auto& kv : meMotesById)
+            // Dedicated /me-motes category: surface every renderable
+            // /me-mote (skip half-filled entries with empty Name or empty
+            // TextDefault), sorted by Name.
+            for (const auto& kv : meMotesById) {
+                if (!IsMeMoteRenderable(*kv.second)) continue;
                 items.push_back({ nullptr, kv.second, -1, /*unlocked=*/true, std::string() });
+            }
             std::sort(items.begin(), items.end(),
                 [](const CellInfo& a, const CellInfo& b) {
-                    const std::string& na = !a.m->Name.empty() ? a.m->Name : a.m->Id;
-                    const std::string& nb = !b.m->Name.empty() ? b.m->Name : b.m->Id;
-                    return na < nb;
+                    return a.m->Name < b.m->Name;
                 });
         } else {
             // Built-in Emote category: pull straight from the catalog by class,

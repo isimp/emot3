@@ -69,5 +69,10 @@ void DrawTrashIcon(ImVec2 c, float r, ImU32 col, ImDrawList* dl = nullptr);
 //   DrawTargetableDot: small upper-right corner indicator. dotSz is the
 //     caller-computed diameter (kept consistent across view modes); alpha is
 //     caller-supplied so the dot dims with the cell.
+//   DrawMeMoteIndicator: small upper-LEFT corner accent (a chat-blue filled
+//     circle) marking a /me-mote cell. Different corner from the target dot
+//     so the two never visually clash. Drawn procedurally (no texture);
+//     indSz is the diameter in pixels.
 void DrawLockOverlay();
 void DrawTargetableDot(float dotSz, float alphaMul);
+void DrawMeMoteIndicator(float indSz, float alphaMul);

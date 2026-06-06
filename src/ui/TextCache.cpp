@@ -51,7 +51,14 @@ struct FKeyHash {
 // version counter, the cache reads it). No mutex needed.
 std::unordered_map<EKey, TextCache::EllipsizedEntry, EKeyHash> s_emap;
 std::unordered_map<FKey, TextCache::FitEntry,        FKeyHash> s_fmap;
-uint64_t s_lastVersion  = 0;
+// Two version counters because the cache is shared by Emote and /me-mote cells
+// (CellInfo carries either e or m; RenderEmoteCell/RenderMeMoteCellBody both
+// call EllipsizeCached + FitNameCached with their own Ids). A Name edit in
+// either catalog must invalidate the cached labels — observe both versions and
+// nuke the maps when either changes. Adding a third catalog later means one
+// more `s_lastFooV` field + branch here, nothing else.
+uint64_t s_lastEmoteV  = 0;
+uint64_t s_lastMeMoteV = 0;
 float    s_lastFontSize = 0.f;
 
 // Quantize maxW to the nearest integer pixel. The original Ellipsize compared
@@ -64,14 +71,18 @@ inline int Quantize(float maxW) {
 
 // Clear both maps + reseed the version/font epoch when an invalidation event
 // fired between this lookup and the previous one. Called at the top of each
-// public *Cached function so callers can't forget.
+// public *Cached function so callers can't forget. The epoch is "either
+// catalog's version OR the font" — any change blows the maps so labels
+// re-shape with current data.
 inline void MaintainEpoch() {
-    const uint64_t v = g_EmoteCatalogVersion.load(std::memory_order_relaxed);
-    const float    f = ImGui::GetFontSize();
-    if (v != s_lastVersion || f != s_lastFontSize) {
+    const uint64_t ev = g_EmoteCatalogVersion.load(std::memory_order_relaxed);
+    const uint64_t mv = g_MeMotesVersion.load(std::memory_order_relaxed);
+    const float    f  = ImGui::GetFontSize();
+    if (ev != s_lastEmoteV || mv != s_lastMeMoteV || f != s_lastFontSize) {
         s_emap.clear();
         s_fmap.clear();
-        s_lastVersion  = v;
+        s_lastEmoteV   = ev;
+        s_lastMeMoteV  = mv;
         s_lastFontSize = f;
     }
 }

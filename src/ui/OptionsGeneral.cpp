@@ -186,6 +186,11 @@ void RenderGeneralOptionsTab() {
 
     CheckboxWithSaveAndTooltip("opt.gen.show_target_dot", &g_Settings.ShowTargetDot, /*defaultIsOn=*/true);
 
+    // /me-mote indicator — small upper-left accent on /me-mote cells, marks
+    // them as distinct from regular Emote cells. Same paragraph as the
+    // target-dot toggle since they're conceptual siblings.
+    CheckboxWithSaveAndTooltip("opt.gen.show_me_mote_indicator", &g_Settings.ShowMeMoteIndicator, /*defaultIsOn=*/true);
+
     // How unusable emotes present on the Quickbar - one dropdown over the two
     // settings: Grey out / Hide / Do nothing. "Do nothing" is the off state
     // (QuickbarGreyUnusable=false), which also stops the send gate refusing

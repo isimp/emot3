@@ -889,6 +889,11 @@ void AddonRender() {
                     auto it = meMotesById.find(ref.Id);
                     if (it == meMotesById.end()) continue;
                     const MeMote* m = it->second;
+                    // A half-filled /me-mote (empty Name or empty
+                    // TextDefault) is invisible until the user finishes it.
+                    // The ref stays in storage so re-completing it pops back
+                    // into view here.
+                    if (!IsMeMoteRenderable(*m)) continue;
                     ++catTotal[ci];
                     catItems[ci].push_back({ nullptr, m, (int)i, /*unlocked=*/true, std::string() });
                 }
@@ -904,14 +909,17 @@ void AddonRender() {
             if (!passes(e, note)) continue;
             (e.IsCore ? coreItems : unlockItems).push_back({ &e, nullptr, -1, isUnlk(e), std::move(note) });
         }
-        // /me-mote built-in section ("Text" / "/me-motes"). All entries are
-        // surfaced; the user's favorites list (above) may also reference some
-        // of them — that's fine, they show in both places like Emote
-        // favorites would if we didn't hide-when-favorited (we don't for
-        // /me-motes since the Library section is the primary discovery
+        // /me-mote built-in section. Surfaces every renderable /me-mote
+        // (a half-filled entry — empty Name or empty TextDefault — is
+        // hidden until both required fields land). The favorites list may
+        // also reference some — that's fine, they show in both places like
+        // Emote favorites would if we didn't hide-when-favorited (we don't
+        // for /me-motes since the Library section is the primary discovery
         // surface for them).
-        for (const auto& kv : meMotesById)
+        for (const auto& kv : meMotesById) {
+            if (!IsMeMoteRenderable(*kv.second)) continue;
             meMoteItems.push_back({ nullptr, kv.second, -1, /*unlocked=*/true, std::string() });
+        }
 
         auto byName = [](const CellInfo& a, const CellInfo& b) {
             // Both sides are Emote cells in coreItems/unlockItems (built

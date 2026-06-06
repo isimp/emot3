@@ -85,6 +85,17 @@ void SaveMeMotesJson(const std::string& path);
 // FindEmote).
 const MeMote* FindMeMote(const std::string& id);
 
+// A /me-mote is renderable in the Library / Quickbar / favorites cells only
+// when it carries both a display label (Name) and a body to send on click
+// (TextDefault). Empty Name renders an unreadable letter-fallback cell with
+// no tooltip text; empty TextDefault means a click sends nothing. A
+// half-filled entry (the user just created one and only typed the Id) is
+// invisible until both required fields land, but stays in the editor so the
+// user can finish it. Inline so callers don't need a separate TU dep.
+inline bool IsMeMoteRenderable(const MeMote& m) {
+    return !m.Name.empty() && !m.TextDefault.empty();
+}
+
 // Normalize a free-form string into a /me-mote Id: trim, lowercase ASCII,
 // replace anything that isn't [a-z0-9_] with '_', collapse runs of '_', and
 // trim leading/trailing '_'. Mirrors the NormalizeEmoteCommand invariant of
