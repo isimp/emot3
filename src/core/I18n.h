@@ -70,3 +70,12 @@ void TooltipOnOff(const char* onKey, const char* offKey, bool defaultIsOn);
 // is the per-option explanation; introKey (may be null) is a wrapped lead line.
 struct TooltipOption { const char* labelKey; const char* descKey; bool isDefault; };
 void TooltipOptions(const char* introKey, const TooltipOption* options, int count);
+
+// --- Dev-tool introspection (used by devtools/MemoryMonitor) -----------
+// Ungated (not behind EMOT3_DEVTOOLS). The L() cache grows with the unique
+// set of keys actually translated this session - useful as a leak proxy if
+// it ever grew unbounded. ApproxBytes sums map-node overhead + per-entry
+// string capacities. Within ~2x; the shape over time matters, not the
+// absolute number.
+size_t TranslationCacheSize();
+size_t TranslationCacheApproxBytes();

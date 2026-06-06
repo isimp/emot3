@@ -175,4 +175,43 @@ const FitEntry& FitNameCached(const std::string& emoteId,
     return ins.first->second;
 }
 
+// --- Dev-tool introspection -------------------------------------------------
+// Implementations live in this TU because the key/value types (EKey/FKey/
+// EllipsizedEntry/FitEntry) are file-private. sizeof() is taken here so the
+// header doesn't have to expose them.
+
+size_t EllipsizeMapSize() { return s_emap.size(); }
+size_t FitMapSize()       { return s_fmap.size(); }
+
+size_t ApproxBytes() {
+    // MSVC SSO threshold: 15 chars in-struct. Beyond that, std::string holds
+    // capacity+1 heap bytes (capacity chars + null terminator). Allocator may
+    // round up; the estimate is within ~2x by design.
+    auto strHeap = [](const std::string& s) -> size_t {
+        return s.capacity() > 15 ? s.capacity() + 1 : 0;
+    };
+
+    size_t bytes = 0;
+
+    // Ellipsize map: bucket array + per-node overhead + per-entry strings.
+    // 24 = rough MSVC x64 unordered_map node header (next ptr + cached hash +
+    // padding). EllipsizedEntry holds one std::string (label) inline.
+    bytes += s_emap.bucket_count() * sizeof(void*);
+    bytes += s_emap.size() * (sizeof(EKey) + sizeof(EllipsizedEntry) + 24);
+    for (const auto& kv : s_emap) {
+        bytes += strHeap(kv.first.id);
+        bytes += strHeap(kv.second.label);
+    }
+
+    // FitName map: same shape, but FitEntry holds two strings (line1, line2).
+    bytes += s_fmap.bucket_count() * sizeof(void*);
+    bytes += s_fmap.size() * (sizeof(FKey) + sizeof(FitEntry) + 24);
+    for (const auto& kv : s_fmap) {
+        bytes += strHeap(kv.first.id);
+        bytes += strHeap(kv.second.line1);
+        bytes += strHeap(kv.second.line2);
+    }
+    return bytes;
+}
+
 }  // namespace TextCache

@@ -58,6 +58,7 @@
     <ClCompile Include="devtools\DevStateInspector.cpp"><Filter>devtools</Filter></ClCompile>
     <ClCompile Include="devtools\NotifierDebug.cpp">   <Filter>devtools</Filter></ClCompile>
     <ClCompile Include="devtools\UpdateCheckDebug.cpp"><Filter>devtools</Filter></ClCompile>
+    <ClCompile Include="devtools\MemoryMonitor.cpp">   <Filter>devtools</Filter></ClCompile>
     <ClCompile Include="ui\Feedback.cpp">         <Filter>ui</Filter></ClCompile>
     <ClCompile Include="data\EmoteData.cpp">      <Filter>data</Filter></ClCompile>
     <ClCompile Include="data\Favorites.cpp">      <Filter>data</Filter></ClCompile>
@@ -99,6 +100,7 @@
     <ClInclude Include="devtools\QuickbarDebug.h"> <Filter>devtools</Filter></ClInclude>
     <ClInclude Include="devtools\NotifierDebug.h"> <Filter>devtools</Filter></ClInclude>
     <ClInclude Include="devtools\UpdateCheckDebug.h"><Filter>devtools</Filter></ClInclude>
+    <ClInclude Include="devtools\MemoryMonitor.h">    <Filter>devtools</Filter></ClInclude>
     <ClInclude Include="ui\Feedback.h">    <Filter>ui</Filter></ClInclude>
     <ClInclude Include="core\I18n.h">        <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\Globals.h">     <Filter>core</Filter></ClInclude>
