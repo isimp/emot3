@@ -36,11 +36,13 @@
 static char g_SearchBuf[64] = {};
 
 // Collapse / expand every Library section at once: each user favorites category
-// plus the two built-in sections (Core / Unlockable). One save covers them all.
+// plus the three built-in sections (Core / Unlockable / /me-motes). One save
+// covers them all.
 static void SetAllSectionsCollapsed(bool c) {
     for (auto& cat : g_Settings.FavoriteCategories) cat.Collapsed = c;
     g_Settings.MainCoreCollapsed     = c;
     g_Settings.MainUnlockedCollapsed = c;
+    g_Settings.MainMeMotesCollapsed  = c;
     if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
 }
 
