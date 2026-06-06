@@ -56,6 +56,20 @@ inline int GetInt(const json& j, const char* key, int def) {
     return def;
 }
 
+// Migration helper for fields that were once a JSON bool and are now an enum
+// (e.g. snap_scroll: was true/false, now 0/1/2). Reads either form: a stored
+// boolean maps true -> 1, false -> 0; a stored integer is returned as-is; any
+// other type (or absent key) falls back to def. Same never-throw contract as
+// GetBool / GetInt.
+inline int GetIntOrBool(const json& j, const char* key, int def) {
+    if (!j.is_object()) return def;
+    auto it = j.find(key);
+    if (it == j.end()) return def;
+    if (it->is_number_integer()) return it->get<int>();
+    if (it->is_boolean())        return it->get<bool>() ? 1 : 0;
+    return def;
+}
+
 // Accepts any JSON number (integer or float), so `"icon_scale": 1` reads fine.
 inline float GetFloat(const json& j, const char* key, float def) {
     if (!j.is_object()) return def;

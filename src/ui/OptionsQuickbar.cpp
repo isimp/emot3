@@ -319,9 +319,33 @@ void RenderQuickbarOptionsTab() {
         }
     }
 
-    CheckboxWithSaveAndTooltip("opt.qb.hscroll", &g_Settings.QuickbarHorizontalScroll, /*defaultIsOn=*/false);
+    // Snap scrolling: Off (smooth) / Cells (one notch = one emote) / Pages
+    // (one notch = one full viewport's worth of cells). Mirrors the scroll-
+    // indicator combo's shape above; enum maps straight to index 0/1/2.
+    {
+        const char* snapNames[] = { L("opt.qb.snap_scroll_off"),
+                                    L("opt.qb.snap_scroll_cells"),
+                                    L("opt.qb.snap_scroll_pages") };
+        int snapIdx = (int)g_Settings.QuickbarSnapScroll;
+        ImGui::Text("%s", L("opt.qb.snap_scroll"));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.f);
+        if (ImGui::Combo("##qbsnapscroll", &snapIdx, snapNames, IM_ARRAYSIZE(snapNames))) {
+            g_Settings.QuickbarSnapScroll = (EQbScrollSnap)snapIdx;
+            LOG_TRACE("setting quickbar.snap_scroll = %d", (int)g_Settings.QuickbarSnapScroll);
+            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        }
+        if (ImGui::IsItemHovered()) {
+            static const TooltipOption kSnapOpts[] = {
+                { "opt.qb.snap_scroll_off",   "opt.qb.snap_scroll_off.desc",   false },
+                { "opt.qb.snap_scroll_cells", "opt.qb.snap_scroll_cells.desc", true  },
+                { "opt.qb.snap_scroll_pages", "opt.qb.snap_scroll_pages.desc", false },
+            };
+            TooltipOptions("opt.qb.snap_scroll.intro", kSnapOpts, IM_ARRAYSIZE(kSnapOpts));
+        }
+    }
 
-    CheckboxWithSaveAndTooltip("opt.qb.snap_scroll", &g_Settings.QuickbarSnapScroll, /*defaultIsOn=*/true);
+    CheckboxWithSaveAndTooltip("opt.qb.hscroll", &g_Settings.QuickbarHorizontalScroll, /*defaultIsOn=*/false);
 
     CheckboxWithSaveAndTooltip("opt.qb.scroll_wrap", &g_Settings.QuickbarScrollWrap, /*defaultIsOn=*/false);
 

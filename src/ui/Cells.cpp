@@ -613,11 +613,25 @@ GridFit ComputeQuickbarGridFit(int itemCount, ImVec2 avail,
     GridFit g;
     g.visCols = std::max(1, (int)((avail.x + spacing.x + kGridFitEps) / stepX));
     g.visRows = std::max(1, (int)((avail.y + spacing.y + kGridFitEps) / stepY));
+
+    // Pages mode: round the scroll-axis dimension UP to a whole-page multiple,
+    // so the last partial page gets its own dedicated viewport (with empty
+    // cells filling out the page) instead of overlapping with the previous
+    // page's content. Empty padded cells are never rendered - the cell loop
+    // in RenderEmoteSection clamps jEnd to items.size(); the drop zone covers
+    // them as an "append at end" target; the end Dummy extends to the padded
+    // ContentSize so ImGui's scrollMax matches g_QbMaxScroll*. Bonus: with
+    // pad on, maxScroll is an exact multiple of pageStep, so page boundaries
+    // (incl. the end) all land cleanly. Off / Cells are unchanged.
+    const bool padToPage = (g_Settings.QuickbarSnapScroll == EQbScrollSnap::Pages);
+
     if (horizontal) {
         // Column-major: rows are the constraint (capacity vertically),
         // cells flow rightward into additional columns when items > rows.
         g.rows = g.visRows;
         g.cols = std::max(1, (itemCount + g.rows - 1) / g.rows);
+        if (padToPage)
+            g.cols = ((g.cols + g.visCols - 1) / g.visCols) * g.visCols;
         g.overflowsX = g.cols > g.visCols;
         g.maxScrollX = std::max(0, g.cols - g.visCols) * stepX;
     } else {
@@ -625,6 +639,8 @@ GridFit ComputeQuickbarGridFit(int itemCount, ImVec2 avail,
         // cells flow downward into additional rows when items > cols.
         g.cols = g.visCols;
         g.rows = std::max(1, (itemCount + g.cols - 1) / g.cols);
+        if (padToPage)
+            g.rows = ((g.rows + g.visRows - 1) / g.visRows) * g.visRows;
         g.overflowsY = g.rows > g.visRows;
         g.maxScrollY = std::max(0, g.rows - g.visRows) * stepY;
     }
@@ -839,7 +855,7 @@ void RenderEmoteSection(const std::vector<CellInfo>& items, bool allowReorder,
         // reservation here - otherwise it double-counts and drops a row. Only
         // pure free mode (neither snap) anticipates ImGui's bar.
         bool         fit   = isQuickbar && (g_Settings.QuickbarSnapWindow ||
-                                            g_Settings.QuickbarSnapScroll);
+                                            g_Settings.QuickbarSnapScroll != EQbScrollSnap::Off);
         if (fit) {
             // Owned-scroll Quickbar: shared canonical math via the helper, so
             // Quickbar.cpp's pre-BeginChild overflow prediction (which calls the
@@ -880,7 +896,7 @@ void RenderEmoteSection(const std::vector<CellInfo>& items, bool allowReorder,
             return std::max(1, (int)((width + spacingX + kGridFitEps) / (cellW + spacingX)));
         };
         const bool qbOwnScroll = g_Settings.QuickbarSnapWindow ||
-                                  g_Settings.QuickbarSnapScroll;
+                                  g_Settings.QuickbarSnapScroll != EQbScrollSnap::Off;
         if (isQuickbar && qbOwnScroll) {
             // Owned-scroll Quickbar: shared canonical math via the helper, so
             // Quickbar.cpp's pre-BeginChild overflow prediction (same helper,

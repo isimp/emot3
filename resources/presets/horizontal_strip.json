@@ -22,7 +22,7 @@
     "show_category_bar": true,
     "show_title": true,
     "show_tooltips": true,
-    "snap_scroll": true,
+    "snap_scroll": 2,
     "snap_window": true,
     "use_dropdown": false,
     "view_mode": 3,
