@@ -25,6 +25,8 @@ them from the official ArenaNet artwork.
   between them from the addon's icon.
 - **Your own catalog** - the emote list is a file you own, not hard-coded. Add,
   edit, or remove any emote without waiting for an update.
+- **/me-motes** - your own custom `/me` chat emotes with up to three
+  variants per entry; pick which to fire from the right-click menu.
 - **Multilingual** - emote commands in all four GW2 languages; UI in English and
   German, with more easy to add.
 
