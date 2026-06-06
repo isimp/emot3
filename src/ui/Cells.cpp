@@ -1019,10 +1019,12 @@ static void HandleGridDropZone(const std::vector<CellInfo>& items, const GridLay
         // (via StampDragReject) an explanatory line on the drag tooltip. We
         // never accept delivery, so dropping still does nothing.
         //
-        // categoryIdx is -1 for BOTH built-in sections, so key the ImGui id off
-        // the first emote's address (distinct per section, stable per frame) to
-        // avoid an id collision between the two invisible buttons. items is
-        // non-empty here - the function returns early when it is.
+        // categoryIdx is -1 for ALL built-in sections (Core / Unlockable /
+        // /me-motes), so key the ImGui id off the first cell's address (e or m,
+        // distinct per section, stable per frame) to avoid an id collision
+        // between their invisible buttons. The /me-mote section has e == null,
+        // so fall back to m — never PushID(nullptr). items is non-empty here -
+        // the function returns early when it is.
         //
         // Quickbar gate (the `!isQuickbar || GetDragDropPayload()` above): this
         // grid-spanning button sets HoveredId over the whole body, which blocks
@@ -1031,7 +1033,8 @@ static void HandleGridDropZone(const std::vector<CellInfo>& items, const GridLay
         // this reject target WHILE a drag is in flight - when idle we skip it so
         // the QB body stays plain window void (movable / click-through). The
         // main panel (!isQuickbar) submits it every frame as before.
-        ImGui::PushID((const void*)items[0].e);
+        ImGui::PushID(items[0].e ? (const void*)items[0].e
+                                 : (const void*)items[0].m);
         ImGui::SetCursorPos(ImVec2(g.baseX, g.baseY));
         ImGui::InvisibleButton("##builtin_noreorder", ImVec2(g.gridW(), g.gridH()));
         ImGui::SetItemAllowOverlap();
@@ -1043,14 +1046,28 @@ static void HandleGridDropZone(const std::vector<CellInfo>& items, const GridLay
                 // section the drag STARTED in. Catalog-sourced drags begin with
                 // the cursor over this very section, so stamping on frame 1 read
                 // as an instant "can't drop here" error before the user moved.
-                // The source section is the one still showing the dragged emote
-                // (a drag doesn't remove it until drop), so detect it by id
-                // membership. Once the cursor leaves onto a different no-drop
-                // section, the reject (tooltip + outline) appears as before.
+                // The source section is the one still showing the dragged cell
+                // (a drag doesn't remove it until drop), so detect it by
+                // (type, Id) membership. Type matters: an Emote and a /me-mote
+                // can share an Id, so an Id-only test would mis-identify the
+                // source — suppressing the reject on a built-in section that
+                // should refuse, or (for a /me-mote section, where it.e is null)
+                // failing to recognize the true source so it instantly rejects.
+                // Once the cursor leaves onto a different no-drop section, the
+                // reject (tooltip + outline) appears as before. Each cell is
+                // exactly one kind (it.e XOR it.m).
                 const EmoteDragPayload* src = (const EmoteDragPayload*)pl->Data;
                 bool isSourceSection = false;
-                for (const auto& it : items)
-                    if (it.e && it.e->Id == src->id) { isSourceSection = true; break; }
+                for (const auto& it : items) {
+                    const std::string* itId = it.e ? &it.e->Id
+                                                   : (it.m ? &it.m->Id : nullptr);
+                    EFavoriteRefType itType = it.e ? EFavoriteRefType::Emote
+                                                   : EFavoriteRefType::MeMote;
+                    if (itId && itType == src->type && *itId == src->id) {
+                        isSourceSection = true;
+                        break;
+                    }
+                }
                 if (!isSourceSection) {
                     // Anchor the refusal on the whole section (screen space:
                     // window pos minus scroll, matching the insertion-line math),
