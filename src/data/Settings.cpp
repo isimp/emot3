@@ -279,11 +279,17 @@ bool SanitizeSettings(Settings& s) {
     }
 
     // Favorites: fix empty/duplicate category names and drop empty/duplicate
-    // emote ids. Each emote is meant to live in exactly one category, so a
-    // repeated id (within or across categories, from a hand edit) keeps its
-    // first occurrence only.
+    // refs. Each (type, id) pair lives in exactly one category, so a repeated
+    // pair (within or across categories, from a hand edit) keeps its first
+    // occurrence only. A /me-mote and an Emote with the same Id are distinct
+    // entries — the dedup key is the pair, not just the Id.
     std::unordered_set<std::string> seenNames;
-    std::unordered_set<std::string> seenIds;
+    auto refKey = [](const FavoriteRef& r) {
+        // Type is single-byte; prefix it with a non-alphanumeric separator so
+        // the resulting string is unique vs. any Id form.
+        return std::string(1, (char)('a' + (int)r.Type)) + ':' + r.Id;
+    };
+    std::unordered_set<std::string> seenRefs;
     for (auto& cat : s.FavoriteCategories) {
         std::string nm = TrimName(cat.Name);
         if (nm.empty()) nm = "Favorites";
@@ -300,17 +306,19 @@ bool SanitizeSettings(Settings& s) {
         }
         seenNames.insert(nm);
 
-        std::vector<std::string> kept;
-        kept.reserve(cat.Emotes.size());
-        for (const auto& id : cat.Emotes) {
-            if (id.empty() || seenIds.count(id)) { changed = true; continue; }
-            seenIds.insert(id);
-            kept.push_back(id);
+        std::vector<FavoriteRef> kept;
+        kept.reserve(cat.Refs.size());
+        for (const auto& r : cat.Refs) {
+            if (r.Id.empty()) { changed = true; continue; }
+            std::string key = refKey(r);
+            if (seenRefs.count(key)) { changed = true; continue; }
+            seenRefs.insert(std::move(key));
+            kept.push_back(r);
         }
-        if (kept.size() != cat.Emotes.size()) {
-            LOG_WARNING("settings: favorites \"%s\" dropped %d empty/duplicate id(s)",
-                        cat.Name.c_str(), (int)(cat.Emotes.size() - kept.size()));
-            cat.Emotes = std::move(kept);
+        if (kept.size() != cat.Refs.size()) {
+            LOG_WARNING("settings: favorites \"%s\" dropped %d empty/duplicate ref(s)",
+                        cat.Name.c_str(), (int)(cat.Refs.size() - kept.size()));
+            cat.Refs = std::move(kept);
         }
     }
 
@@ -488,8 +496,44 @@ bool LoadSettings(const std::string& path) {
                 if (!catJ.is_object()) continue;
                 FavoriteCategory cat;
                 cat.Name      = GetString(catJ, "name", std::string());
-                cat.Emotes    = readStringArray(GetArray(catJ, "emotes"));
                 cat.Collapsed = GetBool(catJ, "collapsed", false);
+
+                // Refs schema: new "refs" is an object array with {type, id}
+                // per entry. Legacy "emotes" is a string array of Emote-typed
+                // Ids. Accept both — refs wins if both are present. The
+                // "type" field accepts a numeric (0=Emote, 1=MeMote, matches
+                // the enum) OR a string ("emote", "me_mote") for hand-edit
+                // readability. Unknown types are dropped (SanitizeSettings
+                // logs the dropped count).
+                const json& refsJ = GetArray(catJ, "refs");
+                if (!refsJ.empty()) {
+                    cat.Refs.reserve(refsJ.size());
+                    for (const auto& itJ : refsJ) {
+                        if (!itJ.is_object()) continue;
+                        FavoriteRef r;
+                        // Type: prefer the numeric form; fall back to the
+                        // string form for hand-edits.
+                        auto itType = itJ.find("type");
+                        if (itType != itJ.end() && itType->is_number_integer()) {
+                            int v = itType->get<int>();
+                            if (v == (int)EFavoriteRefType::MeMote) r.Type = EFavoriteRefType::MeMote;
+                            else                                    r.Type = EFavoriteRefType::Emote;
+                        } else if (itType != itJ.end() && itType->is_string()) {
+                            const std::string s = itType->get<std::string>();
+                            if (s == "me_mote") r.Type = EFavoriteRefType::MeMote;
+                            else                r.Type = EFavoriteRefType::Emote;
+                        }
+                        r.Id = GetString(itJ, "id", std::string());
+                        if (r.Id.empty()) continue;  // dropped by sanitize-equiv
+                        cat.Refs.push_back(std::move(r));
+                    }
+                } else {
+                    // Legacy "emotes" string array → all Emote-typed.
+                    for (const auto& id : readStringArray(GetArray(catJ, "emotes"))) {
+                        if (id.empty()) continue;
+                        cat.Refs.push_back(FavoriteRef{ EFavoriteRefType::Emote, id });
+                    }
+                }
                 s.FavoriteCategories.push_back(std::move(cat));
             }
         }
@@ -624,15 +668,21 @@ void SaveSettings(const std::string& path) {
     }
     f << "],\n";
 
-    // --- favorites (one category per line, emotes inline) -------------
+    // --- favorites (one category per line, refs inline) ---------------
+    // Always write the new "refs" object-array form (no legacy "emotes"
+    // string array fallback). Each ref is `{ "type": <int>, "id": "<id>" }`;
+    // type is 0 (Emote) or 1 (MeMote) — the EFavoriteRefType numeric values.
+    // The loader accepts both numeric and the string forms ("emote",
+    // "me_mote") to keep hand-edits forgiving.
     f << "  \"favorites\": [";
     for (size_t c = 0; c < s.FavoriteCategories.size(); ++c) {
         const auto& cat = s.FavoriteCategories[c];
         if (c) f << ",";
-        f << "\n    { \"name\": " << quoted(cat.Name) << ", \"emotes\": [";
-        for (size_t k = 0; k < cat.Emotes.size(); ++k) {
+        f << "\n    { \"name\": " << quoted(cat.Name) << ", \"refs\": [";
+        for (size_t k = 0; k < cat.Refs.size(); ++k) {
             if (k) f << ", ";
-            f << quoted(cat.Emotes[k]);
+            f << "{\"type\": " << (int)cat.Refs[k].Type
+              << ", \"id\": " << quoted(cat.Refs[k].Id) << "}";
         }
         f << "], \"collapsed\": " << B(cat.Collapsed) << " }";
     }

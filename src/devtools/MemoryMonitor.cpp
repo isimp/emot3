@@ -264,12 +264,12 @@ void Sample(std::vector<Snapshot>& out) {
         size_t total = 0;
         size_t bytes = g_Settings.FavoriteCategories.capacity() * sizeof(FavoriteCategory);
         for (const auto& c : g_Settings.FavoriteCategories) {
-            total += c.Emotes.size();
+            total += c.Refs.size();
             bytes += string_heap(c.Name);
-            bytes += c.Emotes.capacity() * sizeof(std::string);
-            for (const auto& id : c.Emotes) bytes += string_heap(id);
+            bytes += c.Refs.capacity() * sizeof(FavoriteRef);
+            for (const auto& r : c.Refs) bytes += string_heap(r.Id);
         }
-        out.push_back({ "favorites (total ids)", total, bytes });
+        out.push_back({ "favorites (total refs)", total, bytes });
     }
 
     // ManuallyUnlocked - one row per non-core unlocked emote.

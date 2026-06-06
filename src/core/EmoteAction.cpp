@@ -402,12 +402,17 @@ void MarkEmoteLocked(const std::string& id) {
     auto& u = g_Settings.ManuallyUnlocked;
     bool wasUnlocked = std::find(u.begin(), u.end(), id) != u.end();
     u.erase(std::remove(u.begin(), u.end(), id), u.end());
+    // Evict only Emote-typed refs matching `id` — a /me-mote that happens to
+    // share the Id stays put.
     int evicted = 0;
     for (auto& cat : g_Settings.FavoriteCategories) {
-        size_t before = cat.Emotes.size();
-        cat.Emotes.erase(std::remove(cat.Emotes.begin(), cat.Emotes.end(), id),
-                         cat.Emotes.end());
-        evicted += (int)(before - cat.Emotes.size());
+        size_t before = cat.Refs.size();
+        cat.Refs.erase(std::remove_if(cat.Refs.begin(), cat.Refs.end(),
+                                      [&](const FavoriteRef& r) {
+                                          return r.Type == EFavoriteRefType::Emote && r.Id == id;
+                                      }),
+                       cat.Refs.end());
+        evicted += (int)(before - cat.Refs.size());
     }
     if (wasUnlocked || evicted > 0) {
         LOG_DEBUG("Marked %s as locked (evicted from %d favorite slot(s))",

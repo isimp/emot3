@@ -50,12 +50,33 @@ enum class EQbScrollIndicator { Off = 0, Hints = 1, Scrollbar = 2 };
 // custom slim scrollbar). Default Cells.
 enum class EQbScrollSnap { Off = 0, Cells = 1, Pages = 2 };
 
+// Which catalog a FavoriteRef points into. Numeric for JSON stability —
+// settings.json stores "type": 0 for an Emote, "type": 1 for a /me-mote
+// (legacy "emote" / "me_mote" strings also accepted on load for forward
+// compat with hand-edits). Adding a third kind later means appending an
+// enum value + extending the load/save table — no migration of stored
+// values.
+enum class EFavoriteRefType { Emote = 0, MeMote = 1 };
+
+// One entry in a favorite category. Type-tagged so the renderer + send
+// pipeline can look the Id up in the right catalog. The Emote-id-only
+// form this replaced couldn't distinguish a /me-mote Id from an Emote Id,
+// so /me-motes couldn't be quick-accessed as favorites at all.
+struct FavoriteRef {
+    EFavoriteRefType Type = EFavoriteRefType::Emote;
+    std::string      Id;
+};
+
 struct FavoriteCategory {
-    std::string              Name;
-    std::vector<std::string> Emotes;  // emote IDs in user order
+    std::string                Name;
+    // Type-tagged refs in user order. Migrated from the legacy
+    // `std::vector<std::string> Emotes` (interpreted as Emote-typed Ids) at
+    // load — see Settings.cpp. Renamed from `Emotes` to `Refs` since the
+    // collection now mixes Emotes and /me-motes.
+    std::vector<FavoriteRef>   Refs;
     // Collapsed in the Library to just its header (the emote grid is hidden).
     // Per-category UI state, persisted in settings.json. Default expanded.
-    bool                     Collapsed = false;
+    bool                       Collapsed = false;
 };
 
 struct Settings {

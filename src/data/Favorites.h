@@ -5,25 +5,41 @@
 // manipulation against g_Settings.FavoriteCategories — no rendering.
 
 #include <string>
+#include "Settings.h"   // EFavoriteRefType for the type-tagged ref API
 
 // Trim leading/trailing spaces and tabs from a category/emote name.
 std::string TrimName(std::string s);
 
-// Favorites store stable emote ids (not commands) - callers pass e.Id.
-// Returns the index of the first category containing `id`, or -1.
-int  FindCategoryContaining(const std::string& id);
-bool IsFavorited(const std::string& id);
+// Generic, type-tagged API. Favorites mix Emote-typed refs and /me-mote-typed
+// refs in the same FavoriteCategory.Refs vector; every lookup keys on the
+// (type, id) pair so a /me-mote with id "wave" and an Emote with id "wave"
+// are distinct entries.
+int  FindCategoryContaining(EFavoriteRefType type, const std::string& id);
+bool IsFavorited           (EFavoriteRefType type, const std::string& id);
+// Move (type, id) into category catIdx. If already present in another
+// category, it's removed there first (each ref lives in exactly one
+// category). isLockedSource is the defensive locked-emote guard from the
+// click site (Emote-only concept; ignored for /me-mote refs).
+void AddRefToCategory      (int catIdx, EFavoriteRefType type, const std::string& id,
+                            bool isLockedSource = false);
+void RemoveRefFromCategories(EFavoriteRefType type, const std::string& id);
 
-// Move `id` into category `catIdx`. If already present in another
-// category, it's removed there first (each emote lives in one place).
-//   isLockedSource — defensive guard captured at the click site; locked
-//                    emotes refuse to be added even if a UI path slipped
-//                    through.
-void AddEmoteToCategory(int catIdx, const std::string& id,
-                        bool isLockedSource = false);
-
-// Remove `id` from every favorites category that contains it.
-void RemoveEmoteFromCategories(const std::string& id);
+// Emote convenience wrappers — preserve the historical call surface so
+// existing Emote-only call sites stay unchanged. Each routes to the
+// type-tagged form above with EFavoriteRefType::Emote.
+inline int  FindCategoryContaining(const std::string& emoteId) {
+    return FindCategoryContaining(EFavoriteRefType::Emote, emoteId);
+}
+inline bool IsFavorited(const std::string& emoteId) {
+    return IsFavorited(EFavoriteRefType::Emote, emoteId);
+}
+inline void AddEmoteToCategory(int catIdx, const std::string& emoteId,
+                               bool isLockedSource = false) {
+    AddRefToCategory(catIdx, EFavoriteRefType::Emote, emoteId, isLockedSource);
+}
+inline void RemoveEmoteFromCategories(const std::string& emoteId) {
+    RemoveRefFromCategories(EFavoriteRefType::Emote, emoteId);
+}
 
 // Returns true if any (other) category has the given display name.
 // excludeIdx lets the rename UI ignore the row it's editing.

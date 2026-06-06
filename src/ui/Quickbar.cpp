@@ -1039,10 +1039,15 @@ void QuickbarRender() {
         BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
 
         if (activeCat.kind == QbCatKind::Favorite) {
-            // Favorites: resolve the stored ids in the user's order.
+            // Favorites: resolve the stored refs in the user's order. /me-mote-
+            // typed refs are skipped here until the CellItem adapter ships
+            // (later checkpoint) — they're still stored on disk and surface
+            // in their own /me-mote Quickbar category.
             const auto& cat = g_Settings.FavoriteCategories[activeCat.favIdx];
-            for (size_t i = 0; i < cat.Emotes.size(); ++i) {
-                auto it = idx.byId.find(cat.Emotes[i]);
+            for (size_t i = 0; i < cat.Refs.size(); ++i) {
+                const auto& ref = cat.Refs[i];
+                if (ref.Type != EFavoriteRefType::Emote) continue;
+                auto it = idx.byId.find(ref.Id);
                 if (it == idx.byId.end()) continue;
                 const Emote* e = it->second;
                 bool unlk = idx.unlocked(*e);

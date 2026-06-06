@@ -884,11 +884,18 @@ void RenderEmotesTab() {
         if (ImGui::Button(L("opt.em.remove_all"), ImVec2(btnW, 0))) {
             ClearEmotes();
             g_EmoteLanguage.clear();
-            // Clearing the catalog must also drop the now-dangling emote ids
-            // from favorites and the manual-unlock list - otherwise the
+            // Clearing the catalog must also drop the now-dangling Emote-typed
+            // refs from favorites and the manual-unlock list - otherwise the
             // General-tab category counters keep counting ghosts. Keep the
-            // category names (user structure); just empty their emote lists.
-            for (auto& cat : g_Settings.FavoriteCategories) cat.Emotes.clear();
+            // category names (user structure) and any /me-mote-typed refs
+            // (a separate catalog, untouched by this clear).
+            for (auto& cat : g_Settings.FavoriteCategories) {
+                cat.Refs.erase(std::remove_if(cat.Refs.begin(), cat.Refs.end(),
+                                              [](const FavoriteRef& r) {
+                                                  return r.Type == EFavoriteRefType::Emote;
+                                              }),
+                               cat.Refs.end());
+            }
             g_Settings.ManuallyUnlocked.clear();
             if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
             if (!g_SettingsPath.empty())   SaveSettings(g_SettingsPath);

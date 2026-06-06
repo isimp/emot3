@@ -158,16 +158,22 @@ void ApplyEmoteDrop(const EmoteDragPayload& src, int dstCat, int gap) {
     int N = (int)g_Settings.FavoriteCategories.size();
     if (dstCat < 0 || dstCat >= N) return;
 
+    // The drag payload here always represents an Emote (the source is either
+    // the built-in catalog or another favorites category — both Emote-typed
+    // for now; /me-mote drag-drop arrives with the CellItem adapter in a
+    // later checkpoint). All inserts produce Emote-typed FavoriteRefs.
     if (src.categoryIdx < 0) {
-        // Built-in catalog source: insert the command, nothing to erase.
-        // Locked emotes can't be favorited (already blocked at the source,
-        // guarded again here). Skip if already present in this category.
+        // Built-in catalog source: insert the ref, nothing to erase. Locked
+        // emotes can't be favorited (already blocked at the source, guarded
+        // again here). Skip if already present in this category.
         if (src.isLocked) return;
-        auto& d = g_Settings.FavoriteCategories[dstCat].Emotes;
-        std::string id(src.id);
-        if (std::find(d.begin(), d.end(), id) != d.end()) return;
+        auto& d = g_Settings.FavoriteCategories[dstCat].Refs;
+        FavoriteRef ref{ EFavoriteRefType::Emote, std::string(src.id) };
+        if (std::find_if(d.begin(), d.end(), [&](const FavoriteRef& r) {
+                return r.Type == ref.Type && r.Id == ref.Id;
+            }) != d.end()) return;
         int ins = std::max(0, std::min(gap, (int)d.size()));
-        d.insert(d.begin() + ins, id);
+        d.insert(d.begin() + ins, std::move(ref));
     } else {
         int srcCat = src.categoryIdx, srcIdx = src.emoteIdx;
         // Locked emotes can reorder within their category but not move across.
@@ -175,24 +181,24 @@ void ApplyEmoteDrop(const EmoteDragPayload& src, int dstCat, int gap) {
         if (blocked || srcCat < 0 || srcCat >= N) return;
 
         if (srcCat == dstCat) {
-            auto& v = g_Settings.FavoriteCategories[srcCat].Emotes;
+            auto& v = g_Settings.FavoriteCategories[srcCat].Refs;
             if (srcIdx < 0 || srcIdx >= (int)v.size()) return;
-            std::string moved = v[srcIdx];
+            FavoriteRef moved = v[srcIdx];
             v.erase(v.begin() + srcIdx);
             // The erase shifts every slot after srcIdx down by one, so a gap
             // past the removed item lands one slot earlier than its index.
             int ins = (gap > srcIdx) ? gap - 1 : gap;
             ins = std::max(0, std::min(ins, (int)v.size()));
-            v.insert(v.begin() + ins, moved);
+            v.insert(v.begin() + ins, std::move(moved));
         } else {
-            auto& s = g_Settings.FavoriteCategories[srcCat].Emotes;
-            auto& d = g_Settings.FavoriteCategories[dstCat].Emotes;
+            auto& s = g_Settings.FavoriteCategories[srcCat].Refs;
+            auto& d = g_Settings.FavoriteCategories[dstCat].Refs;
             if (srcIdx < 0 || srcIdx >= (int)s.size()) return;
-            std::string moved = s[srcIdx];
+            FavoriteRef moved = s[srcIdx];
             s.erase(s.begin() + srcIdx);
             // d is a different vector than s, so the erase doesn't shift gap.
             int ins = std::max(0, std::min(gap, (int)d.size()));
-            d.insert(d.begin() + ins, moved);
+            d.insert(d.begin() + ins, std::move(moved));
         }
     }
     if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
@@ -1132,7 +1138,7 @@ bool RenderCategoryHeader(int categoryIdx, const char* name, bool searchActive) 
         // whole-section zone in MainPanel (CategoryReorderZone) is a much bigger,
         // easier target. The header keeps only the CAT_DRAG *source* above.
         if (collapsed && ImGui::BeginDragDropTarget()) {
-            if (AcceptEmoteDropInto(categoryIdx, (int)cats[categoryIdx].Emotes.size())) {
+            if (AcceptEmoteDropInto(categoryIdx, (int)cats[categoryIdx].Refs.size())) {
                 // Highlight the whole header so it reads as "drops into here".
                 ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
                 ImDrawList* dl = ImGui::GetWindowDrawList();

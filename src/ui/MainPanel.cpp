@@ -845,16 +845,28 @@ void AddonRender() {
         { PROFILE_SCOPE("mp.build");  // dev perf overlay
         // Populate the per-frame lookup tables (rebuilt each frame, never cached).
         BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
+        // favoritedIds tracks which Emote IDs are currently favorited (drives the
+        // "already in favorites" star on Emote cells). /me-mote-typed refs are
+        // skipped — they have their own favorited surface once the CellItem
+        // adapter ships.
         for (const auto& c : g_Settings.FavoriteCategories)
-            favoritedIds.insert(c.Emotes.begin(), c.Emotes.end());
+            for (const auto& r : c.Refs)
+                if (r.Type == EFavoriteRefType::Emote)
+                    favoritedIds.insert(r.Id);
 
         // One filtered list per favorites category, preserving user order.
         // catTotal counts real-but-hidden entries so the empty-state
         // message can distinguish "filtered out" from "actually empty."
         for (size_t ci = 0; ci < g_Settings.FavoriteCategories.size(); ++ci) {
             const auto& cat = g_Settings.FavoriteCategories[ci];
-            for (size_t i = 0; i < cat.Emotes.size(); ++i) {
-                auto it = idx.byId.find(cat.Emotes[i]);
+            for (size_t i = 0; i < cat.Refs.size(); ++i) {
+                const auto& ref = cat.Refs[i];
+                // /me-mote-typed refs are stored but not rendered here yet —
+                // the CellItem adapter + Library "Text" section land in a
+                // later checkpoint. Skipping them keeps the Emote-only render
+                // path correct until then; refs aren't dropped from storage.
+                if (ref.Type != EFavoriteRefType::Emote) continue;
+                auto it = idx.byId.find(ref.Id);
                 if (it == idx.byId.end()) continue;  // stale reference - not really "in" the category
                 const Emote* e = it->second;
                 ++catTotal[ci];

@@ -3,6 +3,7 @@
 #include "Logging.h"
 #include "Settings.h"
 #include "EmoteData.h"   // g_Emotes / g_EmotesMutex, for the catalog reconcile
+#include "MeMotes.h"     // g_MeMotes / g_MeMotesMutex, /me-mote reconcile half
 
 #include <algorithm>
 #include <mutex>
@@ -15,48 +16,68 @@ std::string TrimName(std::string s) {
     return s;
 }
 
-int FindCategoryContaining(const std::string& id) {
+namespace {
+// One-liner: does this ref match (type, id)? Used by every helper below;
+// keeps the comparison consistent and the std::remove_if lambdas terse.
+inline bool RefEquals(const FavoriteRef& r, EFavoriteRefType type,
+                      const std::string& id) {
+    return r.Type == type && r.Id == id;
+}
+// Human-readable type tag for log messages — "emote" or "me-mote".
+inline const char* TypeTag(EFavoriteRefType t) {
+    return t == EFavoriteRefType::Emote ? "emote" : "me-mote";
+}
+} // namespace
+
+int FindCategoryContaining(EFavoriteRefType type, const std::string& id) {
     for (size_t i = 0; i < g_Settings.FavoriteCategories.size(); ++i) {
         const auto& cat = g_Settings.FavoriteCategories[i];
-        if (std::find(cat.Emotes.begin(), cat.Emotes.end(), id) != cat.Emotes.end())
-            return (int)i;
+        for (const auto& r : cat.Refs)
+            if (RefEquals(r, type, id)) return (int)i;
     }
     return -1;
 }
 
-bool IsFavorited(const std::string& id) {
-    return FindCategoryContaining(id) >= 0;
+bool IsFavorited(EFavoriteRefType type, const std::string& id) {
+    return FindCategoryContaining(type, id) >= 0;
 }
 
-void AddEmoteToCategory(int catIdx, const std::string& id, bool isLockedSource) {
+void AddRefToCategory(int catIdx, EFavoriteRefType type, const std::string& id,
+                      bool isLockedSource) {
     if (catIdx < 0 || catIdx >= (int)g_Settings.FavoriteCategories.size()) return;
-    int curr = FindCategoryContaining(id);
+    int curr = FindCategoryContaining(type, id);
     if (curr == catIdx) return;
     if (isLockedSource) {
         LOG_DEBUG("Refused to favorite locked emote %s", id.c_str());
         return;
     }
     if (curr >= 0) {
-        auto& src = g_Settings.FavoriteCategories[curr].Emotes;
-        src.erase(std::remove(src.begin(), src.end(), id), src.end());
-        LOG_DEBUG("Moved %s from \"%s\" to \"%s\"", id.c_str(),
+        auto& src = g_Settings.FavoriteCategories[curr].Refs;
+        src.erase(std::remove_if(src.begin(), src.end(),
+                                 [&](const FavoriteRef& r) { return RefEquals(r, type, id); }),
+                  src.end());
+        LOG_DEBUG("Moved %s %s from \"%s\" to \"%s\"", TypeTag(type), id.c_str(),
                   g_Settings.FavoriteCategories[curr].Name.c_str(),
                   g_Settings.FavoriteCategories[catIdx].Name.c_str());
     } else {
-        LOG_DEBUG("Added %s to favorites category \"%s\"", id.c_str(),
+        LOG_DEBUG("Added %s %s to favorites category \"%s\"",
+                  TypeTag(type), id.c_str(),
                   g_Settings.FavoriteCategories[catIdx].Name.c_str());
     }
-    g_Settings.FavoriteCategories[catIdx].Emotes.push_back(id);
+    g_Settings.FavoriteCategories[catIdx].Refs.push_back(FavoriteRef{ type, id });
     if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
 }
 
-void RemoveEmoteFromCategories(const std::string& id) {
+void RemoveRefFromCategories(EFavoriteRefType type, const std::string& id) {
     bool changed = false;
     for (auto& cat : g_Settings.FavoriteCategories) {
-        auto before = cat.Emotes.size();
-        cat.Emotes.erase(std::remove(cat.Emotes.begin(), cat.Emotes.end(), id),
-                         cat.Emotes.end());
-        if (cat.Emotes.size() != before) changed = true;
+        auto before = cat.Refs.size();
+        cat.Refs.erase(std::remove_if(cat.Refs.begin(), cat.Refs.end(),
+                                      [&](const FavoriteRef& r) {
+                                          return RefEquals(r, type, id);
+                                      }),
+                       cat.Refs.end());
+        if (cat.Refs.size() != before) changed = true;
     }
     if (changed && !g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
 }
@@ -73,7 +94,7 @@ void DeleteFavoriteCategory(int idx) {
     auto& cats = g_Settings.FavoriteCategories;
     if (idx < 0 || idx >= (int)cats.size()) return;
     std::string name = cats[idx].Name;
-    int  count      = (int)cats[idx].Emotes.size();
+    int  count      = (int)cats[idx].Refs.size();
     int  prevActive = g_Settings.QuickbarCategoryIdx;
     cats.erase(cats.begin() + idx);
     // Keep the Quickbar's active index valid + pointing at the same category
@@ -83,7 +104,7 @@ void DeleteFavoriteCategory(int idx) {
     if      (active > idx)  active--;
     else if (active == idx) active = (active < newSz) ? active : newSz - 1;
     if (active < 0) active = 0;
-    LOG_DEBUG("favorites: deleted category \"%s\" (%d emote(s))", name.c_str(), count);
+    LOG_DEBUG("favorites: deleted category \"%s\" (%d ref(s))", name.c_str(), count);
     if (active != prevActive)
         LOG_DEBUG("favorites: quickbar active category index %d -> %d (after delete)",
                   prevActive, active);
@@ -123,29 +144,53 @@ void EnsureDefaultCategory() {
 }
 
 void ReconcileFavoritesWithCatalog() {
-    std::unordered_set<std::string> ids;
+    // Snapshot live Ids by catalog. Skip the per-catalog half when its catalog
+    // is empty (load failure / fresh install) — stale ids are kept regardless,
+    // but logging them as "unknown" would be noise when the catalog itself is
+    // missing.
+    std::unordered_set<std::string> emoteIds, meMoteIds;
+    bool haveEmotes = false, haveMeMotes = false;
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        if (g_Emotes.empty()) return;  // empty catalog: nothing to validate against
-        ids.reserve(g_Emotes.size());
-        for (const auto& e : g_Emotes) ids.insert(e.Id);
+        if (!g_Emotes.empty()) {
+            haveEmotes = true;
+            emoteIds.reserve(g_Emotes.size());
+            for (const auto& e : g_Emotes) emoteIds.insert(e.Id);
+        }
     }
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        if (!g_MeMotes.empty()) {
+            haveMeMotes = true;
+            meMoteIds.reserve(g_MeMotes.size());
+            for (const auto& m : g_MeMotes) meMoteIds.insert(m.Id);
+        }
+    }
+    if (!haveEmotes && !haveMeMotes) return;
 
     int stale = 0;
     for (const auto& cat : g_Settings.FavoriteCategories) {
-        for (const auto& id : cat.Emotes) {
-            if (ids.find(id) == ids.end()) {
-                LOG_WARNING("favorites: category \"%s\" references unknown emote id "
+        for (const auto& r : cat.Refs) {
+            const bool isEmote = r.Type == EFavoriteRefType::Emote;
+            // Skip the per-type check when the corresponding catalog is empty
+            // (no Ids to validate against).
+            if (isEmote   && !haveEmotes)   continue;
+            if (!isEmote  && !haveMeMotes)  continue;
+            const auto& set = isEmote ? emoteIds : meMoteIds;
+            if (set.find(r.Id) == set.end()) {
+                LOG_WARNING("favorites: category \"%s\" references unknown %s id "
                             "'%s' (kept; re-seeding the catalog restores it)",
-                            cat.Name.c_str(), id.c_str());
+                            cat.Name.c_str(), TypeTag(r.Type), r.Id.c_str());
                 ++stale;
             }
         }
     }
-    for (const auto& id : g_Settings.ManuallyUnlocked) {
-        if (ids.find(id) == ids.end()) {
-            LOG_WARNING("unlocks: unknown emote id '%s' (kept)", id.c_str());
-            ++stale;
+    if (haveEmotes) {
+        for (const auto& id : g_Settings.ManuallyUnlocked) {
+            if (emoteIds.find(id) == emoteIds.end()) {
+                LOG_WARNING("unlocks: unknown emote id '%s' (kept)", id.c_str());
+                ++stale;
+            }
         }
     }
     if (stale > 0)
