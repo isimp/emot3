@@ -566,7 +566,14 @@ void QuickbarRender() {
         g_QbApplyGeometry = false;
     }
 
-    ImGuiWindowFlags qbFlags = ImGuiWindowFlags_None;
+    // The Quickbar is an autonomous HUD - it shows/hides on its own (combat, the
+    // fullscreen map, the can't-emote auto-hide), so it must NEVER steal keyboard
+    // focus when it (re)appears. Without NoFocusOnAppearing, a reappear while the
+    // user is typing in a text field (ours or the game's) yanks focus off that
+    // field, drops io.WantTextInput, and lets the next keystrokes fall through to
+    // the game. The flag keeps focus where the user put it; clicking the bar still
+    // focuses it normally.
+    ImGuiWindowFlags qbFlags = ImGuiWindowFlags_NoFocusOnAppearing;
     if (!g_Settings.QuickbarAllowResize)   qbFlags |= ImGuiWindowFlags_NoResize;
     if (!g_Settings.QuickbarAllowMove)     qbFlags |= ImGuiWindowFlags_NoMove;
     if (!g_Settings.ShowQuickbarBg)        qbFlags |= ImGuiWindowFlags_NoBackground;
