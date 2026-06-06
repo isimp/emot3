@@ -48,7 +48,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
 
 extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.APIVersion  = NEXUS_API_VERSION;
-    AddonDef.Version     = { 1, 1, 0, 0 };
+    AddonDef.Version     = { 1, 1, 1, 0 };
     AddonDef.Author      = "Morlaed";
     AddonDef.Description = "Clickable emote panel with unlock tracking.";
     AddonDef.Load        = AddonLoad;
@@ -389,6 +389,18 @@ static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     // Observe-only: we never consume these messages (no return 0).
     switch (uMsg) {
         case WM_KEYDOWN: case WM_SYSKEYDOWN:
+            // A printable key pressed while one of OUR ImGui text fields is focused
+            // (Library search, API key, catalog command/name/aliases, preset name,
+            // category rename) is text being typed, not a movement key. Nexus routes
+            // it to ImGui and blocks it from the game when io.WantTextInput is set
+            // (CUiContext::WndProc), so counting it as "held" would make typing read
+            // as moving - auto-hiding / greying the Quickbar and refusing sends - and
+            // the hide->reappear churn then steals focus off the field. Skip the
+            // press; key-ups are still tracked below so the count stays balanced when
+            // a key pressed during play is released after a field grabs focus.
+            if (!ImGui::GetCurrentContext() || !ImGui::GetIO().WantTextInput)
+                NoteKeyEvent(uMsg, (unsigned)wParam);
+            break;
         case WM_KEYUP:   case WM_SYSKEYUP:
             NoteKeyEvent(uMsg, (unsigned)wParam);
             break;
