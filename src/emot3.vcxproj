@@ -322,6 +322,7 @@
     <ClInclude Include="core\Logging.h" />
     <ClInclude Include="data\EmoteData.h" />
     <ClInclude Include="data\Favorites.h" />
+    <ClInclude Include="data\MeMotes.h" />
     <ClInclude Include="data\QuickbarPresets.h" />
     <ClInclude Include="data\Settings.h" />
     <ClInclude Include="resources\Resources.h" />
@@ -370,6 +371,7 @@
     <ClCompile Include="core\Logging.cpp" />
     <ClCompile Include="data\EmoteData.cpp" />
     <ClCompile Include="data\Favorites.cpp" />
+    <ClCompile Include="data\MeMotes.cpp" />
     <ClCompile Include="data\QuickbarPresets.cpp" />
     <ClCompile Include="data\Settings.cpp" />
     <ClCompile Include="generated\ResourcesGenerated.cpp" />

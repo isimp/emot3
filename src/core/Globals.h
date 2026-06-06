@@ -32,6 +32,7 @@ extern HWND g_GameHwnd;
 // --- On-disk paths under addons/emot3/ ---------------------------------
 extern std::string g_SettingsPath;    // settings.json
 extern std::string g_EmotesJsonPath;  // emotes.json (editable unlockables)
+extern std::string g_MeMotesJsonPath; // me_motes.json (/me-motes; see data/MeMotes.h)
 extern std::string g_IconsDir;        // icons/ (local PNG overrides)
 extern std::string g_PresetsDir;      // presets/ (one JSON per Quickbar preset)
 
@@ -66,6 +67,20 @@ extern std::atomic<uint64_t> g_EmoteCatalogVersion;
 inline void MarkEmotesDirty() {
     g_EmotesDirty = true;
     g_EmoteCatalogVersion.fetch_add(1, std::memory_order_relaxed);
+}
+
+// /me-mote catalog epoch. Symmetric to g_EmoteCatalogVersion but tracks the
+// separate /me-mote catalog (see data/MeMotes.h). Bumped via MarkMeMotesDirty
+// from every mutation site (Options > Text Emotes edits, JSON load). Read by
+// the per-frame TextCache so /me-mote label shaping invalidates on edit.
+// MarkMeMotesDirty also sets g_EmotesDirty so the next-frame texture loader
+// picks up any /me-mote icon path changes (the loader is the single texture
+// rebuild hook; cheaper to share it than to fork a parallel mechanism).
+extern std::atomic<uint64_t> g_MeMotesVersion;
+
+inline void MarkMeMotesDirty() {
+    g_EmotesDirty = true;
+    g_MeMotesVersion.fetch_add(1, std::memory_order_relaxed);
 }
 
 // --- New-bundled-emote notifier ----------------------------------------

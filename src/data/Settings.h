@@ -75,16 +75,24 @@ struct Settings {
     EViewMode                     ViewMode             = EViewMode::Full;
     float                         MainIconScale        = 1.0f;
     // Per-section collapse state for the built-in Library sections (Core /
-    // Unlockable). User favorites categories store their own Collapsed flag in
-    // FavoriteCategory; these two cover the synthetic built-ins. Default
+    // Unlockable / Text). User favorites categories store their own Collapsed
+    // flag in FavoriteCategory; these cover the synthetic built-ins. Default
     // expanded. An active search renders every section expanded regardless.
     bool                          MainCoreCollapsed     = false;
     bool                          MainUnlockedCollapsed = false;
+    // Library "Text" section — surfaces /me-motes (data/MeMotes.h). See the
+    // /me-motes Quickbar toggle further down.
+    bool                          MainMeMotesCollapsed  = false;
     EViewMode                     QuickbarViewMode     = EViewMode::Icon;
     float                         QuickbarIconScale    = 1.0f;
     bool                          QuickbarUseDropdown  = false;  // tabs (false) or dropdown (true)
     bool                          ShowWindow           = true;
     bool                          SendOnClick          = true;
+    // Independent of SendOnClick — users may want auto-send for one and
+    // chat-fill-only for the other. /me-motes commit free-form text to chat,
+    // which some users prefer to confirm-then-send rather than fire on click.
+    // See SendOrFillMeMote / EmoteAction.cpp.
+    bool                          MeMoteSendOnClick    = true;
     // When on, clicking an emote while a GW2 text box is focused closes it
     // (injects Escape, clearing the half-typed line) and then sends, instead of
     // refusing. Off by default. See SendOrFillEmote / ShouldSkipEmoteSend.
@@ -154,6 +162,11 @@ struct Settings {
     // emotes). Opt-in like Core / Unlocked — a seasonal slice most users
     // only want during the event.
     bool                          QuickbarShowMadKingCategory     = false;
+    // /me-motes (data/MeMotes.h) — user-defined free-form text emotes. Opt-in
+    // (defaults off, matching the other built-in category posture). The
+    // Library always shows the "Text" section when /me-motes exist; this
+    // toggle only gates the Quickbar's category-cycle inclusion.
+    bool                          QuickbarShowMeMotesCategory     = false;
     // When the mouse wheel cycles the active category (see EWheelCycle).
     // Defaults to OverBar - cycling when hovering the category bar is what
     // most users intuitively expect, while the icon list still scrolls.

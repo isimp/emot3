@@ -23,6 +23,7 @@
 #include "Settings.h"
 #include "QuickbarPresets.h"
 #include "EmoteData.h"
+#include "MeMotes.h"     // /me-motes domain (load/save lifecycle, see data/MeMotes.h)
 #include "Favorites.h"
 #include "MainPanel.h"
 #include "NexusShortcut.h"
@@ -176,8 +177,9 @@ void AddonLoad(AddonAPI* aApi) {
     const char* addonDir = APIDefs->Paths.GetAddonDirectory("emot3");
     if (addonDir) {
         CreateDirectoryA(addonDir, nullptr);
-        g_SettingsPath   = std::string(addonDir) + "\\settings.json";
-        g_EmotesJsonPath = std::string(addonDir) + "\\emotes.json";
+        g_SettingsPath    = std::string(addonDir) + "\\settings.json";
+        g_EmotesJsonPath  = std::string(addonDir) + "\\emotes.json";
+        g_MeMotesJsonPath = std::string(addonDir) + "\\me_motes.json";
         // Create the icons subfolder (and ui/ inside it) so users can drop
         // their own PNG overrides for both emote icons and UI decorations.
         std::string iconsDir = std::string(addonDir) + "\\icons";
@@ -273,6 +275,14 @@ void AddonLoad(AddonAPI* aApi) {
     if (!g_EmotesJsonPath.empty()) {
         LoadEmotesJson(g_EmotesJsonPath);  // missing/empty -> dialog prompts
     }
+
+    // /me-motes are a SEPARATE catalog from emotes (see data/MeMotes.h). Loaded
+    // in parallel; missing file = empty list (first-time users have zero).
+    ClearMeMotes();
+    if (!g_MeMotesJsonPath.empty()) {
+        LoadMeMotesJson(g_MeMotesJsonPath);
+    }
+
     EnsureDefaultCategory();  // always at least one favorites category
     // Now that both settings (favorites/unlocks) and the catalog are loaded,
     // surface any favorite/unlock id that no longer resolves. Log-only — stale

@@ -393,6 +393,7 @@ bool LoadSettings(const std::string& path) {
     s.MainIconScale = GetFloat(main, "icon_scale", s.MainIconScale);
     s.MainCoreCollapsed     = GetBool(main, "core_collapsed",     s.MainCoreCollapsed);
     s.MainUnlockedCollapsed = GetBool(main, "unlocked_collapsed", s.MainUnlockedCollapsed);
+    s.MainMeMotesCollapsed  = GetBool(main, "me_motes_collapsed", s.MainMeMotesCollapsed);
 
     const json& qb = GetObj(j, "quickbar");
     s.ShowQuickbar        = GetBool(qb, "show",                  s.ShowQuickbar);
@@ -438,8 +439,9 @@ bool LoadSettings(const std::string& path) {
                                                  (int)s.QuickbarCombatBehavior);
 
     const json& general = GetObj(j, "general");
-    s.SendOnClick       = GetBool(general, "send_on_click",        s.SendOnClick);
-    s.CloseChatOnSend   = GetBool(general, "close_chat_on_send",   s.CloseChatOnSend);
+    s.SendOnClick       = GetBool(general, "send_on_click",         s.SendOnClick);
+    s.MeMoteSendOnClick = GetBool(general, "me_mote_send_on_click", s.MeMoteSendOnClick);
+    s.CloseChatOnSend   = GetBool(general, "close_chat_on_send",    s.CloseChatOnSend);
     s.SendTargetableOnTarget = GetBool(general, "send_targetable_on_target", s.SendTargetableOnTarget);
     s.UseAIIconFallback = GetBool(general, "use_ai_icon_fallback", s.UseAIIconFallback);
     s.ShowTargetDot     = GetBool(general, "show_target_dot",       s.ShowTargetDot);
@@ -457,6 +459,7 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarShowMadKingCategory     = GetBool(qbCats, "mad_king",     s.QuickbarShowMadKingCategory);
     s.QuickbarShowUnlockedCategory    = GetBool(qbCats, "unlocked",     s.QuickbarShowUnlockedCategory);
     s.QuickbarShowUnlockedAllCategory = GetBool(qbCats, "unlocked_all", s.QuickbarShowUnlockedAllCategory);
+    s.QuickbarShowMeMotesCategory     = GetBool(qbCats, "me_motes",     s.QuickbarShowMeMotesCategory);
 
     const json& shortcut = GetObj(general, "nexus_shortcut");
     s.ShowNexusShortcut        = GetBool(shortcut, "show",                      s.ShowNexusShortcut);
@@ -525,7 +528,8 @@ void SaveSettings(const std::string& path) {
     f << "    \"view_mode\": "     << (int)s.ViewMode          << ",\n";
     f << "    \"icon_scale\": "    << s.MainIconScale          << ",\n";
     f << "    \"core_collapsed\": "     << B(s.MainCoreCollapsed)     << ",\n";
-    f << "    \"unlocked_collapsed\": " << B(s.MainUnlockedCollapsed) << "\n";
+    f << "    \"unlocked_collapsed\": " << B(s.MainUnlockedCollapsed) << ",\n";
+    f << "    \"me_motes_collapsed\": " << B(s.MainMeMotesCollapsed)  << "\n";
     f << "  },\n";
 
     // --- quickbar ------------------------------------------------------
@@ -568,8 +572,9 @@ void SaveSettings(const std::string& path) {
 
     // --- general -------------------------------------------------------
     f << "  \"general\": {\n";
-    f << "    \"send_on_click\": "         << B(s.SendOnClick)       << ",\n";
-    f << "    \"close_chat_on_send\": "    << B(s.CloseChatOnSend)   << ",\n";
+    f << "    \"send_on_click\": "         << B(s.SendOnClick)         << ",\n";
+    f << "    \"me_mote_send_on_click\": " << B(s.MeMoteSendOnClick)   << ",\n";
+    f << "    \"close_chat_on_send\": "    << B(s.CloseChatOnSend)     << ",\n";
     f << "    \"send_targetable_on_target\": " << B(s.SendTargetableOnTarget) << ",\n";
     f << "    \"use_ai_icon_fallback\": "  << B(s.UseAIIconFallback) << ",\n";
     f << "    \"show_target_dot\": "        << B(s.ShowTargetDot)     << ",\n";
@@ -582,7 +587,8 @@ void SaveSettings(const std::string& path) {
     f << "      \"core\": "         << B(s.QuickbarShowCoreCategory)        << ",\n";
     f << "      \"mad_king\": "     << B(s.QuickbarShowMadKingCategory)     << ",\n";
     f << "      \"unlocked\": "     << B(s.QuickbarShowUnlockedCategory)    << ",\n";
-    f << "      \"unlocked_all\": " << B(s.QuickbarShowUnlockedAllCategory) << "\n";
+    f << "      \"unlocked_all\": " << B(s.QuickbarShowUnlockedAllCategory) << ",\n";
+    f << "      \"me_motes\": "     << B(s.QuickbarShowMeMotesCategory)     << "\n";
     f << "    },\n";
     f << "    \"nexus_shortcut\": {\n";
     f << "      \"show\": "                      << B(s.ShowNexusShortcut)        << ",\n";

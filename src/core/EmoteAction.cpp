@@ -4,6 +4,7 @@
 #include "Logging.h"
 #include "Settings.h"
 #include "EmoteData.h"
+#include "MeMotes.h"        // /me-mote struct (SendOrFillMeMote)
 #include "SendSuppress.h"   // keyboard swallow during emote injection (stub in base builds)
 #include "PlusSettings.h"   // g_PlusSettings (whole header empty in base builds)
 #include "CharacterState.h" // CurrentEmoteBlock / EmoteBlockKey (mounted + RTAPI states)
@@ -170,45 +171,21 @@ SendBusy CurrentSendBusy(bool checkHeldKeys, bool ignoreTextbox) {
     return SendBusy::None;
 }
 
-void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
-    if (!APIDefs) return;
-    std::string cmd = e.Command;
-    if (useTarget && e.IsTargetable) cmd += " @";
-    if (useSync)                     cmd += " *";
-    bool send = g_Settings.SendOnClick;
+namespace {
 
-    // Send mode. Default (and the only mode in base builds): the refuse-when-
-    // unsafe gate below. +plus builds can opt into the old "swallow keyboard
-    // during injection" mode via g_PlusSettings.SwallowInputOnSend - the AV-
-    // flagged input-consume is compiled in only for the +plus flavor, so
-    // swallowMode is always false elsewhere (the #ifdef leaves it default-false).
-    bool swallowMode = false;
-#ifdef EMOT3_PLUS
-    swallowMode = g_PlusSettings.SwallowInputOnSend;
-#endif
-
-    // "Close chat on send": if a GW2 text box is focused and the setting is on,
-    // we'll close it (Escape) in the worker instead of refusing - so tell the gate
-    // to ignore the textbox reason (the move / held-key refusal still applies).
-    const bool closeChat = g_Settings.CloseChatOnSend &&
-                           MumbleLink && MumbleLink->Context.IsTextboxFocused;
-
-    // Refuse rather than garble. The check is at click time only - late typing
-    // after the worker spawns still interleaves in refuse mode (swallow mode
-    // covers that by consuming input). In swallow mode we drop the held-key
-    // check (check 3) - those are handled by the swallow - but keep the chat-
-    // unbound and textbox-focused checks (the refined textbox guard stays).
-    const char* skipKey = nullptr;
-    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/!swallowMode,
-                            /*ignoreTextbox=*/closeChat)) {
-        LOG_DEBUG("Emote skipped (%s): %s", skipKey, cmd.c_str());
-        ShowFeedback(L(skipKey));
-        return;
-    }
-
-    LOG_DEBUG("%s emote: %s", send ? "Sending" : "Filling", cmd.c_str());
-
-    std::thread([cmd, send, swallowMode, closeChat]() {
+// Spawn the detached worker thread that types `cmd` (a full slash command,
+// leading '/') into GW2's chat box and optionally presses Enter at the end.
+// Both SendOrFillEmote and SendOrFillMeMote feed this — gating + cmd build
+// stays at the call site because the rules differ (target/sync suffixes for
+// official emotes; "/me " prefix for /me-motes).
+//
+// Preconditions: caller already ran ShouldSkipEmoteSend, resolved `closeChat`
+// (textbox focused + CloseChatOnSend), and decided `swallowMode` from the
+// +plus setting. `autoSend` controls whether we press Enter at the end (the
+// SendOnClick / MeMoteSendOnClick choice — caller picks the right one).
+void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
+                       bool swallowMode) {
+    std::thread([cmd, autoSend, swallowMode, closeChat]() {
         // Bump the inflight-workers counter so AddonUnload can wait
         // briefly for us to drain. Drop on every early return via RAII.
         InflightWorkerScope scope;
@@ -296,7 +273,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
             // char by the time we send the next.
         }
 
-        if (send) {
+        if (autoSend) {
             Sleep(30);
             if (g_Unloading.load()) return;
             DWORD  scan   = MapVirtualKey(VK_RETURN, MAPVK_VK_TO_VSC);
@@ -311,6 +288,96 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
             APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYUP, VK_RETURN, upLP);
         }
     }).detach();
+}
+
+// Resolve the +plus "swallow keyboard during injection" mode. Always false in
+// base builds (the AV-flagged input-consume is compiled out via #ifdef so the
+// branch leaves the local default-false). Shared by both send paths.
+inline bool ResolveSwallowMode() {
+#ifdef EMOT3_PLUS
+    return g_PlusSettings.SwallowInputOnSend;
+#else
+    return false;
+#endif
+}
+
+} // namespace
+
+void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
+    if (!APIDefs) return;
+    std::string cmd = e.Command;
+    if (useTarget && e.IsTargetable) cmd += " @";
+    if (useSync)                     cmd += " *";
+    const bool send        = g_Settings.SendOnClick;
+    const bool swallowMode = ResolveSwallowMode();
+
+    // "Close chat on send": if a GW2 text box is focused and the setting is on,
+    // we'll close it (Escape) in the worker instead of refusing - so tell the gate
+    // to ignore the textbox reason (the move / held-key refusal still applies).
+    const bool closeChat = g_Settings.CloseChatOnSend &&
+                           MumbleLink && MumbleLink->Context.IsTextboxFocused;
+
+    // Refuse rather than garble. The check is at click time only - late typing
+    // after the worker spawns still interleaves in refuse mode (swallow mode
+    // covers that by consuming input). In swallow mode we drop the held-key
+    // check - those are handled by the swallow - but keep the chat-unbound and
+    // textbox-focused checks (the refined textbox guard stays).
+    const char* skipKey = nullptr;
+    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/!swallowMode,
+                            /*ignoreTextbox=*/closeChat)) {
+        LOG_DEBUG("Emote skipped (%s): %s", skipKey, cmd.c_str());
+        ShowFeedback(L(skipKey));
+        return;
+    }
+
+    LOG_DEBUG("%s emote: %s", send ? "Sending" : "Filling", cmd.c_str());
+    InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
+}
+
+void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
+    if (!APIDefs) return;
+
+    // Pick the variant body. Fall back to TextDefault when the requested
+    // variant is empty (defensive backstop — the right-click menu disables
+    // entries with empty bodies, so this path is unreachable through normal
+    // UI). TextDefault itself can't be empty in a loaded /me-mote — sanitize
+    // drops empty-default entries at load and the editor blocks save on it.
+    const std::string* body = &m.TextDefault;
+    switch (variant) {
+        case EMeMoteVariant::You: if (!m.TextYou.empty()) body = &m.TextYou; break;
+        case EMeMoteVariant::All: if (!m.TextAll.empty()) body = &m.TextAll; break;
+        case EMeMoteVariant::Default: break;
+    }
+    if (body->empty()) {
+        LOG_WARNING("/me-mote %s has empty body - send refused", m.Id.c_str());
+        return;
+    }
+
+    // Build "/me <text>". The "/me " prefix is owned exclusively here — never
+    // stored in TextDefault / TextYou / TextAll (sanitize strips it at load),
+    // so we can't ship a doubled prefix.
+    std::string cmd = "/me " + *body;
+
+    const bool send        = g_Settings.MeMoteSendOnClick;  // independent of SendOnClick
+    const bool swallowMode = ResolveSwallowMode();
+
+    const bool closeChat = g_Settings.CloseChatOnSend &&
+                           MumbleLink && MumbleLink->Context.IsTextboxFocused;
+
+    // Same gating as official emotes — can't-emote state / chat unbound /
+    // textbox focused / held printable keys / airborne. The gates aren't
+    // specific to slash-command emotes; they protect ANY chat injection from
+    // garbling.
+    const char* skipKey = nullptr;
+    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/!swallowMode,
+                            /*ignoreTextbox=*/closeChat)) {
+        LOG_DEBUG("/me-mote skipped (%s): %s", skipKey, cmd.c_str());
+        ShowFeedback(L(skipKey));
+        return;
+    }
+
+    LOG_DEBUG("%s /me-mote: %s", send ? "Sending" : "Filling", cmd.c_str());
+    InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
 }
 
 bool IsEmoteUnlocked(const std::string& id) {

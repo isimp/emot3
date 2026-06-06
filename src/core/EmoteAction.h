@@ -8,6 +8,7 @@
 #include <string>
 
 struct Emote;
+struct MeMote;
 
 // Inject the slash command for `e` into the game's chat box.
 //   useTarget — appends " @" when the emote is targetable (caller decides;
@@ -16,6 +17,23 @@ struct Emote;
 // Whether the input is auto-submitted (Enter at the end) or left for the
 // user to finish is controlled by g_Settings.SendOnClick.
 void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync);
+
+// Which of a /me-mote's three text bodies to send. Default fires on left-click;
+// You and All are the right-click context-menu entries (each grayed out when
+// the corresponding text is empty). See data/MeMotes.h.
+enum class EMeMoteVariant { Default, You, All };
+
+// Inject "/me <text>" into the game's chat box, where <text> is the body
+// selected by `variant`. If the selected variant's text is empty, falls back
+// to TextDefault rather than refusing (the right-click menu disables the
+// entries with empty bodies, so this is a defensive backstop). Whether the
+// input is auto-submitted is controlled by g_Settings.MeMoteSendOnClick
+// (independent of the official-emote SendOnClick).
+//
+// GW2's @ token doesn't substitute inside /me text and its * sync token also
+// doesn't work — verified in-game — so the /me-mote send path is targetless
+// and unsync'd by construction.
+void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant);
 
 // A *transient* reason the send would be refused RIGHT NOW that can clear on its
 // own: a GW2 text box is focused (Typing) or a printable key is held (KeysHeld).
