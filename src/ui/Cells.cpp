@@ -159,17 +159,20 @@ void ApplyEmoteDrop(const EmoteDragPayload& src, int dstCat, int gap) {
     int N = (int)g_Settings.FavoriteCategories.size();
     if (dstCat < 0 || dstCat >= N) return;
 
-    // The drag payload here always represents an Emote (the source is either
-    // the built-in catalog or another favorites category — both Emote-typed
-    // for now; /me-mote drag-drop arrives with the CellItem adapter in a
-    // later checkpoint). All inserts produce Emote-typed FavoriteRefs.
+    // The drag payload carries its kind via src.type — Emote drags from the
+    // Core / Unlockable built-in sections or any favorites category, /me-mote
+    // drags from the built-in /me-motes section or any favorites category.
+    // Catalog-source drags construct the FavoriteRef with that type; within-
+    // favorites moves keep the moved ref's existing type intact (the type
+    // doesn't change on reorder).
     if (src.categoryIdx < 0) {
         // Built-in catalog source: insert the ref, nothing to erase. Locked
         // emotes can't be favorited (already blocked at the source, guarded
-        // again here). Skip if already present in this category.
+        // again here; /me-motes always carry isLocked=false so they pass).
+        // Skip if already present in this category.
         if (src.isLocked) return;
         auto& d = g_Settings.FavoriteCategories[dstCat].Refs;
-        FavoriteRef ref{ EFavoriteRefType::Emote, std::string(src.id) };
+        FavoriteRef ref{ src.type, std::string(src.id) };
         if (std::find_if(d.begin(), d.end(), [&](const FavoriteRef& r) {
                 return r.Type == ref.Type && r.Id == ref.Id;
             }) != d.end()) return;
@@ -341,6 +344,38 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
     if (isQuickbar) {
         g_QbIconRects.emplace_back(ImGui::GetItemRectMin(),
                                    ImGui::GetItemRectMax());
+    }
+
+    // Drag source — mirrors RenderEmoteCell's source block. Enabled from
+    // user-favorites cells (for reorder / cross-category move) AND from the
+    // Library's built-in /me-motes section (for "add to favorites by
+    // dragging"). Quickbar cells are never sources — drag-drop is a main-
+    // panel interaction. /me-motes have no lock concept so isLocked is
+    // always false; payload.type is MeMote so ApplyEmoteDrop constructs the
+    // FavoriteRef in the right namespace.
+    bool dragSourceEnabled = (categoryIdx >= 0) ? allowReorder : (!isQuickbar);
+    if (dragSourceEnabled) {
+        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+            EmoteDragPayload payload {};
+            payload.categoryIdx = categoryIdx;
+            payload.emoteIdx    = ci.favIdx;
+            payload.isLocked    = false;
+            payload.type        = EFavoriteRefType::MeMote;
+            strncpy_s(payload.id, sizeof(payload.id),
+                      m.Id.c_str(), _TRUNCATE);
+            ImGui::SetDragDropPayload("FAV_DRAG", &payload, sizeof(payload));
+            ImGui::Text(L("cells.moving"), m.Name.c_str());
+            // Source-aware reject hint, same shape as the Emote path: a
+            // favorite dragged off into a non-target tells the user where the
+            // real "Remove from favorites" lives; a catalog drag mis-aimed
+            // gets the "drop onto a category" cue.
+            if (DragRejectFresh()) {
+                const char* why = (categoryIdx >= 0) ? L("cells.no_drop_remove")
+                                                     : L("cells.no_drop_here");
+                ImGui::TextColored(ImVec4(1.f, 0.45f, 0.40f, 1.f), "%s", why);
+            }
+            ImGui::EndDragDropSource();
+        }
     }
 
     // Right-click context menu. Quickbar shows execute-variants only;

@@ -32,25 +32,32 @@ struct CellInfo {
     std::string   searchNote;
 };
 
-// Drag payload identifies a single emote being dragged. categoryIdx
-// distinguishes the source:
+// Drag payload identifies a single Library cell being dragged — either an
+// Emote or a /me-mote, distinguished by `type`. categoryIdx distinguishes
+// the source:
 //   >= 0 - a favorites category at index categoryIdx; emoteIdx is the
 //          slot within that category (used for in-place reorder and
 //          for the erase-then-insert dance on a cross-category move).
 //   <  0 - one of the built-in catalog sections (Core / Unlockable
-//          in the main panel). emoteIdx isn't meaningful in this
-//          mode; the destination just inserts the command without
+//          / /me-motes in the main panel). emoteIdx isn't meaningful in
+//          this mode; the destination just inserts the ref without
 //          erasing from any source list.
-// id is populated for every drag - it's the stable emote identifier the
-// destination uses when the source isn't a real list it can erase from
+// id is populated for every drag - it's the stable Id (Emote or /me-mote)
+// the destination uses when the source isn't a real list it can erase from
 // (catalog drags). isLocked is captured at drag start so the target can
 // refuse cross-category moves of a locked emote (locked emotes can't sit
-// in a new category but can be reordered within their current one).
+// in a new category but can be reordered within their current one);
+// /me-mote drags always carry isLocked=false (no lock concept exists).
+// type is the EFavoriteRefType the destination uses to construct the
+// FavoriteRef on insert into a favorites category — Emote routes to
+// g_Emotes, MeMote routes to g_MeMotes. Default Emote so any legacy code
+// that initializes the struct with brace-init stays correct.
 struct EmoteDragPayload {
-    int  categoryIdx;
-    int  emoteIdx;
-    bool isLocked;
-    char id[64];
+    int              categoryIdx;
+    int              emoteIdx;
+    bool             isLocked;
+    char             id[64];
+    EFavoriteRefType type = EFavoriteRefType::Emote;
 };
 
 // One cell of the grid — icon button + optional label + overlays + the
