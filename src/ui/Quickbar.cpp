@@ -367,64 +367,59 @@ void QuickbarRender() {
     // with the send gate so every surface agrees.
     g_QbBlockReason = CurrentEmoteBlock();
 
-    // Unified "why this Quickbar emote can't be used this frame" reason, from all
-    // ENABLED sources, with ONE interaction (QuickbarUnusableBehavior) applied:
-    //  - the game-state block (mounted / RTAPI states) - always, unless "off";
-    //  - opt-in: the addon's transient send refusals - a GW2 text box focused
-    //    (QuickbarUnusableTextbox) or a movement key held (QuickbarUnusableMovement).
-    // Same detector as the send gate (CurrentSendBusy) so greying and refusal can't
-    // drift; mapped to the present-tense cells.blocked_* wording. EmoteSendSwallowActive
-    // (dev "swallow held keys" mode) drops the movement source - a held key no longer
-    // refuses, so the cell must stay usable. The movement case is debounced: keys are
-    // tapped constantly in play, and reacting to a quick tap flickers the bar.
+    // Unified "why this Quickbar emote can't be used this frame" reason, with ONE
+    // interaction (QuickbarUnusableBehavior) applied. Whenever greying/hiding is
+    // active (QuickbarGreyUnusable), it covers BOTH the game-state block (mounted /
+    // RTAPI states / airborne) AND the transient send refusals - a GW2 text box
+    // focused, or moving / a printable key held. The transient cases used to be
+    // separate opt-ins, but they're robust + cheap now, so they just ride the master
+    // setting. Same detector as the send gate (CurrentSendBusy) so greying and
+    // refusal can't drift; mapped to the present-tense cells.blocked_* wording. Two
+    // settings carve out their own case: "send while moving" (+plus swallow) drops
+    // the movement source (a held key no longer refuses), and "close chat on send"
+    // drops the textbox source (a click closes + sends). The movement case is
+    // debounced: keys are tapped constantly in play, and reacting to a quick tap
+    // would flicker the bar.
     const char* reason = nullptr;
     {
         PROFILE_SCOPE("qb.busy");  // dev perf overlay
-        static double   s_heldSince = -1.0;            // movement-hold start (debounce); <0 = none
-        static SendBusy s_busyCache = SendBusy::None;  // last (throttled) CurrentSendBusy result
-        static double   s_lastProbe = -1.0;            // GetTime() of the last probe
-        constexpr double kHeldGreyDelay = 0.25;        // sustained-hold threshold (seconds)
-        constexpr double kProbeInterval = 0.05;        // re-probe at most every 50 ms (20 Hz)
+        static double   s_heldSince = -1.0;     // movement-hold start (debounce); <0 = none
+        constexpr double kHeldGreyDelay = 0.25; // sustained-hold threshold (seconds)
         const double now = ImGui::GetTime();
 
-        // Probe the transient busy state (textbox / movement) whenever the opt-ins
-        // are active - INCLUDING while a game-state block (mounted) is masking the
-        // reason. The movement debounce (s_heldSince) must track the REAL hold
-        // duration: it used to be reset whenever mounted, so unmounting mid-move
-        // restarted the 250 ms debounce and flashed the cells usable for that
-        // window (the unmount-while-moving flicker). Keeping the timer alive across
-        // the block makes the movement reason apply the instant the block clears.
-        // Throttled to 20 Hz: CurrentSendBusy does a ~37-key GetAsyncKeyState scan
-        // (a server round-trip each under Wine/Proton), and the debounce makes
-        // per-frame freshness pointless. The send GATE still probes fresh at click.
-        const bool wantTextbox  = g_Settings.QuickbarGreyUnusable && g_Settings.QuickbarUnusableTextbox;
-        const bool wantMovement = g_Settings.QuickbarGreyUnusable && g_Settings.QuickbarUnusableMovement
-                                  && !EmoteSendSwallowActive();
-        if (!(wantTextbox || wantMovement)) {
-            s_busyCache = SendBusy::None;
-        } else if (now - s_lastProbe >= kProbeInterval) {
-            s_busyCache = CurrentSendBusy(wantMovement);
-            s_lastProbe = now;
-        }
-        const SendBusy busy = s_busyCache;
+        // Transient busy state, cheap to read every frame: textbox is a MumbleLink
+        // bit, held keys are a WndProc-maintained atomic, movement is the position-
+        // velocity flag - no per-frame key polling. Evaluated even while a game-state
+        // block (mounted) masks the reason, so the movement debounce tracks the REAL
+        // hold duration and survives the block (no unmount-while-moving flicker).
+        const bool greying       = g_Settings.QuickbarGreyUnusable;
+        const bool checkMovement = greying && !EmoteSendSwallowActive();  // swallow handles held keys
+        const SendBusy busy = greying
+            ? CurrentSendBusy(checkMovement, /*ignoreTextbox=*/g_Settings.CloseChatOnSend)
+            : SendBusy::None;
         if (busy == SendBusy::KeysHeld) {
             if (s_heldSince < 0.0) s_heldSince = now;   // start (or keep) the hold clock
         } else {
             s_heldSince = -1.0;
         }
 
-        // Pick the reason: a game-state block (mounted / RTAPI states) wins; else
-        // the opt-in transient refusals. Movement only greys after the sustained-
-        // hold threshold (the clock above survives a mounted spell, so the grey
-        // carries straight over when you unmount still moving - no flicker).
-        if (g_QbBlockReason != EmoteBlock::None) {
+        // Pick the reason. A DEFINITE game state (mounted / downed / swimming /
+        // gliding / ...) wins. Then the transient refusals - and these outrank
+        // AIRBORNE on purpose: when you're running and briefly clip "airborne",
+        // "moving" is the clearer message. Airborne is the fallback, shown only when
+        // nothing else applies (e.g. a jump from standstill). Movement only greys
+        // after the sustained-hold threshold (the clock survives a mounted spell, so
+        // the grey carries over when you unmount still moving - no flicker).
+        if (g_QbBlockReason != EmoteBlock::None && g_QbBlockReason != EmoteBlock::Airborne) {
             reason = EmoteBlockKey(g_QbBlockReason);
-        } else if (g_Settings.QuickbarGreyUnusable) {
-            if (busy == SendBusy::Typing && wantTextbox) {
+        } else if (greying) {
+            if (busy == SendBusy::Typing) {
                 reason = "cells.blocked_typing";
             } else if (busy == SendBusy::KeysHeld && s_heldSince >= 0.0 &&
                        now - s_heldSince >= kHeldGreyDelay) {
                 reason = "cells.blocked_moving";
+            } else if (g_QbBlockReason == EmoteBlock::Airborne) {
+                reason = "cells.blocked_airborne";
             }
         }
     }

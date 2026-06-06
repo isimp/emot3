@@ -26,9 +26,26 @@ enum class SendBusy { None, Typing, KeysHeld };
 // detector is shared by ShouldSkipEmoteSend (the click-time refusal) and the
 // Quickbar's optional "grey while typing or moving" so the two can't diverge;
 // each maps the result to its own wording (the gate's "Emote skipped ..." toast
-// vs the greyed cell's present-tense "Can't send while ..."). Cheap, but does a
-// short GetAsyncKeyState scan when checkHeldKeys is true.
-SendBusy CurrentSendBusy(bool checkHeldKeys);
+// vs the greyed cell's present-tense "Can't send while ..."). Cheap: textbox is a
+// MumbleLink bit and the held-key check is a single atomic read (see below).
+// ignoreTextbox skips the textbox-focused refusal (the "close chat on send" path
+// closes the box instead, but the movement / held-key refusal still applies).
+SendBusy CurrentSendBusy(bool checkHeldKeys, bool ignoreTextbox = false);
+
+// --- Held printable-key tracking (the movement/garble half of the gate) -------
+// Maintained event-driven from the WndProc instead of polling ~37 keys/frame.
+// "Printable" = A-Z, 0-9, space (the keys whose WM_CHAR auto-repeat garbles an
+// injected command); modifiers/F-keys/arrows are ignored. Observe-only - the
+// WndProc never consumes these messages.
+//   NoteKeyEvent   - feed a WM_KEY*/WM_SYSKEY* message (msg + VK) from the WndProc.
+//   ClearHeldKeys  - drop all held state (focus loss: no key-ups will arrive).
+//   ReseedHeldKeys - re-sync once from GetAsyncKeyState (focus gain).
+//   AnyPrintableKeyHeld / HeldPrintableCount - the live state the gate/readout read.
+void NoteKeyEvent(unsigned msg, unsigned vk);
+void ClearHeldKeys();
+void ReseedHeldKeys();
+bool AnyPrintableKeyHeld();
+int  HeldPrintableCount();
 
 // True when the +plus "send while moving" mode is active (it consumes held
 // keys during injection instead of refusing). Always false in base builds.
