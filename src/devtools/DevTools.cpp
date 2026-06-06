@@ -7,6 +7,7 @@
 #include "DevStateInspector.h"  // devstate::Enabled / devstate::Render
 #include "NotifierDebug.h"      // notifierdbg::Enabled / RenderNotifierDebug
 #include "UpdateCheckDebug.h"   // updchkdbg::Enabled / RenderUpdateCheckDebug
+#include "MemoryMonitor.h"      // memmon::Enabled / RenderMemoryMonitor
 
 #include "imgui/imgui.h"
 
@@ -42,6 +43,8 @@ void RegisterBuiltinDevTools() {
                       &notifierdbg::Enabled(), RenderNotifierDebug });
     RegisterDevTool({ "updatecheck", "Update check",
                       &updchkdbg::Enabled(), RenderUpdateCheckDebug });
+    RegisterDevTool({ "memory",   "Memory monitor",
+                      &memmon::Enabled(),    RenderMemoryMonitor });
 }
 
 void RenderDevToolOverlays() {

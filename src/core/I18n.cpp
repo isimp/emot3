@@ -254,3 +254,22 @@ void TooltipOptions(const char* introKey, const TooltipOption* options, int coun
     ImGui::PopStyleVar();
     ImGui::EndTooltip();
 }
+
+// --- Dev-tool introspection -------------------------------------------------
+// s_cache is file-private so the accessors live here.
+
+size_t TranslationCacheSize() { return s_cache.size(); }
+
+size_t TranslationCacheApproxBytes() {
+    auto strHeap = [](const std::string& s) -> size_t {
+        return s.capacity() > 15 ? s.capacity() + 1 : 0;
+    };
+    // std::map<string, string>: 32 = rough MSVC x64 RB-tree node header
+    // (3 ptrs + color + padding). Two strings per entry (key + value).
+    size_t bytes = s_cache.size() * (2 * sizeof(std::string) + 32);
+    for (const auto& kv : s_cache) {
+        bytes += strHeap(kv.first);
+        bytes += strHeap(kv.second);
+    }
+    return bytes;
+}

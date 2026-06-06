@@ -310,6 +310,7 @@
     <ClInclude Include="devtools\QuickbarDebug.h" />
     <ClInclude Include="devtools\NotifierDebug.h" />
     <ClInclude Include="devtools\UpdateCheckDebug.h" />
+    <ClInclude Include="devtools\MemoryMonitor.h" />
     <ClInclude Include="ui\Feedback.h" />
     <ClInclude Include="core\EmoteAction.h" />
     <ClInclude Include="core\Globals.h" />
@@ -357,6 +358,7 @@
     <ClCompile Include="devtools\DevStateInspector.cpp" />
     <ClCompile Include="devtools\NotifierDebug.cpp" />
     <ClCompile Include="devtools\UpdateCheckDebug.cpp" />
+    <ClCompile Include="devtools\MemoryMonitor.cpp" />
     <ClCompile Include="ui\Feedback.cpp" />
     <ClCompile Include="core\EmoteAction.cpp" />
     <ClCompile Include="core\entry.cpp" />

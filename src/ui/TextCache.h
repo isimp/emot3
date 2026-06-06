@@ -77,4 +77,19 @@ const FitEntry& FitNameCached(const std::string& emoteId,
                               const std::string& name,
                               float maxW);
 
+// --- Dev-tool introspection (used by devtools/MemoryMonitor) -----------
+// Ungated (not behind EMOT3_DEVTOOLS) so the Distribution + Plus DLLs
+// still expose them — the implementation is a 1-line .size() / a small sum
+// so the cost in shipped builds is a single uncalled function (linker
+// drops it when unreferenced).
+//
+// EllipsizeMapSize / FitMapSize  - entry counts of the two caches.
+// ApproxBytes                    - estimated heap footprint of BOTH caches:
+//   bucket array + per-node overhead + per-entry string-capacity bytes.
+//   The estimate is within ~2x; what matters for leak detection is the
+//   shape over time, not the absolute number.
+size_t EllipsizeMapSize();
+size_t FitMapSize();
+size_t ApproxBytes();
+
 }  // namespace TextCache
