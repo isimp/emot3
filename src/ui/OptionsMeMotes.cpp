@@ -131,7 +131,10 @@ std::vector<std::string> ParseAliases(const char* s) {
     return out;
 }
 
-// Persist + invalidate after a mutation.
+// Persist + invalidate after a mutation. MUST be called with g_MeMotesMutex
+// NOT held — SaveMeMotesJson re-acquires the mutex internally and std::mutex
+// is non-recursive (taking it twice = undefined behavior / crash). Every call
+// site explicitly releases the mutex first.
 void Persist() {
     MarkMeMotesDirty();
     if (!g_MeMotesJsonPath.empty()) SaveMeMotesJson(g_MeMotesJsonPath);
@@ -146,14 +149,20 @@ void RenderMeMotesTab() {
 
     // ---- "Add text emote" button -----------------------------------------
     if (ImGui::Button(L("opt.mm.btn_add"))) {
-        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-        MeMote m;
-        m.Id = MakeFreshId();
-        g_MeMotes.push_back(std::move(m));
-        // Open the new row for editing immediately.
-        g_State.OpenId = g_MeMotes.back().Id;
-        SeedBuf(g_MeMotes.back());
-        LOG_DEBUG("/me-mote added (id=%s)", g_State.OpenId.c_str());
+        std::string newId;
+        {
+            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+            MeMote m;
+            m.Id = MakeFreshId();
+            newId = m.Id;
+            g_MeMotes.push_back(std::move(m));
+            // Seed the editor buffer while we still own the entry's storage.
+            SeedBuf(g_MeMotes.back());
+        }
+        // Open the new row + persist outside the lock (Persist takes the mutex
+        // via SaveMeMotesJson; std::mutex is non-recursive).
+        g_State.OpenId = newId;
+        LOG_DEBUG("/me-mote added (id=%s)", newId.c_str());
         Persist();
     }
     ImGui::Spacing();
@@ -210,47 +219,59 @@ void RenderMeMotesTab() {
         if (ImGui::InputText(L("opt.mm.lbl_name"),
                              g_State.Buf.Name, sizeof(g_State.Buf.Name),
                              ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
-                std::string newName = g_State.Buf.Name;
-                if (newName != m->Name) {
-                    LOG_DEBUG("/me-mote rename: id=%s, '%s' -> '%s'",
-                              id.c_str(), m->Name.c_str(), newName.c_str());
-                    m->Name = std::move(newName);
-                    Persist();
+            bool changed = false;
+            {
+                std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
+                    std::string newName = g_State.Buf.Name;
+                    if (newName != m->Name) {
+                        LOG_DEBUG("/me-mote rename: id=%s, '%s' -> '%s'",
+                                  id.c_str(), m->Name.c_str(), newName.c_str());
+                        m->Name = std::move(newName);
+                        changed = true;
+                    }
                 }
             }
+            if (changed) Persist();
         }
 
         // Icon path
         if (ImGui::InputText(L("opt.mm.lbl_icon"),
                              g_State.Buf.Icon, sizeof(g_State.Buf.Icon),
                              ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
-                std::string newIcon = g_State.Buf.Icon;
-                if (newIcon != m->IconPath) {
-                    LOG_DEBUG("/me-mote icon edit: id=%s", id.c_str());
-                    m->IconPath = std::move(newIcon);
-                    Persist();
+            bool changed = false;
+            {
+                std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
+                    std::string newIcon = g_State.Buf.Icon;
+                    if (newIcon != m->IconPath) {
+                        LOG_DEBUG("/me-mote icon edit: id=%s", id.c_str());
+                        m->IconPath = std::move(newIcon);
+                        changed = true;
+                    }
                 }
             }
+            if (changed) Persist();
         }
 
         // Aliases (comma-separated)
         if (ImGui::InputText(L("opt.mm.lbl_aliases"),
                              g_State.Buf.Aliases, sizeof(g_State.Buf.Aliases),
                              ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
-                std::vector<std::string> newAliases = ParseAliases(g_State.Buf.Aliases);
-                if (newAliases != m->Aliases) {
-                    LOG_DEBUG("/me-mote aliases edit: id=%s (%d alias(es))",
-                              id.c_str(), (int)newAliases.size());
-                    m->Aliases = std::move(newAliases);
-                    Persist();
+            bool changed = false;
+            {
+                std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
+                    std::vector<std::string> newAliases = ParseAliases(g_State.Buf.Aliases);
+                    if (newAliases != m->Aliases) {
+                        LOG_DEBUG("/me-mote aliases edit: id=%s (%d alias(es))",
+                                  id.c_str(), (int)newAliases.size());
+                        m->Aliases = std::move(newAliases);
+                        changed = true;
+                    }
                 }
             }
+            if (changed) Persist();
         }
 
         ImGui::Spacing();
@@ -267,21 +288,25 @@ void RenderMeMotesTab() {
                                       ImVec2(0, ImGui::GetTextLineHeight() * 3),
                                       ImGuiInputTextFlags_CtrlEnterForNewLine |
                                       ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
-                std::string newText = g_State.Buf.TextDefault;
-                if (newText.empty()) {
-                    LOG_DEBUG("/me-mote text default edit refused (empty): id=%s",
-                              id.c_str());
-                    // Re-seed the buffer to restore the previous value.
-                    CopyTo(g_State.Buf.TextDefault, sizeof(g_State.Buf.TextDefault),
-                           m->TextDefault);
-                } else if (newText != m->TextDefault) {
-                    LOG_DEBUG("/me-mote text default edit: id=%s", id.c_str());
-                    m->TextDefault = std::move(newText);
-                    Persist();
+            bool changed = false;
+            {
+                std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
+                    std::string newText = g_State.Buf.TextDefault;
+                    if (newText.empty()) {
+                        LOG_DEBUG("/me-mote text default edit refused (empty): id=%s",
+                                  id.c_str());
+                        // Re-seed the buffer to restore the previous value.
+                        CopyTo(g_State.Buf.TextDefault, sizeof(g_State.Buf.TextDefault),
+                               m->TextDefault);
+                    } else if (newText != m->TextDefault) {
+                        LOG_DEBUG("/me-mote text default edit: id=%s", id.c_str());
+                        m->TextDefault = std::move(newText);
+                        changed = true;
+                    }
                 }
             }
+            if (changed) Persist();
         }
         if (defaultEmpty) ImGui::PopStyleColor();
         if (defaultEmpty) {
@@ -296,15 +321,19 @@ void RenderMeMotesTab() {
                                       ImVec2(0, ImGui::GetTextLineHeight() * 3),
                                       ImGuiInputTextFlags_CtrlEnterForNewLine |
                                       ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
-                std::string newText = g_State.Buf.TextYou;
-                if (newText != m->TextYou) {
-                    LOG_DEBUG("/me-mote text_you edit: id=%s", id.c_str());
-                    m->TextYou = std::move(newText);
-                    Persist();
+            bool changed = false;
+            {
+                std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
+                    std::string newText = g_State.Buf.TextYou;
+                    if (newText != m->TextYou) {
+                        LOG_DEBUG("/me-mote text_you edit: id=%s", id.c_str());
+                        m->TextYou = std::move(newText);
+                        changed = true;
+                    }
                 }
             }
+            if (changed) Persist();
         }
 
         // TextAll — optional
@@ -314,15 +343,19 @@ void RenderMeMotesTab() {
                                       ImVec2(0, ImGui::GetTextLineHeight() * 3),
                                       ImGuiInputTextFlags_CtrlEnterForNewLine |
                                       ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
-                std::string newText = g_State.Buf.TextAll;
-                if (newText != m->TextAll) {
-                    LOG_DEBUG("/me-mote text_all edit: id=%s", id.c_str());
-                    m->TextAll = std::move(newText);
-                    Persist();
+            bool changed = false;
+            {
+                std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
+                    std::string newText = g_State.Buf.TextAll;
+                    if (newText != m->TextAll) {
+                        LOG_DEBUG("/me-mote text_all edit: id=%s", id.c_str());
+                        m->TextAll = std::move(newText);
+                        changed = true;
+                    }
                 }
             }
+            if (changed) Persist();
         }
 
         ImGui::Spacing();
