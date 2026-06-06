@@ -10,7 +10,8 @@ std::string g_EmotesJsonPath;
 std::string g_IconsDir;
 std::string g_PresetsDir;
 
-bool g_EmotesDirty = false;
+bool                  g_EmotesDirty         = false;
+std::atomic<uint64_t> g_EmoteCatalogVersion { 0 };
 
 bool                     g_PromptNewBundledEmotes = false;
 std::vector<std::string> g_NewBundledEmoteIds;

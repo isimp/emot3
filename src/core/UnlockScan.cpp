@@ -207,7 +207,7 @@ void ApplyResult(const std::string& body) {
     s_status.custom     = custom;
     s_status.unknownApi = unknownApi;
     s_busy.store(false);
-    g_EmotesDirty = true;  // refresh panels' unlock-derived state
+    MarkEmotesDirty();  // refresh panels' unlock-derived state
     LOG_INFO("Unlock sync done: %d unlocked, %d custom-skipped, "
              "%d API id(s) unknown to catalog",
              unlocked, custom, unknownApi);

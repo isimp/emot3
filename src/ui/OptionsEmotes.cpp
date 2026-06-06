@@ -262,7 +262,7 @@ void RenderEmotesTab() {
         LOG_INFO("Added emote id=%s command=%s (\"%s\")",
                  newId.c_str(), normalizedNew.c_str(), finalName.c_str());
         if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-        g_EmotesDirty = true;
+        MarkEmotesDirty();
         newCmdBuf[0] = '\0';  // Clear input on commit.
     }
 
@@ -763,7 +763,7 @@ void RenderEmotesTab() {
 
     if (emoteEdited) {
         if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-        g_EmotesDirty = true;
+        MarkEmotesDirty();
     }
 
     // ===== Bundled emotes (uncommon: reseed) =====
@@ -842,7 +842,7 @@ void RenderEmotesTab() {
         if (ImGui::Button(L("opt.em.restore_bundled"))) {
             SeedDefaultEmotes(current, s_secondaryRestore);
             if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-            g_EmotesDirty = true;
+            MarkEmotesDirty();
         }
         if (ImGui::IsItemHovered())
             TooltipText("opt.em.restore_bundled_tooltip");
@@ -892,7 +892,7 @@ void RenderEmotesTab() {
             g_Settings.ManuallyUnlocked.clear();
             if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
             if (!g_SettingsPath.empty())   SaveSettings(g_SettingsPath);
-            g_EmotesDirty = true;
+            MarkEmotesDirty();
             LOG_INFO("Catalog cleared by user (%d emote(s) removed)", total);
             ImGui::CloseCurrentPopup();
         }

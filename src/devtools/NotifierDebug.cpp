@@ -74,7 +74,7 @@ void RenderNotifierDebug() {
                 k.erase(std::remove(k.begin(), k.end(), victim), k.end());
                 if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
                 if (!g_SettingsPath.empty())   SaveSettings(g_SettingsPath);
-                g_EmotesDirty = true;
+                MarkEmotesDirty();
                 // The real, setting-gated detection - so "notify off" => no prompt.
                 DetectNewBundledEmotes();
                 LOG_INFO("notifier[dev]: dropped '%s'; detect staged %d, prompt=%s",

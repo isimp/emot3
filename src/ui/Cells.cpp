@@ -7,6 +7,7 @@
 #include "Favorites.h"
 #include "Icons.h"
 #include "Layout.h"
+#include "TextCache.h"       // EllipsizeCached / FitNameCached (per-cell label memo)
 #include "CharacterState.h"  // g_QbUnusableKey (reason-aware block UI)
 #include "Feedback.h"        // ShowFeedback - in-window refusal line (replaces SendAlert)
 #include "Logging.h"         // LOG_DEBUG (category rename)
@@ -288,7 +289,7 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
         // label (dot width + its corner gap + a little breathing room).
         float labelMaxW = cellW - 12.f;
         if (showDot) labelMaxW -= dotSz + 6.f;
-        std::string label = Ellipsize(e.Name, labelMaxW);
+        const auto& cached = TextCache::EllipsizeCached(e.Id, e.Name, mode, labelMaxW);
 
         ImGui::SetCursorPos(ImVec2(cellX, cellY));
         // Quickbar's high-contrast option keeps text-only buttons
@@ -306,7 +307,7 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
         if (isQuickbar && g_Settings.QuickbarHighContrast) {
             hiContrastPushes = PushHighContrastButtonStyles(/*includeFrameBg=*/false);
         }
-        clicked = ImGui::Button(label.c_str(), ImVec2(cellW, cellH));
+        clicked = ImGui::Button(cached.label.c_str(), ImVec2(cellW, cellH));
         if (hiContrastPushes > 0) ImGui::PopStyleColor(hiContrastPushes);
     } else {
         const int pad = 2;
@@ -354,16 +355,17 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
             float maxTextW  = (stripMax.x - stripMin.x) - stripPadX * 2.f;
             // The targetable dot lives in the top-right corner of the icon,
             // not in the strip, so we don't reserve space for it here.
-            std::string label = Ellipsize(e.Name, maxTextW);
-            ImVec2 ts = ImGui::CalcTextSize(label.c_str());
-            float  tx = stripMin.x + (stripMax.x - stripMin.x - ts.x) * 0.5f;
+            // Cached ellipsize: same string + measured size as Ellipsize +
+            // CalcTextSize, but memoized by (id, mode, maxW) — see TextCache.
+            const auto& cached = TextCache::EllipsizeCached(e.Id, e.Name, mode, maxTextW);
+            float  tx = stripMin.x + (stripMax.x - stripMin.x - cached.size.x) * 0.5f;
             float  ty = stripMin.y + stripPadY;
             // Slightly off-white so it doesn't scream against the dark
             // strip; alpha follows the cell so locked emotes dim cleanly.
             int textA = (int)(245.f * alphaMul);
             dl->AddText(ImVec2(tx, ty),
                         IM_COL32(245, 245, 245, textA),
-                        label.c_str());
+                        cached.label.c_str());
         }
     }
 
@@ -560,16 +562,18 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
         float btnTotal = iconSz + pad * 2;
         float labelY   = cellY + btnTotal + 4.f;
 
-        auto fit = FitName(e.Name, cellW);
-        ImVec2 ts1 = ImGui::CalcTextSize(fit.first.c_str());
-        ImGui::SetCursorPos(ImVec2(cellX + (cellW - ts1.x) * 0.5f, labelY));
-        ImGui::TextUnformatted(fit.first.c_str());
+        // Cached fit: same two-line / ellipsized result as FitName, but with
+        // both line sizes pre-measured so the centering math skips a second
+        // CalcTextSize per line — FitName's split test already measured them
+        // and the original code threw the measurements away.
+        const auto& cached = TextCache::FitNameCached(e.Id, e.Name, cellW);
+        ImGui::SetCursorPos(ImVec2(cellX + (cellW - cached.size1.x) * 0.5f, labelY));
+        ImGui::TextUnformatted(cached.line1.c_str());
 
-        if (!fit.second.empty()) {
-            ImVec2 ts2 = ImGui::CalcTextSize(fit.second.c_str());
-            float  ly2 = labelY + ts1.y;
-            ImGui::SetCursorPos(ImVec2(cellX + (cellW - ts2.x) * 0.5f, ly2));
-            ImGui::TextUnformatted(fit.second.c_str());
+        if (!cached.line2.empty()) {
+            float ly2 = labelY + cached.size1.y;
+            ImGui::SetCursorPos(ImVec2(cellX + (cellW - cached.size2.x) * 0.5f, ly2));
+            ImGui::TextUnformatted(cached.line2.c_str());
         }
     }
 

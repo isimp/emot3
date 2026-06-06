@@ -36,7 +36,7 @@ void AddonOptions() {
     // before drawing this frame.
     if (DrainIconBrowse()) {
         if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-        g_EmotesDirty = true;
+        MarkEmotesDirty();
     }
     // Apply any completed GW2-API unlock sync + drive H&S retries (render-side).
     DrainUnlockSync();
