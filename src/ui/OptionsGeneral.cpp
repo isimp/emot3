@@ -186,9 +186,10 @@ void RenderGeneralOptionsTab() {
 
     CheckboxWithSaveAndTooltip("opt.gen.show_target_dot", &g_Settings.ShowTargetDot, /*defaultIsOn=*/true);
 
-    // /me-mote indicator — small upper-left accent on /me-mote cells, marks
+    // /me-mote indicator — small upper-right accent on /me-mote cells, marks
     // them as distinct from regular Emote cells. Same paragraph as the
-    // target-dot toggle since they're conceptual siblings.
+    // target-dot toggle since they're conceptual siblings (and share the
+    // top-right corner — never co-occur, /me-motes are never targetable).
     CheckboxWithSaveAndTooltip("opt.gen.show_me_mote_indicator", &g_Settings.ShowMeMoteIndicator, /*defaultIsOn=*/true);
 
     // How unusable emotes present on the Quickbar - one dropdown over the two

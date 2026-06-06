@@ -105,7 +105,7 @@ struct Settings {
     // expanded. An active search renders every section expanded regardless.
     bool                          MainCoreCollapsed     = false;
     bool                          MainUnlockedCollapsed = false;
-    // Library "Text" section — surfaces /me-motes (data/MeMotes.h). See the
+    // Library /me-motes section — surfaces /me-motes (data/MeMotes.h). See the
     // /me-motes Quickbar toggle further down.
     bool                          MainMeMotesCollapsed  = false;
     EViewMode                     QuickbarViewMode     = EViewMode::Icon;
@@ -189,7 +189,7 @@ struct Settings {
     bool                          QuickbarShowMadKingCategory     = false;
     // /me-motes (data/MeMotes.h) — user-defined free-form text emotes. Opt-in
     // (defaults off, matching the other built-in category posture). The
-    // Library always shows the "Text" section when /me-motes exist; this
+    // Library always shows the /me-motes section when /me-motes exist; this
     // toggle only gates the Quickbar's category-cycle inclusion.
     bool                          QuickbarShowMeMotesCategory     = false;
     // When the mouse wheel cycles the active category (see EWheelCycle).
@@ -216,10 +216,11 @@ struct Settings {
     // suffix with " @"). On by default. Applies to both the main panel and
     // the Quickbar (drawn in RenderEmoteCell).
     bool                          ShowTargetDot        = true;
-    // Show the small corner accent marking /me-motes (drawn top-left, distinct
-    // colour from the target dot's top-right anchor). On by default — makes
-    // /me-motes visually distinguishable from regular Emotes in mixed
-    // favourites / Quickbar categories.
+    // Show the small corner accent marking /me-motes (drawn top-right — the
+    // same corner as the target dot, which is safe because /me-motes are never
+    // IsTargetable so the two never co-occur). On by default — makes /me-motes
+    // visually distinguishable from regular Emotes in mixed favourites /
+    // Quickbar categories.
     bool                          ShowMeMoteIndicator  = true;
     // Block emotes that can't currently be used: refuse the send (toast) + grey
     // or hide the Quickbar. On by default. Always covers mounted (MumbleLink).

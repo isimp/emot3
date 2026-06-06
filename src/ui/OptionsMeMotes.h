@@ -1,6 +1,6 @@
 #pragma once
 
-// Options > Text Emotes tab — editor for the /me-mote catalog (see
+// Options > /me-motes tab — editor for the /me-mote catalog (see
 // src/data/MeMotes.h). Separate from OptionsEmotes (the official emote
 // catalog) because /me-motes carry a different schema (Name/Text/TextYou/
 // TextAll, no Command, no IsCore/IsTargetable/IsMadKing). Both tabs share

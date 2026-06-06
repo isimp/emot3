@@ -1050,9 +1050,13 @@ void QuickbarRender() {
 
         // /me-motes snapshot for favorites mixing + the dedicated category.
         // Built under g_MeMotesMutex once so the cell loop can dereference
-        // freely without nesting locks.
+        // freely without nesting locks. Only the Favorite and dedicated
+        // /me-motes categories consume it; the built-in Emote categories
+        // (Core/Unlocked/Mad King) never read it, and the QB only shows one
+        // category per frame — so skip the lock + populate for those.
         std::unordered_map<std::string, const MeMote*> meMotesById;
-        {
+        if (activeCat.kind == QbCatKind::MeMotes ||
+            activeCat.kind == QbCatKind::Favorite) {
             std::lock_guard<std::mutex> lk(g_MeMotesMutex);
             meMotesById.reserve(g_MeMotes.size());
             for (const auto& mm : g_MeMotes) meMotesById[mm.Id] = &mm;
@@ -1306,9 +1310,13 @@ void QuickbarRender() {
     }
     if (items.empty()) {
         // TextWrapped + a manual disabled color so narrow QB windows don't
-        // overflow horizontally with the hint text.
+        // overflow horizontally with the hint text. The dedicated /me-motes
+        // category auto-fills from the catalog (not via right-click-to-add), so
+        // it points at Options > /me-motes instead of the favorites workflow.
+        const char* emptyKey = (activeCat.kind == QbCatKind::MeMotes)
+                                   ? "qb.empty_me_motes" : "qb.empty_category";
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        ImGui::TextWrapped("%s", L("qb.empty_category"));
+        ImGui::TextWrapped("%s", L(emptyKey));
         ImGui::PopStyleColor();
     } else {
         // Defensive clamps for stored values older than the current

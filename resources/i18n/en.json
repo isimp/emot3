@@ -138,6 +138,7 @@
 
   "qb.no_categories": "Nothing to show here. Add a favorites category via the \"+ Category\" button in the Library or the addon's Nexus options, or enable a built-in category under Options > General > Quickbar categories.",
   "qb.empty_category": "No emotes in this category. Right-click any emote in the Library to add.",
+  "qb.empty_me_motes": "No /me-motes yet. Create some under Options > /me-motes.",
   "qb.cat_core": "Core",
   "qb.cat_mad_king": "Mad King",
   "qb.cat_unlocked": "Unlocked",
@@ -344,7 +345,7 @@
   "opt.gen.show_target_dot.on": "a small dot in the top-right corner marks emotes you can send on a target (suffix \" @\").",
   "opt.gen.show_target_dot.off": "no dot - targeting still works from the right-click menu.",
   "opt.gen.show_me_mote_indicator": "Show /me-mote indicator",
-  "opt.gen.show_me_mote_indicator.on": "a small accent in the top-left corner marks /me-mote cells so they're visually distinct from regular emotes.",
+  "opt.gen.show_me_mote_indicator.on": "a small accent in the top-right corner marks /me-mote cells so they're visually distinct from regular emotes.",
   "opt.gen.show_me_mote_indicator.off": "no accent - the cells still work, they just look like regular emote cells.",
   "opt.gen.ai_fallback": "Use AI-generated fallback icons",
   "opt.gen.ai_fallback.on": "emotes without an ArenaNet official icon show a bundled AI-generated image (when one exists for that emote). AI artwork is marked by a gold frame.",

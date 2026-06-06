@@ -71,7 +71,7 @@ inline void MarkEmotesDirty() {
 
 // /me-mote catalog epoch. Symmetric to g_EmoteCatalogVersion but tracks the
 // separate /me-mote catalog (see data/MeMotes.h). Bumped via MarkMeMotesDirty
-// from every mutation site (Options > Text Emotes edits, JSON load). Read by
+// from every mutation site (Options > /me-motes edits, JSON load). Read by
 // the per-frame TextCache so /me-mote label shaping invalidates on edit.
 // MarkMeMotesDirty also sets g_EmotesDirty so the next-frame texture loader
 // picks up any /me-mote icon path changes (the loader is the single texture

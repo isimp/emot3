@@ -251,13 +251,13 @@ static void RenderSendVariants(const Emote& e) {
 // can dispatch without knowing the kind. Significantly shorter than the Emote
 // path because /me-motes carry no IsCore / IsTargetable / lock state — no
 // targetable dot, no lock overlay, no unlock toggle in the right-click menu.
-// Icons are letter-fallback only for this checkpoint (texture loading for
-// /me-mote icon paths is a follow-up; the Browse path already saves IconPath
-// to me_motes.json so re-enabling textures later picks them up). Drag-drop is
-// also explicitly out of scope here — would require extending EmoteDragPayload
-// with a type tag + ApplyEmoteDrop branching, which is the next stage. Click
-// + right-click variants + Quickbar click-rect tracking are all wired here so
-// the cell is fully functional within the constraints above.
+// Icons are the user's explicit PNG (GetMeMoteTexture) or the styled letter
+// fallback — no <id>.png folder convention, no bundled art, no AI fallback
+// (the chain is simpler than the Emote one). Drag-drop is wired: a drag source
+// in the Library + favorites sections (never the Quickbar) emits a FAV_DRAG
+// payload tagged EFavoriteRefType::MeMote, which ApplyEmoteDrop routes into the
+// /me-mote namespace. Click + right-click variants + Quickbar click-rect
+// tracking are all wired here too.
 static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
                                  float cellX, float cellY,
                                  float cellW, float cellH, float iconSz,
@@ -266,7 +266,7 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
                                  int  categoryIdx,
                                  bool isQuickbar)
 {
-    (void)sectionRow; (void)allowReorder;
+    (void)sectionRow;   // allowReorder IS read below (gates the drag source)
     const MeMote& m = *ci.m;
 
     // Quickbar-only "can't send right now" dim, same as the Emote path —
@@ -276,7 +276,7 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
     float alphaMul = blocked ? 0.40f : 1.f;
     bool dimmed    = blocked;
 
-    // /me-mote indicator (top-left accent). Sized like the target dot so it
+    // /me-mote indicator (top-right accent). Sized like the target dot so it
     // tracks the icon-scale slider; same per-mode reference so it reads the
     // same in every view mode.
     const bool showIndicator = g_Settings.ShowMeMoteIndicator;
@@ -286,6 +286,13 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
         indSz = indRef * (mode == EViewMode::TextOnly ? 0.45f : 0.24f);
     }
 
+    // Namespace the ImGui ID stack BEFORE pushing the Id. An Emote and a
+    // /me-mote can share an Id (independent namespaces), and the Emote path
+    // pushes the bare Id at the same scope — without this extra level the two
+    // cells' buttons AND their "##ctx" context-menu popups hash to the same
+    // ImGui ID, so right-clicking one opens a merged menu rendering BOTH cells'
+    // items. Mirrors the EMOT3_MM_ texture-cache + meMote TextCache split.
+    ImGui::PushID("memote");
     ImGui::PushID(m.Id.c_str());
     if (dimmed) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
                                      ImGui::GetStyle().Alpha * alphaMul);
@@ -296,7 +303,7 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
         // reserves it for the target dot.
         float labelMaxW = cellW - 12.f;
         if (showIndicator) labelMaxW -= indSz + 6.f;
-        const auto& cached = TextCache::EllipsizeCached(m.Id, m.Name, mode, labelMaxW);
+        const auto& cached = TextCache::EllipsizeCached(m.Id, m.Name, mode, labelMaxW, /*meMote=*/true);
         ImGui::SetCursorPos(ImVec2(cellX, cellY));
         int hiContrastPushes = 0;
         if (isQuickbar && g_Settings.QuickbarHighContrast)
@@ -334,7 +341,7 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
             dl->AddRectFilled(stripMin, stripMax, IM_COL32(0, 0, 0, bgA));
             float stripPadX = 3.f;
             float maxTextW  = (stripMax.x - stripMin.x) - stripPadX * 2.f;
-            const auto& cached = TextCache::EllipsizeCached(m.Id, m.Name, mode, maxTextW);
+            const auto& cached = TextCache::EllipsizeCached(m.Id, m.Name, mode, maxTextW, /*meMote=*/true);
             float tx = stripMin.x + (stripMax.x - stripMin.x - cached.size.x) * 0.5f;
             float ty = stripMin.y + stripPadY;
             int textA = (int)(245.f * alphaMul);
@@ -385,8 +392,9 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
     }
 
     // Right-click context menu. Quickbar shows execute-variants only;
-    // main panel adds favorites management. Drag-drop is out of scope (see
-    // header comment) so no source/target wiring here.
+    // main panel adds favorites management. (The drag SOURCE is wired above;
+    // drop TARGETING is handled at the section level by RenderEmoteSection's
+    // grid-wide zone, type-agnostically — no per-cell target wiring needed.)
     if (dimmed) ImGui::PopStyleVar();
     if (ImGui::BeginPopupContextItem("##ctx")) {
         // Send variants — You / All are visible always but disabled when
@@ -485,7 +493,7 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
         const int pad = 2;
         float btnTotal = iconSz + pad * 2;
         float labelY   = cellY + btnTotal + 4.f;
-        const auto& cached = TextCache::FitNameCached(m.Id, m.Name, cellW);
+        const auto& cached = TextCache::FitNameCached(m.Id, m.Name, cellW, /*meMote=*/true);
         ImGui::SetCursorPos(ImVec2(cellX + (cellW - cached.size1.x) * 0.5f, labelY));
         ImGui::TextUnformatted(cached.line1.c_str());
         if (!cached.line2.empty()) {
@@ -503,7 +511,8 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
             SendOrFillMeMote(m, EMeMoteVariant::Default);
         }
     }
-    ImGui::PopID();
+    ImGui::PopID();   // m.Id
+    ImGui::PopID();   // "memote" namespace
 }
 
 void RenderEmoteCell(const CellInfo& ci, int sectionRow,

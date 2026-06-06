@@ -71,7 +71,7 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
                      int  categoryIdx,
                      bool isQuickbar);
 
-// Apply a drag-drop at gap `g` (a slot in FavoriteCategories[dstCat].Emotes,
+// Apply a drag-drop at gap `g` (a slot in FavoriteCategories[dstCat].Refs,
 // 0..size) for the given payload: catalog add, same-category reorder, or
 // cross-category move. All index math is clamped; locked-emote and de-dup
 // rules are enforced inside. Saves settings on a successful change. Shared by

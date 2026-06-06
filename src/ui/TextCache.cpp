@@ -15,12 +15,17 @@
 // Full uses its own FitName map below.
 namespace {
 
+// `meMote` namespaces the key by catalog, mirroring the texture cache's
+// EMOT3_MM_ prefix (Icons.cpp): an Emote and a /me-mote can share an Id (their
+// namespaces are independent), and without this discriminator the second cell
+// to render in a frame would read the first's cached label by key collision.
 struct EKey {
     std::string id;
     EViewMode   mode;
     int         w;   // maxW rounded to nearest pixel (sub-pixel drift = noise)
+    bool        meMote;
     bool operator==(const EKey& o) const {
-        return w == o.w && mode == o.mode && id == o.id;
+        return w == o.w && mode == o.mode && meMote == o.meMote && id == o.id;
     }
 };
 struct EKeyHash {
@@ -28,8 +33,9 @@ struct EKeyHash {
         // Boost-style hash combine. The id hash carries the bulk of the entropy;
         // mode + w are 2- and ~6-bit inputs, so a simple xor-shift mix is enough.
         size_t h = std::hash<std::string>{}(k.id);
-        h ^= (static_cast<size_t>(k.mode) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2));
-        h ^= (static_cast<size_t>(k.w)    + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2));
+        h ^= (static_cast<size_t>(k.mode)   + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2));
+        h ^= (static_cast<size_t>(k.w)      + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2));
+        h ^= (static_cast<size_t>(k.meMote) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2));
         return h;
     }
 };
@@ -37,12 +43,14 @@ struct EKeyHash {
 struct FKey {
     std::string id;
     int         w;
-    bool operator==(const FKey& o) const { return w == o.w && id == o.id; }
+    bool        meMote;
+    bool operator==(const FKey& o) const { return w == o.w && meMote == o.meMote && id == o.id; }
 };
 struct FKeyHash {
     size_t operator()(const FKey& k) const noexcept {
         size_t h = std::hash<std::string>{}(k.id);
-        h ^= (static_cast<size_t>(k.w) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2));
+        h ^= (static_cast<size_t>(k.w)      + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2));
+        h ^= (static_cast<size_t>(k.meMote) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2));
         return h;
     }
 };
@@ -164,9 +172,9 @@ namespace TextCache {
 
 const EllipsizedEntry& EllipsizeCached(const std::string& emoteId,
                                        const std::string& name,
-                                       EViewMode mode, float maxW) {
+                                       EViewMode mode, float maxW, bool meMote) {
     MaintainEpoch();
-    EKey k{ emoteId, mode, Quantize(maxW) };
+    EKey k{ emoteId, mode, Quantize(maxW), meMote };
     auto it = s_emap.find(k);
     if (it != s_emap.end()) return it->second;
     auto built = BuildEllipsized(name, maxW);
@@ -176,9 +184,9 @@ const EllipsizedEntry& EllipsizeCached(const std::string& emoteId,
 
 const FitEntry& FitNameCached(const std::string& emoteId,
                               const std::string& name,
-                              float maxW) {
+                              float maxW, bool meMote) {
     MaintainEpoch();
-    FKey k{ emoteId, Quantize(maxW) };
+    FKey k{ emoteId, Quantize(maxW), meMote };
     auto it = s_fmap.find(k);
     if (it != s_fmap.end()) return it->second;
     auto built = BuildFit(name, maxW);

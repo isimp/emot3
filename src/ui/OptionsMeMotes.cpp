@@ -21,6 +21,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // ============================================================================
@@ -71,7 +72,8 @@ struct RowBuffer {
 
 // Per-row state, keyed on the stable /me-mote Id. Entries persist across
 // frames (and across collapses) so InputText buffers for a re-expanded row
-// keep their state. Matches OptionsEmotes' s_rowOpen / s_rowBufs maps.
+// keep their state. Matches OptionsEmotes' s_rowOpen / s_rowBufs maps,
+// including the per-frame prune of dead Ids in RenderMeMotesTab.
 std::unordered_map<std::string, bool>       s_rowOpen;
 std::unordered_map<std::string, RowBuffer>  s_rowBufs;
 
@@ -271,6 +273,24 @@ void RenderMeMotesTab() {
         for (const auto& m : g_MeMotes) ids.push_back(m.Id);
     }
     std::sort(ids.begin(), ids.end());
+
+    // Prune per-row UI state for /me-motes that no longer exist, mirroring
+    // OptionsEmotes' prune pass. Today the Delete button is the only removal
+    // path and it erases both maps, but this keeps them robust against any
+    // future bulk-removal path AND forces a fresh re-Seed after a reload that
+    // repopulated g_MeMotes from disk (otherwise a surviving, initialized
+    // buffer could commit stale text over the freshly-loaded value).
+    {
+        std::unordered_set<std::string> live(ids.begin(), ids.end());
+        for (auto it = s_rowOpen.begin(); it != s_rowOpen.end(); ) {
+            if (live.count(it->first)) ++it;
+            else                       it = s_rowOpen.erase(it);
+        }
+        for (auto it = s_rowBufs.begin(); it != s_rowBufs.end(); ) {
+            if (live.count(it->first)) ++it;
+            else                       it = s_rowBufs.erase(it);
+        }
+    }
 
     // ---- List toolbar: count + Expand all / Collapse all -------------
     static int s_setAllOpen = 0;

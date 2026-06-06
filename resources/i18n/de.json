@@ -135,6 +135,7 @@
 
   "qb.no_categories": "Hier gibt es nichts zu zeigen. Erstelle eine Favoritenkategorie über die Schaltfläche \"+ Kategorie\" in der Library oder in den Nexus-Optionen des Addons, oder aktiviere eine eingebaute Kategorie unter Optionen > Allgemein > Quickbar-Kategorien.",
   "qb.empty_category": "Keine Emotes in dieser Kategorie. Rechtsklick auf ein Emote in der Library zum Hinzufügen.",
+  "qb.empty_me_motes": "Noch keine /me-motes. Erstelle welche unter Optionen > /me-motes.",
   "qb.cat_core": "Standard",
   "qb.cat_mad_king": "Verrückter König",
   "qb.cat_unlocked": "Freigeschaltet",
@@ -343,7 +344,7 @@
   "opt.gen.show_target_dot.on": "ein kleiner Punkt oben rechts markiert Emotes, die du auf ein Ziel senden kannst (Zusatz \" @\").",
   "opt.gen.show_target_dot.off": "kein Punkt - das Anvisieren funktioniert weiter über das Rechtsklick-Menü.",
   "opt.gen.show_me_mote_indicator": "/me-mote-Markierung anzeigen",
-  "opt.gen.show_me_mote_indicator.on": "eine kleine Markierung oben links hebt /me-mote-Zellen vom normalen Emote ab.",
+  "opt.gen.show_me_mote_indicator.on": "eine kleine Markierung oben rechts hebt /me-mote-Zellen vom normalen Emote ab.",
   "opt.gen.show_me_mote_indicator.off": "keine Markierung - die Zellen funktionieren weiter, sehen aber wie normale Emote-Zellen aus.",
   "opt.gen.ai_fallback": "KI-generierte Ersatzsymbole verwenden",
   "opt.gen.ai_fallback.on": "Emotes ohne offizielles ArenaNet-Symbol zeigen ein mitgeliefertes KI-generiertes Bild (falls für dieses Emote vorhanden). KI-Grafik ist mit goldenem Rahmen markiert.",

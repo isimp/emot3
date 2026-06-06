@@ -42,6 +42,12 @@ std::string Trim(std::string s) {
 // "/ME hugs" also strips cleanly.
 std::string StripMePrefix(std::string s) {
     s = Trim(s);
+    // A body of exactly "/me" with no text is a nonsensical leftover — treat it
+    // as empty so the empty-TextDefault drop fires instead of shipping "/me /me"
+    // on send. ("/method" etc. are real words and intentionally NOT stripped.)
+    if (s.size() == 3 && s[0] == '/' &&
+        (s[1] == 'm' || s[1] == 'M') && (s[2] == 'e' || s[2] == 'E'))
+        return std::string();
     if (s.size() >= 4 && s[0] == '/' &&
         (s[1] == 'm' || s[1] == 'M') &&
         (s[2] == 'e' || s[2] == 'E') &&
@@ -52,12 +58,25 @@ std::string StripMePrefix(std::string s) {
     return s;
 }
 
-// Sanitize one alias: trim, drop empty. (Unlike Emote.Aliases, /me-mote
-// aliases are NOT slash commands — they're free-form search words, so the
-// command-normalization rules don't apply.)
-bool SanitizeAlias(std::string& a) {
-    a = Trim(a);
-    return !a.empty();
+// Tokenize an alias string on whitespace + comma into `out`, trimming each
+// token, dropping empties, and deduping first-wins against what's already
+// there. Mirrors OptionsMeMotes' ParseAliases so a hand-edited multi-word
+// alias loads in the SAME tokenized form the editor produces — no silent
+// reshape on the first edit. (Unlike Emote.Aliases, /me-mote aliases are NOT
+// slash commands, so no command-normalization is applied.)
+void TokenizeAliases(const std::string& raw, std::vector<std::string>& out) {
+    std::string tok;
+    auto flush = [&] {
+        std::string t = Trim(tok);
+        tok.clear();
+        if (t.empty()) return;
+        if (std::find(out.begin(), out.end(), t) == out.end()) out.push_back(std::move(t));
+    };
+    for (char ch : raw) {
+        if (ch == ' ' || ch == '\t' || ch == ',') flush();
+        else                                       tok += ch;
+    }
+    flush();
 }
 
 } // namespace
@@ -161,6 +180,19 @@ bool LoadMeMotesJson(const std::string& path) {
         trySanitizeBody(m.TextYou,     "text_you");
         trySanitizeBody(m.TextAll,     "text_all");
 
+        // Trim the Name. The editor always stores a trimmed Name, so heal the
+        // on-disk form to match — a whitespace-only Name would otherwise render
+        // as a blank label and never canonicalize. (Empty-after-trim is kept,
+        // not dropped: it's a half-filled entry the user can finish in the
+        // editor, same as an Id typed with no Name yet.)
+        {
+            std::string trimmedName = Trim(m.Name);
+            if (trimmedName != m.Name) {
+                LOG_WARNING("me_motes[%s].name: trimmed whitespace", m.Id.c_str());
+                m.Name = std::move(trimmedName); changed = true;
+            }
+        }
+
         // Drop entries with empty Id (no way to reference them) or empty
         // TextDefault (no body to send on left-click — the You/All variants
         // alone aren't enough, since the cell-click handler always uses
@@ -171,16 +203,15 @@ bool LoadMeMotesJson(const std::string& path) {
             ++droppedNoText; changed = true; continue;
         }
 
-        // Optional aliases (free-form search words). Trim + drop empties +
-        // dedupe. Missing key is fine.
+        // Optional aliases (free-form search words). Each JSON string is
+        // tokenized on whitespace + comma (so a hand-edited "foo bar" lands as
+        // two aliases, matching the editor), trimmed, empties dropped, deduped.
+        // Missing key is fine.
         {
             const json& al = jsonutil::GetArray(item, "aliases");
             for (const auto& a : al) {
                 if (!a.is_string()) continue;
-                std::string na = a.get<std::string>();
-                if (!SanitizeAlias(na)) continue;
-                if (std::find(m.Aliases.begin(), m.Aliases.end(), na) == m.Aliases.end())
-                    m.Aliases.push_back(std::move(na));
+                TokenizeAliases(a.get<std::string>(), m.Aliases);
             }
         }
 
@@ -198,6 +229,10 @@ bool LoadMeMotesJson(const std::string& path) {
                                    skippedNonObj, skippedNonObj == 1 ? "y" : "ies");
     if (droppedNoId)   LOG_WARNING("me_motes: dropped %d entr%s with empty id",
                                    droppedNoId, droppedNoId == 1 ? "y" : "ies");
+    if (droppedNoText) LOG_WARNING("me_motes: dropped %d entr%s with empty text body",
+                                   droppedNoText, droppedNoText == 1 ? "y" : "ies");
+    if (droppedDup)    LOG_WARNING("me_motes: dropped %d duplicate-id entr%s",
+                                   droppedDup, droppedDup == 1 ? "y" : "ies");
 
     int count = 0;
     {

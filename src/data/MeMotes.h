@@ -26,16 +26,17 @@
 struct MeMote {
     // Stable, language-INDEPENDENT key across the codebase (favorites refs,
     // serialization, texture cache key for the icon path). Derived from the
-    // Name on create; uniqueness is enforced by the Options > Text Emotes UI.
+    // Name on create; uniqueness is enforced by the Options > /me-motes UI.
     std::string Id;
 
-    // Display label shown in the Library "Text" section, the Quickbar "Text"
-    // category, and favorites cells. Free-form, user-authored.
+    // Display label shown in the Library /me-motes section, the Quickbar
+    // /me-motes category, and favorites cells. Free-form, user-authored.
     std::string Name;
 
-    // Optional user-supplied icon path override; empty = derive from Id via
-    // the existing icon-fallback chain (a PNG in addons/emot3/icons/, then
-    // — since /me-motes have no bundled art — the letter fallback).
+    // Optional user-supplied icon path override; empty = no icon, the cell
+    // falls back to the styled letter button. Unlike Emotes, /me-motes have NO
+    // <id>.png folder convention, no bundled art, and no AI fallback — it's the
+    // explicit path or the letter (see ResolveMeMoteIconPath in Icons.cpp).
     std::string IconPath;
 
     // Search hints. The Library's search bar matches Name + Aliases (not the

@@ -290,17 +290,6 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
     }).detach();
 }
 
-// Resolve the +plus "swallow keyboard during injection" mode. Always false in
-// base builds (the AV-flagged input-consume is compiled out via #ifdef so the
-// branch leaves the local default-false). Shared by both send paths.
-inline bool ResolveSwallowMode() {
-#ifdef EMOT3_PLUS
-    return g_PlusSettings.SwallowInputOnSend;
-#else
-    return false;
-#endif
-}
-
 } // namespace
 
 void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
@@ -309,7 +298,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
     if (useTarget && e.IsTargetable) cmd += " @";
     if (useSync)                     cmd += " *";
     const bool send        = g_Settings.SendOnClick;
-    const bool swallowMode = ResolveSwallowMode();
+    const bool swallowMode = EmoteSendSwallowActive();
 
     // "Close chat on send": if a GW2 text box is focused and the setting is on,
     // we'll close it (Escape) in the worker instead of refusing - so tell the gate
@@ -359,7 +348,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
     std::string cmd = "/me " + *body;
 
     const bool send        = g_Settings.MeMoteSendOnClick;  // independent of SendOnClick
-    const bool swallowMode = ResolveSwallowMode();
+    const bool swallowMode = EmoteSendSwallowActive();
 
     const bool closeChat = g_Settings.CloseChatOnSend &&
                            MumbleLink && MumbleLink->Context.IsTextboxFocused;

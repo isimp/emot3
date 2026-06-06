@@ -86,7 +86,7 @@ void AddonOptions() {
             RenderEmotesTab();
             ImGui::EndTabItem();
         }
-        // Text Emotes (/me-motes) — separate editor, separate JSON file. See
+        // /me-motes — separate editor, separate JSON file. See
         // ui/OptionsMeMotes.cpp + data/MeMotes.h.
         if (ImGui::BeginTabItem(tMeMotes.c_str())) {
             RenderMeMotesTab();

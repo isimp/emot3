@@ -87,8 +87,9 @@ static void CategoryReorderZone(int ci, float secTop, float secBot) {
 // of the Library window, shown ONLY while an emote dragged FROM a user favorites
 // category is in flight (payload.categoryIdx >= 0). Catalog-sourced drags (Core /
 // Unlockable, categoryIdx < 0) aren't in favorites, so the zone stays hidden for
-// them. Dropping calls RemoveEmoteFromCategories - exactly the right-click
-// "Remove from favorites" path.
+// them. Dropping calls RemoveRefFromCategories with the payload's type - exactly
+// the right-click "Remove from favorites" path (which is type-aware, so a
+// /me-mote favorite drops correctly instead of routing to the Emote namespace).
 //
 // Drawn on the FOREGROUND draw list (always on top) with a custom drop rect
 // (BeginDragDropTargetCustom) rather than a separate window: a real overlay window
@@ -121,7 +122,7 @@ static void RenderRemoveTrashZone() {
         if (pl) {
             hovering = true;
             const EmoteDragPayload* s = (const EmoteDragPayload*)pl->Data;
-            if (pl->IsDelivery() && s) RemoveEmoteFromCategories(std::string(s->id));
+            if (pl->IsDelivery() && s) RemoveRefFromCategories(s->type, std::string(s->id));
         }
         ImGui::EndDragDropTarget();
     }
@@ -262,7 +263,10 @@ void LoadEmoteTextures() {
     // g_EmotesDirty too, so any /me-mote edit triggers this branch on the
     // next render frame. /me-motes only have explicit IconPath (no bundled
     // art, no folder convention), so the loader is just a single Get-or-
-    // Create per /me-mote that carries one.
+    // Create per /me-mote that carries one. Caveat (shared with the Emote
+    // path): GetOrCreateFromFile keys on the cache name and Nexus exposes no
+    // texture-evict, so changing or clearing an IconPath for an existing Id
+    // only takes visible effect on the next reload/restart.
     int meLoaded = 0;
     {
         std::lock_guard<std::mutex> lk(g_MeMotesMutex);
@@ -948,8 +952,9 @@ void AddonRender() {
         // Each Ref is resolved to its catalog by Type — Emote-typed refs go
         // through idx.byId (g_Emotes); /me-mote-typed refs go through the
         // snapshot map above. CellInfo carries the right pointer (e XOR m)
-        // and RenderEmoteCell dispatches accordingly. Search/filter doesn't
-        // apply to /me-mote favorites yet — they always pass.
+        // and RenderEmoteCell dispatches accordingly. Both the FilterShowMeMotes
+        // pill and the search predicate apply to /me-mote favorites, mirroring
+        // how passes() gates Emote favorites.
         for (size_t ci = 0; ci < g_Settings.FavoriteCategories.size(); ++ci) {
             const auto& cat = g_Settings.FavoriteCategories[ci];
             for (size_t i = 0; i < cat.Refs.size(); ++i) {
