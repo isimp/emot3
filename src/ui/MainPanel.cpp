@@ -263,25 +263,45 @@ void LoadEmoteTextures() {
 
     // /me-mote textures share the same dirty epoch — MarkMeMotesDirty sets
     // g_EmotesDirty too, so any /me-mote edit triggers this branch on the
-    // next render frame. /me-motes only have explicit IconPath (no bundled
-    // art, no folder convention), so the loader is just a single Get-or-
-    // Create per /me-mote that carries one. Caveat (shared with the Emote
-    // path): GetOrCreateFromFile keys on the cache name and Nexus exposes no
-    // texture-evict, so changing or clearing an IconPath for an existing Id
-    // only takes visible effect on the next reload/restart.
-    int meLoaded = 0;
+    // next render frame. The /me-mote chain is shorter than the Emote
+    // chain (no BundledOfficial tier; the catalog is user-content so
+    // ArenaNet doesn't ship art for it); ResolveMeMoteIconSource picks
+    // between Custom (disk PNG via explicit IconPath), BundledAI (when
+    // UseAIIconFallback is on AND the Id has a bundled AI PNG), and
+    // TextFallback (the styled letter, drawn by RenderMeMoteCellBody at
+    // render time, no texture load). Caveat shared with the Emote path:
+    // GetOrCreate*From* keys on the cache name and Nexus exposes no
+    // texture-evict, so changing or clearing an IconPath for an existing
+    // Id only takes visible effect on the next reload/restart.
+    int meLoaded = 0, meMissing = 0;
     {
         std::lock_guard<std::mutex> lk(g_MeMotesMutex);
         for (const auto& m : g_MeMotes) {
-            std::string p = ResolveMeMoteIconPath(m);
-            if (p.empty()) continue;
-            APIDefs->Textures.GetOrCreateFromFile(MeMoteCacheKey(m.Id).c_str(),
-                                                  p.c_str());
-            ++meLoaded;
+            std::string key = MeMoteCacheKey(m.Id);
+            switch (ResolveMeMoteIconSource(m)) {
+                case MeMoteIconSource::Custom:
+                    APIDefs->Textures.GetOrCreateFromFile(
+                        key.c_str(), ResolveMeMoteIconPath(m).c_str());
+                    ++meLoaded;
+                    break;
+                case MeMoteIconSource::BundledAI: {
+                    const void* data = nullptr; size_t size = 0;
+                    if (TryLoadBundledIconBytes(kMeMoteAIIcons, kMeMoteAIIconsCount,
+                                                m.Id, data, size)) {
+                        APIDefs->Textures.GetOrCreateFromMemory(
+                            key.c_str(), const_cast<void*>(data), size);
+                        ++meLoaded;
+                    } else ++meMissing;  // unreachable: resolver checked the same table
+                    break;
+                }
+                case MeMoteIconSource::TextFallback:
+                    ++meMissing;  // RenderMeMoteCellBody draws the styled letter
+                    break;
+            }
         }
     }
-    if (meLoaded > 0)
-        LOG_DEBUG("/me-mote icon load: %d found", meLoaded);
+    if (meLoaded > 0 || meMissing > 0)
+        LOG_DEBUG("/me-mote icon load: %d found, %d letter-fallback", meLoaded, meMissing);
 
     g_EmotesDirty = false;
 }

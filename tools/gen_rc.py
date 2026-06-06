@@ -13,6 +13,7 @@ Layout (relative to project root):
     resources/emote_data/*.json       -> bundled emote-localization table
     resources/presets/*.json          -> bundled default Quickbar presets
     resources/me_mote_data/*.json     -> bundled /me-mote seed table
+    resources/me_motes_ai/*.png       -> bundled /me-mote AI artwork (opt-in)
 
 Output:
     src/generated/emot3.rc               -> RCDATA entries for the resource
@@ -38,6 +39,7 @@ when new PNGs are added.
   Emote-locale data:    5000-5999  (resources/emote_data/*.json)
   Default presets:      6000-6999  (resources/presets/*.json)
   /me-mote seed data:   7000-7999  (resources/me_mote_data/*.json)
+  /me-mote AI icons:    8000-8999  (resources/me_motes_ai/*.png; opt-in)
 
 Each bucket has 1000 slots, which is plenty: GW2 currently ships ~67
 emote commands. If we ever blow through a bucket the script will refuse
@@ -73,6 +75,7 @@ BUCKETS = [
     ("emote_data",      5000, "kEmoteData",     "json", "BundledData"),
     ("presets",         6000, "kPresets",       "json", "BundledData"),
     ("me_mote_data",    7000, "kMeMoteData",    "json", "BundledData"),
+    ("me_motes_ai",     8000, "kMeMoteAIIcons", "png",  "BundledIcon"),
 ]
 BUCKET_CAPACITY = 1000
 

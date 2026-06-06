@@ -9,16 +9,16 @@
         "en": {
           "name": "LFG",
           "aliases": "group party form",
-          "text_default": "is looking for a group",
-          "text_you": "asks you to join the group",
-          "text_all": "calls out for a group"
+          "text_default": "is looking for a group.",
+          "text_you": "asks you to join the group.",
+          "text_all": "calls out for a group!"
         },
         "de": {
           "name": "Gruppensuche",
           "aliases": "gruppe party suche",
-          "text_default": "sucht eine Gruppe",
-          "text_you": "fragt dich, ob du der Gruppe beitreten möchtest",
-          "text_all": "ruft nach einer Gruppe"
+          "text_default": "sucht eine Gruppe.",
+          "text_you": "fragt dich, ob du der Gruppe beitreten möchtest.",
+          "text_all": "ruft nach einer Gruppe!"
         }
       }
     },
@@ -28,16 +28,16 @@
         "en": {
           "name": "Need help",
           "aliases": "help assist",
-          "text_default": "needs help",
-          "text_you": "asks you for help",
-          "text_all": "asks the group for help"
+          "text_default": "needs help!",
+          "text_you": "asks you for help.",
+          "text_all": "asks the group for help."
         },
         "de": {
           "name": "Hilfe gesucht",
           "aliases": "hilfe helfen assist",
-          "text_default": "braucht Hilfe",
-          "text_you": "bittet dich um Hilfe",
-          "text_all": "bittet die Gruppe um Hilfe"
+          "text_default": "braucht Hilfe!",
+          "text_you": "bittet dich um Hilfe.",
+          "text_all": "bittet die Gruppe um Hilfe."
         }
       }
     },
@@ -47,14 +47,14 @@
         "en": {
           "name": "BRB",
           "aliases": "brb back moment",
-          "text_default": "will be right back",
-          "text_all": "tells the group they'll be right back"
+          "text_default": "will be right back.",
+          "text_all": "tells the group they'll be right back."
         },
         "de": {
           "name": "BRB",
           "aliases": "brb gleich zurueck moment",
-          "text_default": "ist gleich wieder da",
-          "text_all": "sagt der Gruppe, dass er gleich wieder da ist"
+          "text_default": "ist gleich wieder da.",
+          "text_all": "sagt der Gruppe, dass er gleich wieder da ist."
         }
       }
     },
@@ -64,14 +64,14 @@
         "en": {
           "name": "To waypoint",
           "aliases": "waypoint wp port",
-          "text_default": "is heading to the waypoint",
-          "text_all": "tells the group to meet at the waypoint"
+          "text_default": "is heading to the waypoint.",
+          "text_all": "tells the group to meet at the waypoint."
         },
         "de": {
           "name": "Zum Wegpunkt",
           "aliases": "wegpunkt wp port treffen",
-          "text_default": "geht zum Wegpunkt",
-          "text_all": "sagt der Gruppe, sich am Wegpunkt zu treffen"
+          "text_default": "geht zum Wegpunkt.",
+          "text_all": "sagt der Gruppe, sich am Wegpunkt zu treffen."
         }
       }
     },
@@ -81,14 +81,14 @@
         "en": {
           "name": "Ready to pull",
           "aliases": "pull start engage",
-          "text_default": "is ready to pull",
-          "text_all": "asks the group if they're ready to pull"
+          "text_default": "is ready to pull!",
+          "text_all": "asks the group if they're ready to pull."
         },
         "de": {
           "name": "Bereit zum Pull",
           "aliases": "pull start engagieren angriff",
-          "text_default": "ist bereit zum Pull",
-          "text_all": "fragt die Gruppe, ob sie bereit zum Pull sind"
+          "text_default": "ist bereit zum Pull!",
+          "text_all": "fragt die Gruppe, ob sie bereit zum Pull sind."
         }
       }
     },
@@ -98,14 +98,14 @@
         "en": {
           "name": "Mount up",
           "aliases": "mount mounts move",
-          "text_default": "is mounting up",
-          "text_all": "tells the group to mount up"
+          "text_default": "is mounting up.",
+          "text_all": "tells the group to mount up."
         },
         "de": {
           "name": "Aufsteigen",
           "aliases": "mount reittier aufsitzen",
-          "text_default": "steigt aufs Reittier",
-          "text_all": "sagt der Gruppe, aufzusteigen"
+          "text_default": "steigt aufs Reittier.",
+          "text_all": "sagt der Gruppe, aufzusteigen."
         }
       }
     }

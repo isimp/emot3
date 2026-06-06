@@ -10,6 +10,7 @@
 #include "MeMotes.h"
 #include "OptionsCommon.h"   // OptionsSection
 #include "Profiling.h"   // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
+#include "Resources.h"   // LookupBundledResource + kMeMoteAIIcons (icon status AI tier)
 #include "Settings.h"
 
 #include "imgui/imgui.h"
@@ -493,11 +494,42 @@ void RenderMeMotesTab() {
             ImGui::TextUnformatted(L("opt.mm.lbl_icon"));
             ImGui::TableSetColumnIndex(1);
             {
-                // Status line — Ellipsized so a long path can't push the
-                // Browse/Clear buttons off the row.
-                std::string status = iconPathSnapshot.empty()
-                                       ? std::string(L("opt.mm.icon_none"))
-                                       : (std::string(L("opt.mm.icon_custom_prefix")) + iconPathSnapshot);
+                // Status line — describes where the icon currently resolves
+                // from. Order must match ResolveMeMoteIconSource (Icons.cpp);
+                // if they drift, the label lies about what actually loads.
+                // Ellipsized so a long path can't push Browse/Clear off the
+                // row. Disk stat + bundled lookup run per frame on OPEN rows
+                // only — for the typical 6–15 /me-motes with maybe a handful
+                // open that's negligible (no IconStatusCache needed; the
+                // Emote tab caches because it iterates ~67 entries).
+                std::string status;
+                if (!iconPathSnapshot.empty()) {
+                    // Custom IconPath — inline the path-resolution rule from
+                    // ResolveMeMoteIconPath so we can stat the file without
+                    // re-acquiring g_MeMotesMutex just to fetch the MeMote.
+                    const std::string& p = iconPathSnapshot;
+                    bool isAbs = (p.size() >= 3 && p[1] == ':' &&
+                                  (p[2] == '\\' || p[2] == '/')) ||
+                                 (p.size() >= 2 && p[0] == '\\' && p[1] == '\\');
+                    std::string resolved = isAbs ? p
+                                                 : (g_IconsDir.empty() ? p
+                                                                       : g_IconsDir + "\\" + p);
+                    DWORD attr = GetFileAttributesA(resolved.c_str());
+                    bool exists = (attr != INVALID_FILE_ATTRIBUTES) &&
+                                  !(attr & FILE_ATTRIBUTE_DIRECTORY);
+                    status = std::string(L(exists
+                                             ? "opt.mm.icon_custom_prefix"
+                                             : "opt.mm.icon_custom_missing_prefix")) + p;
+                } else if (g_Settings.UseAIIconFallback &&
+                           LookupBundledResource(kMeMoteAIIcons,
+                                                 kMeMoteAIIconsCount, id) != 0) {
+                    // No custom path but the bundled AI tier has art for
+                    // this Id — surface that explicitly so the user knows
+                    // why a cell has an icon they didn't set.
+                    status = std::string(L("opt.mm.icon_bundled_ai"));
+                } else {
+                    status = std::string(L("opt.mm.icon_none"));
+                }
                 float availW = ImGui::GetContentRegionAvail().x;
                 if (availW < 40.f) availW = 40.f;
                 std::string fit = Ellipsize(status, availW);

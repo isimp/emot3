@@ -3,7 +3,7 @@
 #include "EmoteData.h"
 #include "MeMotes.h"      // MeMote struct for ResolveMeMoteIconPath
 #include "Settings.h"     // g_Settings.UseAIIconFallback (AI fallback gate)
-#include "Resources.h"    // LookupBundledResource + kOfficialIcons / kAIIcons
+#include "Resources.h"    // LookupBundledResource + kOfficialIcons / kAIIcons / kMeMoteAIIcons
 
 #include "imgui/imgui.h"
 
@@ -64,8 +64,9 @@ Texture* GetEmoteTexture(const std::string& command) {
 
 std::string ResolveMeMoteIconPath(const MeMote& m) {
     // /me-motes only have an explicit IconPath (no `<id>.png` folder
-    // convention; if the user didn't set a path, there's nothing on disk to
-    // resolve to and the cell falls back to the styled letter button).
+    // convention; if the user didn't set a path, the resolver returns empty
+    // and the source tier choice goes to ResolveMeMoteIconSource — which
+    // either falls back to the bundled AI tier or to the styled letter).
     if (m.IconPath.empty()) return std::string();
     const std::string& p = m.IconPath;
     bool isAbs = (p.size() >= 3 && p[1] == ':' &&
@@ -74,6 +75,29 @@ std::string ResolveMeMoteIconPath(const MeMote& m) {
     if (isAbs) return p;
     if (g_IconsDir.empty()) return p;
     return g_IconsDir + "\\" + p;
+}
+
+MeMoteIconSource ResolveMeMoteIconSource(const MeMote& m) {
+    // 1. Explicit Custom IconPath on disk. Mirrors the Emote chain's
+    //    Custom tier: only counted when the file ACTUALLY exists, so a
+    //    typo'd / deleted path falls through to the bundled AI tier (the
+    //    Options status line distinguishes "missing" separately for
+    //    user-feedback purposes, but the loader treats it as fallthrough).
+    if (!m.IconPath.empty()) {
+        std::string path = ResolveMeMoteIconPath(m);
+        DWORD attr = GetFileAttributesA(path.c_str());
+        if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
+            return MeMoteIconSource::Custom;
+    }
+    // 2. Bundled AI fallback, only when the user opted in via the same
+    //    UseAIIconFallback setting that governs Emote AI artwork. Keys on
+    //    the stable /me-mote Id (lfg.png, brb.png), case-insensitively.
+    if (g_Settings.UseAIIconFallback &&
+        LookupBundledResource(kMeMoteAIIcons, kMeMoteAIIconsCount, m.Id) != 0)
+        return MeMoteIconSource::BundledAI;
+    // 3. Styled letter button (drawn by RenderMeMoteCellBody when no
+    //    texture is loaded for the cache key).
+    return MeMoteIconSource::TextFallback;
 }
 
 std::string MeMoteCacheKey(const std::string& id) {

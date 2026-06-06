@@ -6,13 +6,24 @@
 // (emot3.rc + ResourcesGenerated.cpp, both produced by
 // tools/gen_rc.py). Nothing is written to disk by us; the icons/ folder
 // stays empty unless the user deliberately drops a PNG into it as an
-// override. The texture loader consults bundles in priority order:
+// override. The Emote texture loader consults bundles in priority order:
 //
 //   1. icons/<command>.png        — user override (file-based)
 //   2. kOfficialIcons             — bundled official artwork (memory)
 //   3. kAIIcons                   — bundled AI artwork, opt-in via
 //                                   g_Settings.UseAIIconFallback (memory)
 //   4. RenderStyledFallback       — letter button
+//
+// The /me-mote texture loader uses a SHORTER chain (see Icons.cpp's
+// ResolveMeMoteIconSource); the catalog is user-content so there's no
+// BundledOfficial tier, and there's no `icons/<id>.png` drop-in
+// convention either (icons land via the explicit IconPath only):
+//
+//   1. m.IconPath                 — user-supplied path (file-based)
+//   2. kMeMoteAIIcons             — bundled AI artwork keyed on /me-mote
+//                                   Id, opt-in via the same setting (memory)
+//   3. RenderStyledFallback       — letter button (drawn by
+//                                   RenderMeMoteCellBody)
 //
 // This module exposes the manifest tables and a single byte-loading
 // helper. Callers feed those bytes to Nexus' GetOrCreateFromMemory.
@@ -60,6 +71,15 @@ extern const int         kPresetsCount;
 // language-aware, EN fallback). Mirrors the kEmoteData consumer pattern.
 extern const BundledData kMeMoteData[];
 extern const int         kMeMoteDataCount;
+// /me-mote AI artwork (resources/me_motes_ai/*.png). Mirrors kAIIcons but
+// keyed on /me-mote stable Ids (lfg.png, brb.png, ...). Opt-in via the
+// same g_Settings.UseAIIconFallback gate the Emote AI tier uses — keeps
+// the AI-provenance opt-in policy consistent across the two catalogs.
+// Skipped tier vs Emotes: there's NO BundledOfficial equivalent for
+// /me-motes (the catalog is user-content; ArenaNet doesn't ship art for
+// it), so the chain is just user-IconPath → BundledAI → letter.
+extern const BundledIcon kMeMoteAIIcons[];
+extern const int         kMeMoteAIIconsCount;
 
 // Return the Win32 RCDATA id for `command` in the given table, or 0 if
 // the command isn't bundled. Accepts both "/wave" and "wave" forms;
