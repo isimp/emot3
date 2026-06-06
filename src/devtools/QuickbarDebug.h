@@ -33,7 +33,9 @@ struct QbMetrics {
     float winW = 0, winH = 0;            // outer window size
     float availX = 0, availY = 0;        // child content region (the viewport)
     float contentX = 0, contentY = 0;    // ImGui's measured child ContentSize
-    float scrollMaxX = 0, scrollMaxY = 0;
+    float scrollMaxX = 0, scrollMaxY = 0;  // ImGui's pixel scroll max
+    float scrollX = 0, scrollY = 0;        // current scroll offset (resting)
+    float cellMaxX = 0, cellMaxY = 0;      // cell-aligned max (g_QbMaxScroll*)
     float stepX = 0, stepY = 0;          // cell + spacing
     float insetX = 0, insetY = 0;        // window - childAvail (chrome, snap input)
     float gridTopOffset = 0;             // topPad + ItemSpacing.y
@@ -64,6 +66,8 @@ inline void RenderQbSizingOverlay() {
         ImGui::Text("childAvail %8.2f x %8.2f", m.availX, m.availY);
         ImGui::Text("content    %8.2f x %8.2f", m.contentX, m.contentY);
         ImGui::Text("scrollMax  %8.2f x %8.2f", m.scrollMaxX, m.scrollMaxY);
+        ImGui::Text("scroll     %8.2f x %8.2f", m.scrollX, m.scrollY);
+        ImGui::Text("cellMax    %8.2f x %8.2f", m.cellMaxX, m.cellMaxY);
         ImGui::Text("step       %8.2f x %8.2f", m.stepX, m.stepY);
         ImGui::Text("inset      %8.2f x %8.2f", m.insetX, m.insetY);
         ImGui::Text("gridTopOff %8.2f  gutter %6.2f", m.gridTopOffset, m.gutter);
