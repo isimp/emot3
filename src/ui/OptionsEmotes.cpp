@@ -423,6 +423,15 @@ void RenderEmotesTab() {
             if (ImGui::IsItemHovered())
                 TooltipText("opt.em.id_tooltip");
 
+            // Display name in grey next to the Id, mirroring the /me-motes
+            // editor so the two catalog tabs read the same. Skipped when Name
+            // is empty or equals the Id (no redundant "bow — bow").
+            const std::string& dispName = e.Name.empty() ? e.Id : e.Name;
+            if (dispName != e.Id) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("— %s", dispName.c_str());
+            }
+
             // Right-align the Delete button on the same line. SmallButton
             // + warm-red styling — readable as "destructive" without
             // shouting in the default state.
