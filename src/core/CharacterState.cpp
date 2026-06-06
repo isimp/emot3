@@ -10,6 +10,10 @@
 
 #include "rtapi/RTAPI.h" // RealTimeData, ECharacterState, DL_RTAPI (vendored)
 
+#ifdef EMOT3_DEVTOOLS
+#include "AirborneTuner.h"  // airtuner::OnSample (per-tick callback)
+#endif
+
 EmoteBlock  g_QbBlockReason = EmoteBlock::None;
 const char* g_QbUnusableKey  = nullptr;
 
@@ -94,11 +98,11 @@ float s_horizSpeed = 0.f;    // last horizontal speed, m/s
 // at any kAirSpeed. kReleaseSec must exceed the time to fall from 0 to kAirSpeed
 // (~kAirSpeed / GW2 gravity), so raise it alongside kAirSpeed. kMoveSpeed: above
 // standing jitter, below a walk; kMoveReleaseSec keeps a step-pause from flickering.
-constexpr float  kAirSpeed        = 3.5f;  // m/s (|vUp|) to count as airborne
-constexpr int    kFallEngageTicks = 2;     // fast-descending ticks before a FALL engages
-constexpr double kReleaseSec      = 0.25;  // descending/settled time before clearing
-constexpr float  kMoveSpeed       = 1.0f;  // m/s (horizontal) to count as moving
-constexpr double kMoveReleaseSec  = 0.15;  // below-threshold time before "stopped"
+// Tunable thresholds moved to CharacterState.h's cs_constants namespace so the
+// dev-only Airborne tuner (devtools/AirborneTuner) can mutate them live; in
+// shipped builds the getters are constexpr inline returning literals (compiler
+// folds them to immediate constants, codegen identical to the old constexpr
+// block here). Defaults documented at the declaration.
 
 }  // namespace
 
@@ -158,13 +162,13 @@ void TickCharacterState() {
             // ---- vertical: airborne (jumps + falls) ----
             const float vUp = dy / (float)dt;
             s_vertVel = vUp;
-            if (vUp > kAirSpeed) {
+            if (vUp > cs_constants::AirSpeed()) {
                 // Rising fast = a jump / dismount hop / updraft: engage immediately.
                 s_airborne = true; downRun = 0; groundSince = -1.0;
-            } else if (vUp < -kAirSpeed) {
+            } else if (vUp < -cs_constants::AirSpeed()) {
                 // Descending fast = walked off a ledge etc.: debounce so a
                 // single-tick stair / curb drop doesn't engage.
-                if (++downRun >= kFallEngageTicks) s_airborne = true;
+                if (++downRun >= cs_constants::FallEngageTicks()) s_airborne = true;
                 groundSince = -1.0;
             } else {
                 // Slow band: apex of a jump (still RISING - hold, the fall is
@@ -176,17 +180,28 @@ void TickCharacterState() {
                     if (vUp > 0.f) groundSince = -1.0;          // still rising
                     else {
                         if (groundSince < 0.0) groundSince = now;
-                        if (now - groundSince >= kReleaseSec) s_airborne = false;
+                        if (now - groundSince >= cs_constants::ReleaseSec()) s_airborne = false;
                     }
                 }
             }
             // ---- horizontal: moving (any input, incl. mouse-walk) ----
             s_horizSpeed = horizDist / (float)dt;
-            if (s_horizSpeed > kMoveSpeed) { s_moving = true; stillSince = -1.0; }
+            if (s_horizSpeed > cs_constants::MoveSpeed()) { s_moving = true; stillSince = -1.0; }
             else if (s_moving) {
                 if (stillSince < 0.0) stillSince = now;
-                if (now - stillSince >= kMoveReleaseSec) s_moving = false;
+                if (now - stillSince >= cs_constants::MoveReleaseSec()) s_moving = false;
             }
+#ifdef EMOT3_DEVTOOLS
+            // Feed the Airborne tuner overlay (dev-only) - rings, live readouts,
+            // event-log edge detection. Free in non-dev builds (whole block + the
+            // include compile out).
+            airtuner::OnSample({
+                s_vertVel, s_horizSpeed, y, (float)dt,
+                tick - lastUITick,
+                s_airborne, s_moving,
+                downRun, groundSince, stillSince, now
+            });
+#endif
         } else {
             // Stall (loading / alt-tab) or teleport spike: re-baseline.
             s_airborne = false; s_vertVel = 0.f; downRun = 0; groundSince = -1.0;

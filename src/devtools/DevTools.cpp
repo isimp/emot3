@@ -8,6 +8,7 @@
 #include "NotifierDebug.h"      // notifierdbg::Enabled / RenderNotifierDebug
 #include "UpdateCheckDebug.h"   // updchkdbg::Enabled / RenderUpdateCheckDebug
 #include "MemoryMonitor.h"      // memmon::Enabled / RenderMemoryMonitor
+#include "AirborneTuner.h"      // airtuner::Enabled / RenderAirborneTuner
 
 #include "imgui/imgui.h"
 
@@ -45,6 +46,8 @@ void RegisterBuiltinDevTools() {
                       &updchkdbg::Enabled(), RenderUpdateCheckDebug });
     RegisterDevTool({ "memory",   "Memory monitor",
                       &memmon::Enabled(),    RenderMemoryMonitor });
+    RegisterDevTool({ "airborne", "Airborne tuner",
+                      &airtuner::Enabled(),  RenderAirborneTuner });
 }
 
 void RenderDevToolOverlays() {

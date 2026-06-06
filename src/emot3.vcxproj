@@ -311,6 +311,7 @@
     <ClInclude Include="devtools\NotifierDebug.h" />
     <ClInclude Include="devtools\UpdateCheckDebug.h" />
     <ClInclude Include="devtools\MemoryMonitor.h" />
+    <ClInclude Include="devtools\AirborneTuner.h" />
     <ClInclude Include="ui\Feedback.h" />
     <ClInclude Include="core\EmoteAction.h" />
     <ClInclude Include="core\Globals.h" />
