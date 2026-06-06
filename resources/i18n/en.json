@@ -97,6 +97,7 @@
   "mp.unlock_none": "  (no unlockable emotes in your catalog)",
   "mp.me_motes_all_fav": "  (all /me-motes are in your favorites)",
   "mp.me_motes_filtered": "  (/me-motes are hidden by the current filters)",
+  "mp.me_motes_no_search": "  (no /me-motes match the search)",
   "mp.me_motes_none": "  (no /me-motes in your catalog - create some under Options > /me-motes)",
 
   "cells.moving": "Moving: %s",

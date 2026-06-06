@@ -832,6 +832,33 @@ void AddonRender() {
         return true;
     };
 
+    // /me-mote search predicate. No class filters here (FilterShowMeMotes
+    // gates the section/favorites build before this is consulted) and no
+    // Command field (doesn't exist). Match shape mirrors passes() above so
+    // an alias-only hit surfaces the same "matched alias: X" tooltip line.
+    auto passesMeMote = [&](const MeMote& m, std::string& note) {
+        note.clear();
+        if (!searchActive) return true;
+        std::string n = m.Name;
+        std::transform(n.begin(), n.end(), n.begin(), ::tolower);
+        bool nameHit = n.find(search) != std::string::npos;
+        const std::string* aliasHit = nullptr;
+        if (!nameHit) {
+            for (const auto& al : m.Aliases) {
+                std::string a = al;
+                std::transform(a.begin(), a.end(), a.begin(), ::tolower);
+                if (a.find(search) != std::string::npos) { aliasHit = &al; break; }
+            }
+        }
+        if (!nameHit && !aliasHit) return false;
+        if (aliasHit) {
+            char buf[160];
+            std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), aliasHit->c_str());
+            note = buf;
+        }
+        return true;
+    };
+
     std::vector<std::vector<CellInfo>> catItems(g_Settings.FavoriteCategories.size());
     // Unfiltered count per category - counts only "real" emotes (skips
     // stale references to deleted emotes). Lets us distinguish "category
@@ -911,7 +938,9 @@ void AddonRender() {
                     // state still distinguishes "no entries" from "filter
                     // hides them".
                     if (!g_Settings.FilterShowMeMotes) continue;
-                    catItems[ci].push_back({ nullptr, m, (int)i, /*unlocked=*/true, std::string() });
+                    std::string note;
+                    if (!passesMeMote(*m, note)) continue;
+                    catItems[ci].push_back({ nullptr, m, (int)i, /*unlocked=*/true, std::move(note) });
                 }
             }
         }
@@ -942,7 +971,9 @@ void AddonRender() {
             if (favoritedMeMoteIds.count(m->Id)) continue;
             ++meMoteUnfavCount;
             if (!g_Settings.FilterShowMeMotes) continue;
-            meMoteItems.push_back({ nullptr, m, -1, /*unlocked=*/true, std::string() });
+            std::string note;
+            if (!passesMeMote(*m, note)) continue;
+            meMoteItems.push_back({ nullptr, m, -1, /*unlocked=*/true, std::move(note) });
         }
 
         auto byName = [](const CellInfo& a, const CellInfo& b) {
@@ -1164,13 +1195,15 @@ void AddonRender() {
         if (!meMoteItems.empty()) anyShown = true;
         if (!meCollapsed) {
             if (meMoteItems.empty()) {
-                // Mirrors the Core/Unlockable empty-state triad: none exist
-                // → "create some"; everything exists but is favorited →
-                // "all favorited"; some exist + are unfavorited but the
-                // pill hid them → "filtered out". Most-specific cause first.
+                // Mirrors the Core/Unlockable empty-state quartet: none
+                // exist → "create some"; everything exists but is favorited
+                // → "all favorited"; search active and nothing matches →
+                // "no /me-motes match the search"; the pill hid them →
+                // "filtered out". Most-specific cause first.
                 const char* msg;
-                if (meMoteTotal == 0)          msg = L("mp.me_motes_none");
+                if (meMoteTotal == 0)           msg = L("mp.me_motes_none");
                 else if (meMoteUnfavCount == 0) msg = L("mp.me_motes_all_fav");
+                else if (searchActive)          msg = L("mp.me_motes_no_search");
                 else                            msg = L("mp.me_motes_filtered");
                 ImGui::TextDisabled("%s", msg);
             } else {

@@ -457,13 +457,18 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
         ImGui::EndPopup();
     }
 
-    // Tooltip — Name + right-click hint. No Command (doesn't exist) and no
-    // body preview (could be sentence-long). Suppressed by the same Quickbar
-    // opt-out emotes use.
+    // Tooltip — Name + (optional) search-match note + right-click hint. No
+    // Command (doesn't exist) and no body preview (could be sentence-long).
+    // ci.searchNote explains an alias-only search hit (same shape Emote
+    // cells use). Suppressed by the same Quickbar opt-out emotes use.
     bool suppressTip = isQuickbar && !g_Settings.ShowQuickbarTooltips;
     if (!suppressTip &&
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("%s\n%s", m.Name.c_str(), L("cells.rightclick"));
+        if (!ci.searchNote.empty())
+            ImGui::SetTooltip("%s\n%s\n%s", m.Name.c_str(),
+                              ci.searchNote.c_str(), L("cells.rightclick"));
+        else
+            ImGui::SetTooltip("%s\n%s", m.Name.c_str(), L("cells.rightclick"));
     }
 
     if (dimmed) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,

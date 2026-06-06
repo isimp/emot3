@@ -94,6 +94,7 @@
   "mp.unlock_none": "  (keine freischaltbaren Emotes in deinem Katalog)",
   "mp.me_motes_all_fav": "  (alle /me-motes sind in deinen Favoriten)",
   "mp.me_motes_filtered": "  (/me-motes sind durch die aktuellen Filter ausgeblendet)",
+  "mp.me_motes_no_search": "  (keine /me-motes passen zur Suche)",
   "mp.me_motes_none": "  (keine /me-motes im Katalog - lege welche unter Optionen > /me-motes an)",
 
   "cells.moving": "Bewegen: %s",
