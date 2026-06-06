@@ -75,6 +75,10 @@ struct Settings {
     bool                          QuickbarUseDropdown  = false;  // tabs (false) or dropdown (true)
     bool                          ShowWindow           = true;
     bool                          SendOnClick          = true;
+    // When on, clicking an emote while a GW2 text box is focused closes it
+    // (injects Escape, clearing the half-typed line) and then sends, instead of
+    // refusing. Off by default. See SendOrFillEmote / ShouldSkipEmoteSend.
+    bool                          CloseChatOnSend      = false;
     // When on, left-clicking a targetable emote sends it on the current
     // target (appends " @") instead of plain. Off by default. With it on, the
     // right-click menu offers "Send normally" and drops "Send on target"
@@ -173,16 +177,13 @@ struct Settings {
     // QuickbarGreyUnusable. On by default; only does anything once RTAPI loads.
     bool                          QuickbarPreciseStateDetection = true;
     // How a blocked state presents on the Quickbar: grey the buttons (default)
-    // or hide the whole bar until the player can emote again.
+    // or hide the whole bar until the player can emote again. When active
+    // (QuickbarGreyUnusable), this covers the transient send refusals too - a GW2
+    // text box focused, or moving / a printable key held - matching the send gate,
+    // with no separate opt-in (they're cheap + robust). The +plus "send while
+    // moving" setting drops the movement case; "close chat on send" drops the
+    // textbox case. See Quickbar.cpp.
     EUnusableBehavior             QuickbarUnusableBehavior = EUnusableBehavior::Grey;
-    // Opt-in extensions to the unusable interaction (the grey/hide/off dropdown):
-    // apply the SAME interaction when the addon would refuse the send right now -
-    // a GW2 text box is focused (Textbox) or a movement key is held (Movement).
-    // Both ON by default (a greyed button matches the send refusal). Gated under
-    // QuickbarGreyUnusable. Movement is debounced + dropped under the +plus
-    // "send while moving" setting (you can still click while moving). See Quickbar.cpp.
-    bool                          QuickbarUnusableTextbox  = true;
-    bool                          QuickbarUnusableMovement = true;
     // Nexus quick-access shortcut (the little icon row at the top of the
     // screen). On by default — it's the main entry point for the addon.
     bool                          ShowNexusShortcut    = true;

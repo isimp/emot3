@@ -1,7 +1,6 @@
 #include "Options.h"
 #include "OptionsCommon.h"
 #include "CharacterState.h"  // RTApiConnected for the precise-detection status line
-#include "EmoteAction.h"     // EmoteSendSwallowActive - cross-ref for "send while moving"
 #include "Globals.h"
 #include "I18n.h"
 #include "Settings.h"
@@ -143,6 +142,9 @@ void RenderGeneralOptionsTab() {
 
     CheckboxWithSaveAndTooltip("opt.gen.send_on_click", &g_Settings.SendOnClick, /*defaultIsOn=*/true);
 
+    // Close an open chat / text box (Escape) and send, instead of refusing.
+    CheckboxWithSaveAndTooltip("opt.gen.close_chat_on_send", &g_Settings.CloseChatOnSend, /*defaultIsOn=*/false);
+
     // Passive warning when the chat keybind isn't bound. See "Emote
     // send refusal gate" in emot3.md for the design.
     if (APIDefs && !APIDefs->GameBinds.IsBound(EGameBinds_UiChatCommand)) {
@@ -226,20 +228,10 @@ void RenderGeneralOptionsTab() {
         // in Dev/Debug, absent from the public emot3.dll AND emot3_plus.dll.
         ImGui::TextDisabled("%s", RTApiDebugInfo());
 #endif
-
-        // Extend the SAME interaction (grey or hide) to the addon's transient send
-        // refusals: a GW2 text box open, or a movement key held.
-        CheckboxWithSaveAndTooltip("opt.gen.unusable_textbox", &g_Settings.QuickbarUnusableTextbox, /*defaultIsOn=*/true);
-        // Movement cross-references the "send while moving" setting (Sending
-        // section): while that's on, a held key no longer refuses the send (you
-        // can click mid-move), so this has no effect - show it disabled with the
-        // reason. (That setting is +plus only, so EmoteSendSwallowActive() is
-        // always false in the base build and the checkbox is plain there.)
-        if (EmoteSendSwallowActive())
-            DisabledCheckbox("opt.gen.unusable_movement", &g_Settings.QuickbarUnusableMovement,
-                             /*enabled=*/false, /*defaultIsOn=*/true, "opt.gen.unusable_movement_swallow");
-        else
-            CheckboxWithSaveAndTooltip("opt.gen.unusable_movement", &g_Settings.QuickbarUnusableMovement, /*defaultIsOn=*/true);
+        // The transient refusals (text box focused, moving / key held) now ride
+        // this same grey/hide automatically - no separate opt-in (see Quickbar.cpp
+        // qb.busy). "Send while moving" (+plus) and "close chat on send" carve out
+        // the movement / textbox cases respectively.
 
         ImGui::Unindent();
     }

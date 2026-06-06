@@ -26,8 +26,6 @@ static DevStateRegistrar s_settingsSection("Settings (key flags)", [] {
     DevStateRow("grey unusable",      "%s", s.QuickbarGreyUnusable ? "on" : "off");
     DevStateRow("precise detection",  "%s", s.QuickbarPreciseStateDetection ? "on" : "off");
     DevStateRow("unusable behavior",  "%d", (int)s.QuickbarUnusableBehavior);
-    DevStateRow("unusable textbox",   "%s", s.QuickbarUnusableTextbox ? "on" : "off");
-    DevStateRow("unusable movement",  "%s", s.QuickbarUnusableMovement ? "on" : "off");
     DevStateRow("qb category idx",    "%d", s.QuickbarCategoryIdx);
     DevStateRow("unlock auto-sync",   "%s", s.UnlockAutoSync ? "on" : "off");
     DevStateRow("unlock key source",  "%d", s.UnlockApiKeySource);
@@ -424,6 +422,7 @@ bool LoadSettings(const std::string& path) {
 
     const json& general = GetObj(j, "general");
     s.SendOnClick       = GetBool(general, "send_on_click",        s.SendOnClick);
+    s.CloseChatOnSend   = GetBool(general, "close_chat_on_send",   s.CloseChatOnSend);
     s.SendTargetableOnTarget = GetBool(general, "send_targetable_on_target", s.SendTargetableOnTarget);
     s.UseAIIconFallback = GetBool(general, "use_ai_icon_fallback", s.UseAIIconFallback);
     s.ShowTargetDot     = GetBool(general, "show_target_dot",       s.ShowTargetDot);
@@ -433,8 +432,6 @@ bool LoadSettings(const std::string& path) {
     // Raw int; SanitizeSettings runs NormalizeUnusableBehavior to clamp it.
     s.QuickbarUnusableBehavior = (EUnusableBehavior)GetInt(general, "quickbar_unusable_behavior",
                                                            (int)s.QuickbarUnusableBehavior);
-    s.QuickbarUnusableTextbox  = GetBool(general, "quickbar_unusable_textbox",  s.QuickbarUnusableTextbox);
-    s.QuickbarUnusableMovement = GetBool(general, "quickbar_unusable_movement", s.QuickbarUnusableMovement);
     s.NotifyNewBundledEmotes   = GetBool(general, "notify_new_bundled_emotes",  s.NotifyNewBundledEmotes);
 
     const json& qbCats = GetObj(general, "quickbar_categories");
@@ -555,14 +552,13 @@ void SaveSettings(const std::string& path) {
     // --- general -------------------------------------------------------
     f << "  \"general\": {\n";
     f << "    \"send_on_click\": "         << B(s.SendOnClick)       << ",\n";
+    f << "    \"close_chat_on_send\": "    << B(s.CloseChatOnSend)   << ",\n";
     f << "    \"send_targetable_on_target\": " << B(s.SendTargetableOnTarget) << ",\n";
     f << "    \"use_ai_icon_fallback\": "  << B(s.UseAIIconFallback) << ",\n";
     f << "    \"show_target_dot\": "        << B(s.ShowTargetDot)     << ",\n";
     f << "    \"quickbar_grey_unusable\": " << B(s.QuickbarGreyUnusable) << ",\n";
     f << "    \"quickbar_precise_state\": " << B(s.QuickbarPreciseStateDetection) << ",\n";
     f << "    \"quickbar_unusable_behavior\": " << (int)s.QuickbarUnusableBehavior << ",\n";
-    f << "    \"quickbar_unusable_textbox\": "  << B(s.QuickbarUnusableTextbox)  << ",\n";
-    f << "    \"quickbar_unusable_movement\": " << B(s.QuickbarUnusableMovement) << ",\n";
     f << "    \"notify_new_bundled_emotes\": "  << B(s.NotifyNewBundledEmotes)   << ",\n";
     f << "    \"quickbar_categories\": {\n";
     f << "      \"favorites\": "    << B(s.QuickbarShowFavoriteCategories)  << ",\n";

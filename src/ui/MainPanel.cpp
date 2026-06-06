@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "EmoteData.h"
 #include "EmoteAction.h"
+#include "CharacterState.h" // TickCharacterState (per-frame falling check)
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
 #include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
@@ -571,6 +572,10 @@ void AddonRender() {
     // applies completed results) - before the visibility early-returns below so
     // it ticks even when the window is hidden. Cheap no-op when idle.
     DrainUnlockSync();
+    // Per-frame character-state update (the falling check = avatar height
+    // velocity). Before the visibility early-returns below so the Quickbar's
+    // grey/hide sees a fresh value even when the main window is hidden.
+    TickCharacterState();
     // Plus-only: tick the "newer release available" check (no-op stub otherwise).
     DrainUpdateCheck();
     // Auto-hide while the fullscreen world map is open. It covers the screen,

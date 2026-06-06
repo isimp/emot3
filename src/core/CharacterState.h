@@ -4,7 +4,9 @@
 //  player emote right now?" and "is the player in combat?".
 //
 //  Bridges two signals:
-//   - MumbleLink (always present): mounted + in-combat.
+//   - MumbleLink (always present): mounted + in-combat, and - derived from the
+//     avatar's height over time - airborne (jumps + falls; GW2 exposes no
+//     "in the air" flag, so we measure vertical speed; see TickCharacterState).
 //   - The optional GW2 RealTime API addon (RTAPI, a DataLink shared-memory
 //     block): the states MumbleLink can't see - downed, swimming,
 //     underwater, gliding, flying.
@@ -15,7 +17,8 @@
 // =====================================================================
 
 // Why the player currently can't emote. None = usable. Mounted comes from
-// MumbleLink; the rest require RTAPI + the precise-detection opt-in.
+// MumbleLink; Airborne (jumps + falls) is MumbleLink-derived (height velocity)
+// under the precise-detection opt-in; the rest require RTAPI + that opt-in.
 enum class EmoteBlock {
     None = 0,
     Mounted,
@@ -24,6 +27,7 @@ enum class EmoteBlock {
     Underwater,
     Gliding,
     Flying,
+    Airborne,
 };
 
 // The Quickbar's game-state block reason for the current frame, written by
@@ -33,10 +37,10 @@ extern EmoteBlock g_QbBlockReason;
 
 // The unified "why this Quickbar emote can't be used this frame" i18n key, or
 // nullptr when usable. Written by QuickbarRender, read by RenderEmoteCell for the
-// grey + dim + right-click hint + click feedback. Covers all ENABLED sources: the
-// game-state blocks (mounted/...) plus - opt-in - the addon's transient send
-// refusals (QuickbarUnusableTextbox / QuickbarUnusableMovement, via CurrentSendBusy).
-// The chosen interaction (QuickbarUnusableBehavior grey/hide) applies to whichever
+// grey + dim + right-click hint + click feedback. Covers all sources when greying
+// is active (QuickbarGreyUnusable): the game-state blocks (mounted / airborne /
+// RTAPI states) plus the transient send refusals (text box focused, or moving / a
+// key held, via CurrentSendBusy). The chosen interaction (QuickbarUnusableBehavior grey/hide) applies to whichever
 // fired. One key for every consumer = no scattered reason logic.
 extern const char* g_QbUnusableKey;
 
@@ -45,19 +49,33 @@ extern const char* g_QbUnusableKey;
 void InitCharacterState();
 void ShutdownCharacterState();
 
+// Per-frame update for the time-derived signals (currently the falling check:
+// vertical speed from MumbleLink's avatar height). Call ONCE per gameplay frame
+// from AddonRender, before anything reads CurrentEmoteBlock(). Cheap; samples
+// only when MumbleLink reports a fresh game tick.
+void TickCharacterState();
+
 // True when the RealTime API addon is loaded and publishing live data (its
 // DataLink exists AND GameBuild != 0 - RTAPI zeroes GameBuild on unload).
 bool RTApiConnected();
 
 // The current can't-emote reason, honoring settings: None unless
 // QuickbarGreyUnusable is on; Mounted whenever mounted; the RTAPI states only
-// when QuickbarPreciseStateDetection is on AND RTAPI is connected.
+// when QuickbarPreciseStateDetection is on AND RTAPI is connected; Airborne (jumps
+// + falls) when QuickbarPreciseStateDetection is on (MumbleLink-derived, RTAPI not
+// required), reported only when no more-specific RTAPI state applies.
 EmoteBlock CurrentEmoteBlock();
 
 // True while the player is in combat (MumbleLink; no RTAPI needed). Drives the
 // Quickbar's optional hide-in-combat - this is NOT a send block (emotes work
 // in combat).
 bool InCombatNow();
+
+// True while the player is moving horizontally (any input, including mouse-walk),
+// derived from MumbleLink position velocity by TickCharacterState. Feeds the
+// "grey / refuse while moving" gate alongside the held-key check, so mouse-only
+// movement (which presses no key) is caught too.
+bool MovementActive();
 
 // i18n key for the toast / greyed-cell explainer matching a block reason.
 const char* EmoteBlockKey(EmoteBlock reason);

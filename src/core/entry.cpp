@@ -11,6 +11,7 @@
 
 #include "Globals.h"
 #include "CharacterState.h" // RTAPI integration + can't-emote/combat state
+#include "EmoteAction.h"     // NoteKeyEvent/Clear/Reseed held-key tracking (WndProc-fed gate)
 #include "UnlockScan.h"      // GW2-API emote-unlock sync (Hoard & Seek / own key)
 #include "UpdateCheck.h"     // Plus-only "update available" check (no-op stub otherwise)
 #include "PlusSettings.h"   // +plus persisted settings (plus.json; +plus flavor only)
@@ -382,6 +383,23 @@ static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     // old keystroke-swallow during emote sends was replaced by the click-time
     // refusal in SendOrFillEmote - see EmoteAction.cpp's ShouldSkipEmoteSend.)
     if (!g_GameHwnd) g_GameHwnd = hWnd;
+
+    // Observe held printable keys for the send / grey-while-moving gate, so it
+    // doesn't poll the keyboard every frame (EmoteAction's held-key counter).
+    // Observe-only: we never consume these messages (no return 0).
+    switch (uMsg) {
+        case WM_KEYDOWN: case WM_SYSKEYDOWN:
+        case WM_KEYUP:   case WM_SYSKEYUP:
+            NoteKeyEvent(uMsg, (unsigned)wParam);
+            break;
+        case WM_KILLFOCUS:   ClearHeldKeys();  break;  // no key-ups arrive unfocused
+        case WM_SETFOCUS:    ReseedHeldKeys(); break;  // re-sync after an alt-tab
+        case WM_ACTIVATE:
+            if (LOWORD(wParam) == WA_INACTIVE) ClearHeldKeys();
+            else                               ReseedHeldKeys();
+            break;
+        default: break;
+    }
 
 #ifdef EMOT3_PLUS
     // +plus only: route the mouse wheel to the Quickbar under click-through and

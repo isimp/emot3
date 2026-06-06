@@ -11,10 +11,26 @@
 
 #include <Windows.h>
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include <thread>
 
 namespace {
+
+// ---- Held-key tracking (movement / garble gate) -----------------------
+// A printable key held down auto-repeats WM_CHAR, which interleaves with our
+// injected command and garbles it - so the send is refused (and the Quickbar
+// greys) while one is held. Rather than poll ~37 keys every frame with
+// GetAsyncKeyState (a server round-trip each under Wine/Proton), we keep a live
+// count fed from the WndProc. s_vkHeld is written only on the WndProc thread;
+// s_heldPrintable is atomic for the render/gate thread to read.
+inline bool IsPrintableVk(unsigned vk) {
+    // Matches the old scan exactly: A-Z, 0-9, space. Modifiers, F-keys, arrows,
+    // etc. are intentionally excluded (they don't type into the command).
+    return (vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9') || vk == VK_SPACE;
+}
+bool             s_vkHeld[256] = {};
+std::atomic<int> s_heldPrintable{ 0 };
 
 // Click-time guard: refuses an emote send when it can't play right now,
 // when the pipeline would garble the injected command, or when it's
@@ -34,16 +50,18 @@ namespace {
 // UiChatCommand) immediately steals focus to GW2's chat box, so a
 // concurrently-edited search field can't actually receive the
 // injection.
-bool ShouldSkipEmoteSend(const char** outKey, bool checkHeldKeys) {
-    // 1. Can't-emote state: GW2 plays no emote while mounted/downed/swimming/
+bool ShouldSkipEmoteSend(const char** outKey, bool checkHeldKeys, bool ignoreTextbox = false) {
+    // 1. Can't-emote game state: GW2 plays no emote while mounted/downed/swimming/
     //    underwater/gliding/flying, so the send is a silent no-op - refuse with a
-    //    toast naming the reason. CurrentEmoteBlock() is the single gate shared
-    //    with the Quickbar (core/CharacterState): gated on QuickbarGreyUnusable,
-    //    covers mounted via MumbleLink and the rest via the optional RealTime API.
-    //    This extends the block to *every* send surface - the main panel and the
-    //    right-click Send/@/* variants, not just the Quickbar's greyed cells.
-    EmoteBlock block = CurrentEmoteBlock();
-    if (block != EmoteBlock::None) {
+    //    toast naming the reason. CurrentEmoteBlock() is the single gate shared with
+    //    the Quickbar (core/CharacterState), gated on QuickbarGreyUnusable, covering
+    //    mounted via MumbleLink and the rest via the optional RealTime API. Extends
+    //    the block to *every* send surface - the main panel + the right-click
+    //    Send/@/* variants, not just the Quickbar cells. AIRBORNE is held back to
+    //    step 5 so the transient "moving" reason outranks it (matches Quickbar.cpp -
+    //    "running and clipping airborne" reads clearer as moving).
+    const EmoteBlock block = CurrentEmoteBlock();
+    if (block != EmoteBlock::None && block != EmoteBlock::Airborne) {
         *outKey = EmoteBlockKey(block);
         return true;
     }
@@ -65,16 +83,60 @@ bool ShouldSkipEmoteSend(const char** outKey, bool checkHeldKeys) {
     //         greying and refusal can't drift apart. The toast uses the action-
     //         tense "Emote skipped ..." wording (the greyed cell uses present
     //         tense - see Quickbar.cpp).
-    switch (CurrentSendBusy(checkHeldKeys)) {
+    switch (CurrentSendBusy(checkHeldKeys, ignoreTextbox)) {
         case SendBusy::Typing:   *outKey = "send.skip.typing";    return true;
         case SendBusy::KeysHeld: *outKey = "send.skip.keys_held"; return true;
         case SendBusy::None:     break;
+    }
+
+    // 5. Airborne (jump / fall) - the fallback, only when no definite state, chat
+    //    config issue, or transient (moving / typing) reason applied, so "moving"
+    //    wins over it.
+    if (block == EmoteBlock::Airborne) {
+        *outKey = EmoteBlockKey(block);
+        return true;
     }
 
     return false;
 }
 
 } // namespace
+
+void NoteKeyEvent(unsigned msg, unsigned vk) {
+    if (vk >= 256 || !IsPrintableVk(vk)) return;
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) {
+        if (!s_vkHeld[vk]) {            // ignore auto-repeat (already held)
+            s_vkHeld[vk] = true;
+            s_heldPrintable.fetch_add(1, std::memory_order_relaxed);
+        }
+    } else if (msg == WM_KEYUP || msg == WM_SYSKEYUP) {
+        if (s_vkHeld[vk]) {
+            s_vkHeld[vk] = false;
+            s_heldPrintable.fetch_sub(1, std::memory_order_relaxed);
+        }
+    }
+}
+
+void ClearHeldKeys() {
+    for (bool& h : s_vkHeld) h = false;
+    s_heldPrintable.store(0, std::memory_order_relaxed);
+}
+
+void ReseedHeldKeys() {
+    // One-shot re-sync from the OS physical state, for focus gain: an alt-tab made
+    // with a movement key held would otherwise leave us out of sync (we missed the
+    // key-down). ~37 GetAsyncKeyState calls, but only on focus changes, not frames.
+    int count = 0;
+    for (unsigned vk = 0; vk < 256; ++vk) {
+        bool held = IsPrintableVk(vk) && (GetAsyncKeyState((int)vk) & 0x8000) != 0;
+        s_vkHeld[vk] = held;
+        if (held) ++count;
+    }
+    s_heldPrintable.store(count, std::memory_order_relaxed);
+}
+
+bool AnyPrintableKeyHeld() { return s_heldPrintable.load(std::memory_order_relaxed) > 0; }
+int  HeldPrintableCount()  { return s_heldPrintable.load(std::memory_order_relaxed); }
 
 bool EmoteSendSwallowActive() {
 #ifdef EMOT3_PLUS
@@ -84,36 +146,27 @@ bool EmoteSendSwallowActive() {
 #endif
 }
 
-SendBusy CurrentSendBusy(bool checkHeldKeys) {
+SendBusy CurrentSendBusy(bool checkHeldKeys, bool ignoreTextbox) {
     // GW2 textbox focused (chat half-typed, mail, TP search, ...). Single bit GW2
-    //    maintains in the Mumble Link.
-    if (MumbleLink && MumbleLink->Context.IsTextboxFocused)
+    //    maintains in the Mumble Link. ignoreTextbox skips it for the "close chat
+    //    on send" path, which will close the box rather than refuse - so the
+    //    movement / held-key check below still applies.
+    if (!ignoreTextbox && MumbleLink && MumbleLink->Context.IsTextboxFocused)
         return SendBusy::Typing;
 
-    // A printable character key is physically held - held WASD during movement is
-    //    the canonical case. GetAsyncKeyState (not io.KeysDown[]) per
-    //    nexus-addon-dev.md "Detecting game / input state": Nexus only feeds keys
-    //    to ImGui when ImGui wants the keyboard. Modifiers alone don't type, so
-    //    they're not gated. Skipped when checkHeldKeys is false ("send while
-    //    moving" consumes held keys during injection instead of refusing - so a held key
-    //    must NOT show the cell as unusable; you can still click it).
-    //
-    //    GUARD ON FOREGROUND: GetAsyncKeyState reads the OS-wide physical key
-    //    state, ignoring focus. Used per-frame for the Quickbar greying that
-    //    means keys typed in ANOTHER app (alt-tabbed to chat) would grey the bar.
-    //    Only consider held keys while GW2 is the foreground window. At click time
-    //    the game is always foreground (you clicked its overlay), so this doesn't
-    //    weaken the send gate; it only stops the greying from reacting to
-    //    background input.
-    if (checkHeldKeys && g_GameHwnd && GetForegroundWindow() == g_GameHwnd) {
-        auto held = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
-        auto held_any = [&](int lo, int hi) {
-            for (int vk = lo; vk <= hi; ++vk) if (held(vk)) return true;
-            return false;
-        };
-        if (held_any('A', 'Z') || held_any('0', '9') || held(VK_SPACE))
-            return SendBusy::KeysHeld;
-    }
+    // Moving / a printable key held - both cancel or garble an emote, so both gate
+    //    it. A held printable key (WASD, number row, ...) auto-repeats WM_CHAR that
+    //    would interleave with our injected command; its count is maintained event-
+    //    driven from the WndProc (NoteKeyEvent), a single atomic read - no per-frame
+    //    polling, and (unlike a key scan) it covers garble from a key held while
+    //    standing still. MovementActive() is the horizontal-velocity signal (from
+    //    MumbleLink), which additionally catches MOUSE-walk - movement with no key
+    //    down at all - which the game still cancels emotes for. Held-key state only
+    //    reflects keys held while GW2 had focus (WndProc clears on focus loss /
+    //    reseeds on gain), so no foreground guard is needed. Skipped when
+    //    checkHeldKeys is false ("send while moving" mode handles it via the swallow).
+    if (checkHeldKeys && (AnyPrintableKeyHeld() || MovementActive()))
+        return SendBusy::KeysHeld;
     return SendBusy::None;
 }
 
@@ -134,13 +187,20 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
     swallowMode = g_PlusSettings.SwallowInputOnSend;
 #endif
 
+    // "Close chat on send": if a GW2 text box is focused and the setting is on,
+    // we'll close it (Escape) in the worker instead of refusing - so tell the gate
+    // to ignore the textbox reason (the move / held-key refusal still applies).
+    const bool closeChat = g_Settings.CloseChatOnSend &&
+                           MumbleLink && MumbleLink->Context.IsTextboxFocused;
+
     // Refuse rather than garble. The check is at click time only - late typing
     // after the worker spawns still interleaves in refuse mode (swallow mode
     // covers that by consuming input). In swallow mode we drop the held-key
     // check (check 3) - those are handled by the swallow - but keep the chat-
     // unbound and textbox-focused checks (the refined textbox guard stays).
     const char* skipKey = nullptr;
-    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/!swallowMode)) {
+    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/!swallowMode,
+                            /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("Emote skipped (%s): %s", skipKey, cmd.c_str());
         ShowFeedback(L(skipKey));
         return;
@@ -148,7 +208,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
 
     LOG_DEBUG("%s emote: %s", send ? "Sending" : "Filling", cmd.c_str());
 
-    std::thread([cmd, send, swallowMode]() {
+    std::thread([cmd, send, swallowMode, closeChat]() {
         // Bump the inflight-workers counter so AddonUnload can wait
         // briefly for us to drain. Drop on every early return via RAII.
         InflightWorkerScope scope;
@@ -188,6 +248,21 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
         // state transitions (chat opens in response to UiChatCommand,
         // chat box accepts text after opening, Enter dispatch settles)
         // which actually need time.
+        // "Close chat on send": a text box was focused at click time - close it
+        // first (Escape clears the half-typed line and unfocuses) so the command we
+        // open + type below lands in a fresh chat instead of the user's message.
+        // Injected the same way as the command keys (synchronous SendToGameOnly).
+        if (closeChat) {
+            if (g_Unloading.load()) return;
+            const DWORD  escScan = MapVirtualKey(VK_ESCAPE, MAPVK_VK_TO_VSC);
+            const LPARAM escDown = (LPARAM)((escScan << 16) | 1);
+            const LPARAM escUp   = escDown | (LPARAM)0xC0000000;
+            APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYDOWN, VK_ESCAPE, escDown);
+            Sleep(10);
+            APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYUP,   VK_ESCAPE, escUp);
+            Sleep(40);   // let the box close before we re-open chat
+        }
+
         if (g_Unloading.load()) return;
         APIDefs->GameBinds.Press(EGameBinds_UiChatCommand);
         Sleep(60);
