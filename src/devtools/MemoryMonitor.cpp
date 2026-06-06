@@ -28,6 +28,7 @@
 
 #include "Globals.h"
 #include "EmoteData.h"
+#include "MeMotes.h"
 #include "Settings.h"
 #include "TextCache.h"
 #include "I18n.h"
@@ -204,6 +205,28 @@ void Sample(std::vector<Snapshot>& out) {
         }
         out.push_back({ "catalog (g_Emotes)",          g_Emotes.size(), bytes });
         out.push_back({ "icon textures (Nexus, est)",  texCount,        texBytes });
+    }
+
+    // /me-mote catalog. Symmetric to the g_Emotes row above — sums struct +
+    // every owned std::string heap allocation. /me-motes carry three text
+    // bodies plus the standard Id/Name/Icon/Aliases, so the per-entry byte
+    // count runs higher than an Emote on average. Texture sums are folded into
+    // the "icon textures (Nexus, est)" row above (GetEmoteTexture is keyed on
+    // Id and the loader walks both catalogs once it's wired up).
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        size_t bytes = g_MeMotes.capacity() * sizeof(MeMote);
+        for (const auto& m : g_MeMotes) {
+            bytes += string_heap(m.Id);
+            bytes += string_heap(m.Name);
+            bytes += string_heap(m.IconPath);
+            bytes += string_heap(m.TextDefault);
+            bytes += string_heap(m.TextYou);
+            bytes += string_heap(m.TextAll);
+            bytes += m.Aliases.capacity() * sizeof(std::string);
+            for (const auto& a : m.Aliases) bytes += string_heap(a);
+        }
+        out.push_back({ "catalog (g_MeMotes)", g_MeMotes.size(), bytes });
     }
 
     // Notifier pending list.

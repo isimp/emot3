@@ -84,3 +84,13 @@ void SaveMeMotesJson(const std::string& path);
 // renderer takes it; background mutators take it too — same discipline as
 // FindEmote).
 const MeMote* FindMeMote(const std::string& id);
+
+// Normalize a free-form string into a /me-mote Id: trim, lowercase ASCII,
+// replace anything that isn't [a-z0-9_] with '_', collapse runs of '_', and
+// trim leading/trailing '_'. Mirrors the NormalizeEmoteCommand invariant of
+// "every Id entry normalized at every ingress" so the catalog's Id field is
+// consistent across hand-edits + UI adds. Stable across runs (a given Name
+// always produces the same Id). Returns "" on empty/all-invalid input — the
+// caller (Options UI) appends a uniqueness suffix and falls back to a
+// "me_mote_N" placeholder when the source string normalizes to nothing.
+std::string NormalizeMeMoteId(std::string s);

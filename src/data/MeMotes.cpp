@@ -1,6 +1,11 @@
 #include "MeMotes.h"
+#include "Globals.h"     // g_MeMotesVersion (DevStateRegistrar reads it)
 #include "JsonUtil.h"
 #include "Logging.h"
+
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+#endif
 
 #include <nlohmann/json.hpp>
 
@@ -57,6 +62,39 @@ bool SanitizeAlias(std::string& a) {
 
 } // namespace
 
+std::string NormalizeMeMoteId(std::string s) {
+    // Step 1: trim ASCII whitespace (same isws as Trim above, inline so the
+    // lambda fits the pattern).
+    auto isws = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
+    while (!s.empty() && isws(s.front())) s.erase(s.begin());
+    while (!s.empty() && isws(s.back()))  s.pop_back();
+    if (s.empty()) return s;
+
+    // Step 2: build the normalized form. Lowercase ASCII letters; keep digits
+    // and underscores as-is; collapse anything else (spaces, punctuation,
+    // accented bytes >=0x80) into single underscores; drop leading runs of
+    // underscores at the start. Trailing underscores trimmed at the end. The
+    // result lands in [a-z0-9_] which is JSON-key-safe and filename-safe.
+    std::string out;
+    out.reserve(s.size());
+    bool lastUnderscore = true;  // start true: suppress leading underscores
+    for (unsigned char uc : s) {
+        char nc;
+        if (uc >= 'A' && uc <= 'Z')                                   nc = (char)(uc + 32);
+        else if ((uc >= 'a' && uc <= 'z') || (uc >= '0' && uc <= '9') || uc == '_') nc = (char)uc;
+        else                                                          nc = '_';
+        if (nc == '_') {
+            if (lastUnderscore) continue;       // collapse / suppress leading
+            lastUnderscore = true;
+        } else {
+            lastUnderscore = false;
+        }
+        out += nc;
+    }
+    while (!out.empty() && out.back() == '_') out.pop_back();
+    return out;
+}
+
 bool LoadMeMotesJson(const std::string& path) {
     std::ifstream f(path);
     if (!f.is_open()) {
@@ -78,10 +116,15 @@ bool LoadMeMotesJson(const std::string& path) {
         return false;
     }
 
+    // Each correction logs at WARNING (mirroring SanitizeSettings' policy):
+    // the file is healed + re-saved on load, so anything we fix up is
+    // recorded so the user can see what changed. `changed` drives the
+    // re-save.
     bool changed = false;
     std::vector<MeMote> parsed;
+    int skippedNonObj = 0, droppedNoId = 0, droppedNoText = 0, droppedDup = 0;
     for (const auto& item : j["me_motes"]) {
-        if (!item.is_object()) { changed = true; continue; }
+        if (!item.is_object()) { ++skippedNonObj; changed = true; continue; }
         MeMote m;
         m.Id          = jsonutil::GetString(item, "id",       std::string());
         m.Name        = jsonutil::GetString(item, "name",     std::string());
@@ -90,23 +133,43 @@ bool LoadMeMotesJson(const std::string& path) {
         m.TextYou     = jsonutil::GetString(item, "text_you", std::string());
         m.TextAll     = jsonutil::GetString(item, "text_all", std::string());
 
+        // Normalize the Id at every ingress (mirrors NormalizeEmoteCommand's
+        // discipline — every code path that introduces an Id runs the same
+        // canonicalization, so on-disk values match what the editor would
+        // produce).
+        std::string normId = NormalizeMeMoteId(m.Id);
+        if (normId != m.Id) {
+            LOG_WARNING("me_motes: id '%s' normalized to '%s'",
+                        m.Id.c_str(), normId.c_str());
+            m.Id = normId; changed = true;
+        }
+
         // Sanitize the bodies: trim + strip an accidental leading "/me ". The
         // schema invariant is "TextDefault carries the variant text only" so
         // the send pipeline can always prepend "/me " exactly once. A user who
         // typed the full command in survives sanitization rather than getting
         // a doubled prefix on send.
-        std::string normDef = StripMePrefix(m.TextDefault);
-        std::string normYou = StripMePrefix(m.TextYou);
-        std::string normAll = StripMePrefix(m.TextAll);
-        if (normDef != m.TextDefault) { m.TextDefault = normDef; changed = true; }
-        if (normYou != m.TextYou)     { m.TextYou     = normYou; changed = true; }
-        if (normAll != m.TextAll)     { m.TextAll     = normAll; changed = true; }
+        auto trySanitizeBody = [&](std::string& field, const char* label) {
+            std::string norm = StripMePrefix(field);
+            if (norm != field) {
+                LOG_WARNING("me_motes[%s].%s: stripped leading '/me ' / trimmed whitespace",
+                            m.Id.c_str(), label);
+                field = std::move(norm); changed = true;
+            }
+        };
+        trySanitizeBody(m.TextDefault, "text");
+        trySanitizeBody(m.TextYou,     "text_you");
+        trySanitizeBody(m.TextAll,     "text_all");
 
         // Drop entries with empty Id (no way to reference them) or empty
         // TextDefault (no body to send on left-click — the You/All variants
         // alone aren't enough, since the cell-click handler always uses
         // Default).
-        if (m.Id.empty() || m.TextDefault.empty()) { changed = true; continue; }
+        if (m.Id.empty())          { ++droppedNoId;   changed = true; continue; }
+        if (m.TextDefault.empty()) {
+            LOG_WARNING("me_motes[%s]: dropped (text body is empty)", m.Id.c_str());
+            ++droppedNoText; changed = true; continue;
+        }
 
         // Optional aliases (free-form search words). Trim + drop empties +
         // dedupe. Missing key is fine.
@@ -121,13 +184,20 @@ bool LoadMeMotesJson(const std::string& path) {
             }
         }
 
-        // Dedupe by Id (last writer wins — but heal the file).
+        // Dedupe by Id (first-wins keeps load deterministic across re-saves).
         bool dup = false;
         for (const auto& p : parsed)
             if (p.Id == m.Id) { dup = true; break; }
         if (!dup) parsed.push_back(std::move(m));
-        else      changed = true;
+        else {
+            LOG_WARNING("me_motes[%s]: dropped (duplicate id)", m.Id.c_str());
+            ++droppedDup; changed = true;
+        }
     }
+    if (skippedNonObj) LOG_WARNING("me_motes: skipped %d non-object entr%s",
+                                   skippedNonObj, skippedNonObj == 1 ? "y" : "ies");
+    if (droppedNoId)   LOG_WARNING("me_motes: dropped %d entr%s with empty id",
+                                   droppedNoId, droppedNoId == 1 ? "y" : "ies");
 
     int count = 0;
     {
@@ -197,3 +267,18 @@ const MeMote* FindMeMote(const std::string& id) {
         if (m.Id == id) return &m;
     return nullptr;
 }
+
+#ifdef EMOT3_DEVTOOLS
+// Runtime state inspector section — surfaces the live /me-mote catalog state
+// (count + monotonic version + on-disk path) alongside the Emote catalog
+// section so a dev can spot when the file failed to load (count stays 0) or
+// when edits aren't propagating (version doesn't change). Layer-2 standard;
+// no-op in non-devtools builds. See DevStateInspector.h.
+static DevStateRegistrar s_meMotesState("/me-motes catalog", [] {
+    DevStateRow("count",   "%zu", g_MeMotes.size());
+    DevStateRow("version", "%llu",
+                (unsigned long long)g_MeMotesVersion.load(std::memory_order_relaxed));
+    DevStateRow("path",    "%s",  g_MeMotesJsonPath.empty()
+                                  ? "(unset)" : g_MeMotesJsonPath.c_str());
+});
+#endif
