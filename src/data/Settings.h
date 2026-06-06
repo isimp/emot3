@@ -93,6 +93,10 @@ struct Settings {
     bool                          FilterShowCore       = true;
     bool                          FilterShowUnlocked   = true;
     bool                          FilterShowLocked     = true;
+    // Class filter for /me-motes — the fourth Library toolbar pill, mirrors
+    // the Core/Unlocked/Locked toggles. Hides /me-motes from both the
+    // built-in /me-motes section and the user-favorite sections. Default on.
+    bool                          FilterShowMeMotes    = true;
     EViewMode                     ViewMode             = EViewMode::Full;
     float                         MainIconScale        = 1.0f;
     // Per-section collapse state for the built-in Library sections (Core /

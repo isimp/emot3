@@ -640,10 +640,13 @@ void AddonRender() {
     ImGui::SameLine();
     filterChanged |= ToggleButton(L("filter.locked"),   &g_Settings.FilterShowLocked);
     if (ImGui::IsItemHovered()) TooltipOnOff("filter.locked.on", "filter.locked.off", /*defaultIsOn=*/true);
+    ImGui::SameLine();
+    filterChanged |= ToggleButton(L("filter.me_motes"), &g_Settings.FilterShowMeMotes);
+    if (ImGui::IsItemHovered()) TooltipOnOff("filter.me_motes.on", "filter.me_motes.off", /*defaultIsOn=*/true);
     if (filterChanged) {
-        LOG_TRACE("setting main.filter core=%d unlocked=%d locked=%d",
+        LOG_TRACE("setting main.filter core=%d unlocked=%d locked=%d me_motes=%d",
                   g_Settings.FilterShowCore, g_Settings.FilterShowUnlocked,
-                  g_Settings.FilterShowLocked);
+                  g_Settings.FilterShowLocked, g_Settings.FilterShowMeMotes);
         if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
     }
 
@@ -903,6 +906,11 @@ void AddonRender() {
                     // into view here.
                     if (!IsMeMoteRenderable(*m)) continue;
                     ++catTotal[ci];
+                    // /me-motes filter pill, mirrors how passes() gates Emote
+                    // refs above. Counted into catTotal first so the empty-
+                    // state still distinguishes "no entries" from "filter
+                    // hides them".
+                    if (!g_Settings.FilterShowMeMotes) continue;
                     catItems[ci].push_back({ nullptr, m, (int)i, /*unlocked=*/true, std::string() });
                 }
             }
@@ -922,14 +930,18 @@ void AddonRender() {
         // Unlockable sections follow so an entry never appears in both the
         // favorites section and the built-in one. meMoteTotal +
         // meMoteUnfavCount drive the empty-state branching so we can
-        // distinguish "none exist" from "all favorited". Both counts are
-        // post-renderable (half-filled entries don't count toward either).
+        // distinguish "none exist" / "all favorited" / "filter hid them".
+        // Both counts are post-renderable (half-filled entries don't count
+        // toward either) and BEFORE the FilterShowMeMotes pill — meMoteTotal
+        // and meMoteUnfavCount stay accurate when the pill is off so the
+        // empty-state message can name the right reason.
         for (const auto& kv : meMotesById) {
             const MeMote* m = kv.second;
             if (!IsMeMoteRenderable(*m)) continue;
             ++meMoteTotal;
             if (favoritedMeMoteIds.count(m->Id)) continue;
             ++meMoteUnfavCount;
+            if (!g_Settings.FilterShowMeMotes) continue;
             meMoteItems.push_back({ nullptr, m, -1, /*unlocked=*/true, std::string() });
         }
 
@@ -1152,8 +1164,14 @@ void AddonRender() {
         if (!meMoteItems.empty()) anyShown = true;
         if (!meCollapsed) {
             if (meMoteItems.empty()) {
-                const char* msg = (meMoteTotal == 0) ? L("mp.me_motes_none")
-                                                     : L("mp.me_motes_all_fav");
+                // Mirrors the Core/Unlockable empty-state triad: none exist
+                // → "create some"; everything exists but is favorited →
+                // "all favorited"; some exist + are unfavorited but the
+                // pill hid them → "filtered out". Most-specific cause first.
+                const char* msg;
+                if (meMoteTotal == 0)          msg = L("mp.me_motes_none");
+                else if (meMoteUnfavCount == 0) msg = L("mp.me_motes_all_fav");
+                else                            msg = L("mp.me_motes_filtered");
                 ImGui::TextDisabled("%s", msg);
             } else {
                 RenderEmoteSection(meMoteItems, /*allowReorder=*/false, -1, g_Settings.ViewMode, mainScale);

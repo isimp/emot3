@@ -54,6 +54,9 @@
   "filter.locked": "Gesperrt",
   "filter.locked.on": "freischaltbare Emotes anzeigen, die du noch nicht freigeschaltet hast.",
   "filter.locked.off": "ausblenden.",
+  "filter.me_motes": "/me-motes",
+  "filter.me_motes.on": "deine eigenen /me-motes anzeigen (Chat-Emotes, die du unter Optionen > /me-motes angelegt hast).",
+  "filter.me_motes.off": "ausblenden.",
   "common.clear": "Löschen",
   "common.none": "Keine",
 
@@ -91,6 +94,7 @@
   "mp.unlock_none": "  (keine freischaltbaren Emotes in deinem Katalog)",
   "mp.me_motes_none": "  (noch keine /me-motes - lege welche unter Optionen > /me-motes an)",
   "mp.me_motes_all_fav": "  (alle /me-motes sind in den Favoriten)",
+  "mp.me_motes_filtered": "  (die /me-motes-Pille ist aus; aktiviere sie, um sie zu sehen)",
 
   "cells.moving": "Bewegen: %s",
   "cells.no_drop_here": "Hier nicht ablegbar - auf eine Favoritenkategorie ziehen",

@@ -57,6 +57,9 @@
   "filter.locked": "Locked",
   "filter.locked.on": "show unlockable emotes you haven't unlocked yet.",
   "filter.locked.off": "hide them.",
+  "filter.me_motes": "/me-motes",
+  "filter.me_motes.on": "show your custom /me-motes (chat emotes you authored under Options > /me-motes).",
+  "filter.me_motes.off": "hide them.",
   "common.clear": "Clear",
   "common.none": "None",
 
@@ -94,6 +97,7 @@
   "mp.unlock_none": "  (no unlockable emotes in your catalog)",
   "mp.me_motes_none": "  (no /me-motes yet - create some under Options > /me-motes)",
   "mp.me_motes_all_fav": "  (all /me-motes are in favorites)",
+  "mp.me_motes_filtered": "  (the /me-motes pill is off; toggle it on to see them)",
 
   "cells.moving": "Moving: %s",
   "cells.no_drop_here": "Can't drop here - drag onto a favorites category",

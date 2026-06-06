@@ -398,6 +398,7 @@ bool LoadSettings(const std::string& path) {
     s.FilterShowCore     = GetBool (main, "show_core",     s.FilterShowCore);
     s.FilterShowUnlocked = GetBool (main, "show_unlocked", s.FilterShowUnlocked);
     s.FilterShowLocked   = GetBool (main, "show_locked",   s.FilterShowLocked);
+    s.FilterShowMeMotes  = GetBool (main, "show_me_motes", s.FilterShowMeMotes);
     s.ViewMode      = (EViewMode)   GetInt(main, "view_mode", (int)s.ViewMode);
     s.MainIconScale = GetFloat(main, "icon_scale", s.MainIconScale);
     s.MainCoreCollapsed     = GetBool(main, "core_collapsed",     s.MainCoreCollapsed);
@@ -571,6 +572,7 @@ void SaveSettings(const std::string& path) {
     f << "    \"show_core\": "     << B(s.FilterShowCore)      << ",\n";
     f << "    \"show_unlocked\": " << B(s.FilterShowUnlocked)  << ",\n";
     f << "    \"show_locked\": "   << B(s.FilterShowLocked)    << ",\n";
+    f << "    \"show_me_motes\": " << B(s.FilterShowMeMotes)   << ",\n";
     f << "    \"view_mode\": "     << (int)s.ViewMode          << ",\n";
     f << "    \"icon_scale\": "    << s.MainIconScale          << ",\n";
     f << "    \"core_collapsed\": "     << B(s.MainCoreCollapsed)     << ",\n";
