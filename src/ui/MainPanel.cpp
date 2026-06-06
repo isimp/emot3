@@ -172,6 +172,25 @@ static DevStateRegistrar s_texStateSection("Textures / resources", [] {
     DevStateRow("emotes",                  "%d", total);
     DevStateRow("textures ready",          "%d", ready);
     DevStateRow("pending (loading/none)",  "%d", pending);
+
+    // /me-motes: only entries with an explicit IconPath get a texture
+    // attempt (no `<id>.png` folder convention), so "with icon path" is
+    // the true total for the ready/pending tally — a /me-mote with empty
+    // IconPath would always read "pending" and inflate the count.
+    int mmTotal = 0, mmReady = 0, mmPending = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        for (const auto& m : g_MeMotes) {
+            if (m.IconPath.empty()) continue;
+            ++mmTotal;
+            Texture* t = GetMeMoteTexture(m.Id);
+            if (t && t->Resource) ++mmReady; else ++mmPending;
+        }
+    }
+    DevStateRow("/me-motes (with icon)",    "%d", mmTotal);
+    DevStateRow("/me-mote textures ready",  "%d", mmReady);
+    DevStateRow("/me-motes pending",        "%d", mmPending);
+
     DevStateRow("LoadEmoteTextures calls", "%d", s_texLoadCalls);
     DevStateRow("last load found/missing", "%d / %d", s_texLastLoaded, s_texLastMissing);
     DevStateRow("emotes dirty",            "%s", g_EmotesDirty ? "yes" : "no");

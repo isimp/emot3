@@ -32,7 +32,7 @@
 #include "Settings.h"
 #include "TextCache.h"
 #include "I18n.h"
-#include "Icons.h"         // GetEmoteTexture - to size Nexus-owned icon textures
+#include "Icons.h"         // GetEmoteTexture / GetMeMoteTexture - to size Nexus-owned icon textures
 #include "Profiling.h"     // prof::Ring, prof::kHistLen, prof::displayMap
 
 #pragma comment(lib, "psapi.lib")
@@ -208,14 +208,14 @@ void Sample(std::vector<Snapshot>& out) {
     }
 
     // /me-mote catalog. Symmetric to the g_Emotes row above — sums struct +
-    // every owned std::string heap allocation. /me-motes carry three text
-    // bodies plus the standard Id/Name/Icon/Aliases, so the per-entry byte
-    // count runs higher than an Emote on average. Texture sums are folded into
-    // the "icon textures (Nexus, est)" row above (GetEmoteTexture is keyed on
-    // Id and the loader walks both catalogs once it's wired up).
+    // every owned std::string heap allocation + /me-mote textures (a
+    // separate Nexus cache namespace; see GetMeMoteTexture). /me-motes carry
+    // three text bodies plus the standard Id/Name/Icon/Aliases, so the
+    // per-entry byte count runs higher than an Emote on average.
     {
         std::lock_guard<std::mutex> lk(g_MeMotesMutex);
         size_t bytes = g_MeMotes.capacity() * sizeof(MeMote);
+        size_t mmTexBytes = 0, mmTexCount = 0;
         for (const auto& m : g_MeMotes) {
             bytes += string_heap(m.Id);
             bytes += string_heap(m.Name);
@@ -225,8 +225,16 @@ void Sample(std::vector<Snapshot>& out) {
             bytes += string_heap(m.TextAll);
             bytes += m.Aliases.capacity() * sizeof(std::string);
             for (const auto& a : m.Aliases) bytes += string_heap(a);
+
+            if (Texture* t = GetMeMoteTexture(m.Id)) {
+                if (t->Resource) {
+                    mmTexBytes += (size_t)t->Width * (size_t)t->Height * 4u;
+                    ++mmTexCount;
+                }
+            }
         }
-        out.push_back({ "catalog (g_MeMotes)", g_MeMotes.size(), bytes });
+        out.push_back({ "catalog (g_MeMotes)",            g_MeMotes.size(), bytes });
+        out.push_back({ "/me-mote textures (Nexus, est)", mmTexCount,       mmTexBytes });
     }
 
     // Notifier pending list.

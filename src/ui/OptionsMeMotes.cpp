@@ -8,6 +8,7 @@
 #include "Logging.h"
 #include "MeMotes.h"
 #include "OptionsCommon.h"   // OptionsSection
+#include "Profiling.h"   // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 #include "Settings.h"
 
 #include "imgui/imgui.h"
@@ -195,6 +196,7 @@ bool FieldRow(const char* labelKey, const char* hintKey, const char* idSuffix,
 } // namespace
 
 void RenderMeMotesTab() {
+    PROFILE_SCOPE("opt.me_motes");  // dev perf overlay — sibling to opt.emotes / opt.general / etc.
     // ---- Intro --------------------------------------------------------
     ImGui::TextWrapped("%s", L("opt.mm.hlp_top"));
     ImGui::Spacing();
