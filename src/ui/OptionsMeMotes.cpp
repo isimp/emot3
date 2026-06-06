@@ -10,7 +10,7 @@
 #include "MeMotes.h"
 #include "OptionsCommon.h"   // OptionsSection
 #include "Profiling.h"   // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
-#include "Resources.h"   // LookupBundledResource + kMeMoteAIIcons (icon status AI tier)
+#include "Icons.h"       // ResolveMeMoteIconSource + MeMoteIconSource (icon status tier)
 #include "Settings.h"
 
 #include "imgui/imgui.h"
@@ -502,33 +502,50 @@ void RenderMeMotesTab() {
                 // only — for the typical 6–15 /me-motes with maybe a handful
                 // open that's negligible (no IconStatusCache needed; the
                 // Emote tab caches because it iterates ~67 entries).
+                //
+                // The resolver needs a MeMote object; we briefly re-acquire
+                // the mutex to fetch it. Cheaper than the path-resolution
+                // duplication this used to inline, and the lock is held only
+                // for the FindMeMote pointer-grab + a couple of field reads.
                 std::string status;
-                if (!iconPathSnapshot.empty()) {
-                    // Custom IconPath — inline the path-resolution rule from
-                    // ResolveMeMoteIconPath so we can stat the file without
-                    // re-acquiring g_MeMotesMutex just to fetch the MeMote.
-                    const std::string& p = iconPathSnapshot;
-                    bool isAbs = (p.size() >= 3 && p[1] == ':' &&
-                                  (p[2] == '\\' || p[2] == '/')) ||
-                                 (p.size() >= 2 && p[0] == '\\' && p[1] == '\\');
-                    std::string resolved = isAbs ? p
-                                                 : (g_IconsDir.empty() ? p
-                                                                       : g_IconsDir + "\\" + p);
-                    DWORD attr = GetFileAttributesA(resolved.c_str());
-                    bool exists = (attr != INVALID_FILE_ATTRIBUTES) &&
-                                  !(attr & FILE_ATTRIBUTE_DIRECTORY);
-                    status = std::string(L(exists
-                                             ? "opt.mm.icon_custom_prefix"
-                                             : "opt.mm.icon_custom_missing_prefix")) + p;
-                } else if (g_Settings.UseAIIconFallback &&
-                           LookupBundledResource(kMeMoteAIIcons,
-                                                 kMeMoteAIIconsCount, id) != 0) {
-                    // No custom path but the bundled AI tier has art for
-                    // this Id — surface that explicitly so the user knows
-                    // why a cell has an icon they didn't set.
-                    status = std::string(L("opt.mm.icon_bundled_ai"));
-                } else {
-                    status = std::string(L("opt.mm.icon_none"));
+                MeMoteIconSource src = MeMoteIconSource::TextFallback;
+                {
+                    std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                    if (const MeMote* mm = FindMeMote(id))
+                        src = ResolveMeMoteIconSource(*mm);
+                }
+                switch (src) {
+                    case MeMoteIconSource::Custom:
+                        // IconPath set AND file exists at the resolved path.
+                        status = std::string(L("opt.mm.icon_custom_prefix")) +
+                                 iconPathSnapshot;
+                        break;
+                    case MeMoteIconSource::FolderOverride:
+                        // No IconPath, but icons/<id>.png exists on disk —
+                        // the user dropped a PNG matching the stable Id and
+                        // it auto-picks up without a Browse roundtrip.
+                        status = std::string(L("opt.mm.icon_folder_override_prefix")) +
+                                 id + ".png";
+                        break;
+                    case MeMoteIconSource::BundledAI:
+                        // No on-disk match but the bundled AI tier covers
+                        // this Id — surface explicitly so the user knows why
+                        // a cell has an icon they didn't set.
+                        status = std::string(L("opt.mm.icon_bundled_ai"));
+                        break;
+                    case MeMoteIconSource::TextFallback:
+                        // Resolver returned TextFallback. That covers two
+                        // shapes: (a) no IconPath, no folder file, no AI;
+                        // (b) IconPath set but the file is MISSING (and no
+                        // AI rescues it). Split for clearer user feedback —
+                        // a missing custom path is almost always a typo.
+                        if (!iconPathSnapshot.empty()) {
+                            status = std::string(L("opt.mm.icon_custom_missing_prefix")) +
+                                     iconPathSnapshot;
+                        } else {
+                            status = std::string(L("opt.mm.icon_none"));
+                        }
+                        break;
                 }
                 float availW = ImGui::GetContentRegionAvail().x;
                 if (availW < 40.f) availW = 40.f;

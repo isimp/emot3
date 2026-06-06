@@ -33,10 +33,12 @@ struct MeMote {
     // /me-motes category, and favorites cells. Free-form, user-authored.
     std::string Name;
 
-    // Optional user-supplied icon path override; empty = no icon, the cell
-    // falls back to the styled letter button. Unlike Emotes, /me-motes have NO
-    // <id>.png folder convention, no bundled art, and no AI fallback — it's the
-    // explicit path or the letter (see ResolveMeMoteIconPath in Icons.cpp).
+    // Optional user-supplied icon path override. Resolves through the same
+    // chain Emotes use, minus the BundledOfficial tier (ArenaNet doesn't
+    // ship art for /me-motes since they're user-content): explicit IconPath
+    // → icons/<id>.png drop-in → bundled AI artwork (opt-in via
+    // UseAIIconFallback) → styled letter button. See ResolveMeMoteIconPath
+    // + ResolveMeMoteIconSource in Icons.cpp.
     std::string IconPath;
 
     // Search hints. The Library's search bar matches Name + Aliases (not the

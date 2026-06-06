@@ -175,6 +175,7 @@
   "opt.mm.icon_none": "(kein eigenes Symbol — Buchstaben-Fallback)",
   "opt.mm.icon_custom_prefix": "Eigen: ",
   "opt.mm.icon_custom_missing_prefix": "Eigen (fehlt): ",
+  "opt.mm.icon_folder_override_prefix": "Ordner-Override: icons\\",
   "opt.mm.icon_bundled_ai": "(mitgeliefertes KI-Symbol)",
   "opt.mm.restore_bundled": "Mitgelieferte wiederherstellen",
   "opt.mm.restore_bundled_tooltip": "Fügt die mitgelieferten Beispiel-/me-motes (Gruppensuche, Bereit-Check, Heiler gesucht, ...) hinzu, die noch nicht in deinem Katalog sind. Idempotent — dupliziert nichts und überschreibt deine Änderungen nicht.",

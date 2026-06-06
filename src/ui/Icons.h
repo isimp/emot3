@@ -16,37 +16,34 @@ struct Texture;
 // resolves regardless of the catalog's emote language.
 std::string ResolveIconPath(const Emote& e);
 
-// /me-mote icon path resolution — only ever returns a DISK PATH (the
-// `m.IconPath`-derived one). Returns empty when no explicit IconPath was
-// set; the resolution-tier choice is then made by ResolveMeMoteIconSource
-// below, which the loader and the Options status line both consult.
-// Relative paths resolve against g_IconsDir (so users can drop a PNG into
-// addons/emot3/icons/ and reference it by filename in the catalog).
+// /me-mote icon path resolution — always returns a disk path: the explicit
+// `m.IconPath` if set, otherwise the derived `icons/<id>.png` under
+// g_IconsDir (matches the Emote pattern; the file may or may not exist —
+// ResolveMeMoteIconSource stats it to decide which tier fires). Relative
+// paths resolve against g_IconsDir; absolute paths pass through.
 std::string ResolveMeMoteIconPath(const struct MeMote& m);
 
 // Where a /me-mote's icon resolves from, in priority order. Single source
 // of truth for that order, shared by LoadEmoteTextures (which picks what
 // to load) and the /me-motes Options tab's status line (which labels it)
-// so the two can never disagree. Shorter than the Emote chain by design:
-// the catalog is user-content so there's no BundledOfficial tier (ArenaNet
-// doesn't ship art for it), and there's no FolderOverride tier either
-// (icons land via the explicit IconPath only — no `<id>.png` drop-in
-// convention). The remaining two bundled-vs-letter tiers parallel the
-// Emote chain so a user toggling UseAIIconFallback gets consistent
-// behaviour across both catalogs.
+// so the two can never disagree. Shorter than the Emote chain by ONE tier:
+// there's no BundledOfficial (the catalog is user-content, ArenaNet doesn't
+// ship art for it). The remaining four tiers parallel the Emote chain so
+// users get consistent affordances across both catalogs — including the
+// `icons/<id>.png` drop-in convention and the opt-in BundledAI fallback.
 enum class MeMoteIconSource {
-    Custom,        // explicit IconPath on disk
-    BundledAI,     // bundled AI fallback (only when UseAIIconFallback is on)
-    TextFallback   // no icon — styled letter button
+    Custom,           // explicit IconPath on disk
+    FolderOverride,   // no IconPath, but icons/<id>.png exists on disk
+    BundledAI,        // bundled AI fallback (only when UseAIIconFallback is on)
+    TextFallback      // no icon — styled letter button
 };
 
 // Resolve which source actually supplies m's icon, in the same order the
-// loader loads. Does a disk stat for Custom, so it's for load /
-// settings-screen use, not a per-frame render path. A missing explicit
-// IconPath falls through to the bundled AI tier (Custom is returned only
-// when the file exists on disk); the Options status line surfaces the
-// missing-path case separately, same as DescribeIconSource does for
-// Emotes.
+// loader loads. Does a disk stat, so it's for load / settings-screen use,
+// not a per-frame render path. A missing explicit IconPath falls through
+// to the next tier (Custom is returned only when the file exists on disk);
+// the Options status line surfaces the missing-path case separately, same
+// as DescribeIconSource does for Emotes.
 MeMoteIconSource ResolveMeMoteIconSource(const struct MeMote& m);
 
 // Where an emote's icon resolves from, in priority order. Single source of

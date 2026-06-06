@@ -63,12 +63,23 @@ Texture* GetEmoteTexture(const std::string& command) {
 }
 
 std::string ResolveMeMoteIconPath(const MeMote& m) {
-    // /me-motes only have an explicit IconPath (no `<id>.png` folder
-    // convention; if the user didn't set a path, the resolver returns empty
-    // and the source tier choice goes to ResolveMeMoteIconSource — which
-    // either falls back to the bundled AI tier or to the styled letter).
-    if (m.IconPath.empty()) return std::string();
-    const std::string& p = m.IconPath;
+    // Mirrors the Emote pattern: always returns a disk path. Explicit
+    // IconPath wins (absolute returned as-is, relative joined to g_IconsDir);
+    // otherwise derives "<id>.png" under g_IconsDir so the FolderOverride
+    // tier in ResolveMeMoteIconSource has a path to stat. The returned path
+    // may or may not exist — the resolver does the stat to decide which
+    // tier fires.
+    std::string p = m.IconPath;
+    if (p.empty()) {
+        // Derive from the stable Id (lowercased; strip any leading slash for
+        // symmetry with Emote, though /me-mote Ids never carry one). Result
+        // is a filename, joined to g_IconsDir below.
+        std::string base = m.Id;
+        if (!base.empty() && base.front() == '/') base.erase(0, 1);
+        std::transform(base.begin(), base.end(), base.begin(),
+                       [](unsigned char c) { return (char)std::tolower(c); });
+        p = base + ".png";
+    }
     bool isAbs = (p.size() >= 3 && p[1] == ':' &&
                   (p[2] == '\\' || p[2] == '/')) ||
                  (p.size() >= 2 && p[0] == '\\' && p[1] == '\\');
@@ -78,24 +89,24 @@ std::string ResolveMeMoteIconPath(const MeMote& m) {
 }
 
 MeMoteIconSource ResolveMeMoteIconSource(const MeMote& m) {
-    // 1. Explicit Custom IconPath on disk. Mirrors the Emote chain's
-    //    Custom tier: only counted when the file ACTUALLY exists, so a
-    //    typo'd / deleted path falls through to the bundled AI tier (the
-    //    Options status line distinguishes "missing" separately for
-    //    user-feedback purposes, but the loader treats it as fallthrough).
-    if (!m.IconPath.empty()) {
-        std::string path = ResolveMeMoteIconPath(m);
-        DWORD attr = GetFileAttributesA(path.c_str());
-        if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
-            return MeMoteIconSource::Custom;
-    }
-    // 2. Bundled AI fallback, only when the user opted in via the same
+    // 1/2. A PNG on disk at the resolved path — either an explicit IconPath
+    //      (Custom) or the icons/<id>.png drop-in (FolderOverride). The
+    //      loader treats both the same; we only split them so the status
+    //      line can name which it is. A missing explicit IconPath falls
+    //      through to the bundled AI tier — same fallthrough behaviour
+    //      ResolveIconSource has for emotes.
+    std::string path = ResolveMeMoteIconPath(m);
+    DWORD attr = GetFileAttributesA(path.c_str());
+    if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
+        return m.IconPath.empty() ? MeMoteIconSource::FolderOverride
+                                  : MeMoteIconSource::Custom;
+    // 3. Bundled AI fallback, only when the user opted in via the same
     //    UseAIIconFallback setting that governs Emote AI artwork. Keys on
     //    the stable /me-mote Id (lfg.png, brb.png), case-insensitively.
     if (g_Settings.UseAIIconFallback &&
         LookupBundledResource(kMeMoteAIIcons, kMeMoteAIIconsCount, m.Id) != 0)
         return MeMoteIconSource::BundledAI;
-    // 3. Styled letter button (drawn by RenderMeMoteCellBody when no
+    // 4. Styled letter button (drawn by RenderMeMoteCellBody when no
     //    texture is loaded for the cache key).
     return MeMoteIconSource::TextFallback;
 }

@@ -264,10 +264,10 @@ void LoadEmoteTextures() {
     // /me-mote textures share the same dirty epoch — MarkMeMotesDirty sets
     // g_EmotesDirty too, so any /me-mote edit triggers this branch on the
     // next render frame. The /me-mote chain is shorter than the Emote
-    // chain (no BundledOfficial tier; the catalog is user-content so
-    // ArenaNet doesn't ship art for it); ResolveMeMoteIconSource picks
-    // between Custom (disk PNG via explicit IconPath), BundledAI (when
-    // UseAIIconFallback is on AND the Id has a bundled AI PNG), and
+    // chain by ONE tier (no BundledOfficial — the catalog is user-content
+    // so ArenaNet doesn't ship art for it); ResolveMeMoteIconSource picks
+    // between Custom / FolderOverride (disk PNG, either path), BundledAI
+    // (when UseAIIconFallback is on AND the Id has a bundled AI PNG), and
     // TextFallback (the styled letter, drawn by RenderMeMoteCellBody at
     // render time, no texture load). Caveat shared with the Emote path:
     // GetOrCreate*From* keys on the cache name and Nexus exposes no
@@ -280,6 +280,8 @@ void LoadEmoteTextures() {
             std::string key = MeMoteCacheKey(m.Id);
             switch (ResolveMeMoteIconSource(m)) {
                 case MeMoteIconSource::Custom:
+                case MeMoteIconSource::FolderOverride:
+                    // A PNG on disk (explicit IconPath or icons/<id>.png drop-in).
                     APIDefs->Textures.GetOrCreateFromFile(
                         key.c_str(), ResolveMeMoteIconPath(m).c_str());
                     ++meLoaded;

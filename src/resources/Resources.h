@@ -16,13 +16,14 @@
 //
 // The /me-mote texture loader uses a SHORTER chain (see Icons.cpp's
 // ResolveMeMoteIconSource); the catalog is user-content so there's no
-// BundledOfficial tier, and there's no `icons/<id>.png` drop-in
-// convention either (icons land via the explicit IconPath only):
+// BundledOfficial tier, but everything else parallels the Emote chain:
 //
 //   1. m.IconPath                 — user-supplied path (file-based)
-//   2. kMeMoteAIIcons             — bundled AI artwork keyed on /me-mote
+//   2. icons/<id>.png             — folder drop-in matching the stable Id
+//                                   (file-based, mirrors the Emote convention)
+//   3. kMeMoteAIIcons             — bundled AI artwork keyed on /me-mote
 //                                   Id, opt-in via the same setting (memory)
-//   3. RenderStyledFallback       — letter button (drawn by
+//   4. RenderStyledFallback       — letter button (drawn by
 //                                   RenderMeMoteCellBody)
 //
 // This module exposes the manifest tables and a single byte-loading
