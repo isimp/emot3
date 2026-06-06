@@ -28,6 +28,25 @@ them from the official ArenaNet artwork.
 - **Multilingual** - emote commands in all four GW2 languages; UI in English and
   German, with more easy to add.
 
+## Screenshots
+
+<table>
+<tr>
+<td align="center" width="33%">
+  <a href="https://github.com/user-attachments/assets/eb13f7ea-e0ad-46a0-93d9-f637211d2329"><img src="https://github.com/user-attachments/assets/eb13f7ea-e0ad-46a0-93d9-f637211d2329" alt="Library" width="280"></a>
+  <br><b>Library</b>
+</td>
+<td align="center" width="33%">
+  <a href="https://github.com/user-attachments/assets/5db7fd74-770c-429c-af1b-5946f9c24af6"><img src="https://github.com/user-attachments/assets/5db7fd74-770c-429c-af1b-5946f9c24af6" alt="Quickbar" width="280"></a>
+  <br><b>Quickbar</b>
+</td>
+<td align="center" width="33%">
+  <a href="https://github.com/user-attachments/assets/8f9d20d1-245b-4191-98f6-29a67ebd7e7e"><img src="https://github.com/user-attachments/assets/8f9d20d1-245b-4191-98f6-29a67ebd7e7e" alt="Catalog & Unlocks" width="280"></a>
+  <br><b>Catalog & Unlocks</b>
+</td>
+</tr>
+</table>
+
 ## The catalog
 
 emot3's emotes live in `addons/emot3/emotes.json` and are fully editable under
