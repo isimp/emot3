@@ -1,6 +1,5 @@
 #include "OptionsMeMotes.h"
 
-#include "EmoteData.h"   // g_EmoteLanguage (Restore-bundled language pick)
 #include "Favorites.h"   // RemoveRefFromCategories on delete
 #include "Globals.h"
 #include "I18n.h"        // L(), TooltipText
@@ -306,22 +305,6 @@ void RenderMeMotesTab() {
         Persist();                    // outside the lock
         s_newIdBuf[0] = '\0';         // clear input on commit
     }
-
-    // "Restore bundled" sits on the same SameLine row as Add — visually pairs
-    // the two "grow the catalog" affordances. Mirrors OptionsEmotes' Restore
-    // button. Idempotent by Id: never duplicates, never overwrites a user-
-    // edited sample. Non-destructive, so no confirmation popup. Seeds in the
-    // user's emote language (g_EmoteLanguage); if that's not set yet (truly
-    // fresh install where the first-run dialog hasn't been used), falls back
-    // to "en" — the loader's per-entry EN fallback handles missing languages.
-    ImGui::SameLine();
-    if (ImGui::Button(L("opt.mm.restore_bundled"))) {
-        std::string lang = g_EmoteLanguage.empty() ? std::string("en")
-                                                   : g_EmoteLanguage;
-        int added = SeedBundledMeMotes(lang);
-        if (added > 0) Persist();
-    }
-    if (ImGui::IsItemHovered()) TooltipText("opt.mm.restore_bundled_tooltip");
 
     // Snapshot Ids under the mutex so per-row work doesn't hold it across
     // ImGui draws. Sort by Id for stable display order (matches catalog).
@@ -733,5 +716,61 @@ void RenderMeMotesTab() {
         s_rowOpen.erase(deleteId);
         s_rowBufs.erase(deleteId);
         Persist();
+    }
+
+    // ===== Bundled samples (uncommon: reseed) =====
+    // Mirrors OptionsEmotes' "Bundled emotes" section structurally: language
+    // combo above, Restore below. Idempotent by Id — never duplicates, never
+    // overwrites a user-edited sample, never resurrects a deleted one if the
+    // user hasn't touched g_MeMoteLanguage (existing samples stay; only the
+    // language of NEWLY added entries is governed by the combo).
+    OptionsSection(L("opt.mm.sec_restore"));
+    ImGui::TextWrapped("%s", L("opt.mm.restore_explainer"));
+    ImGui::Spacing();
+    {
+        std::vector<std::string> mmLangs = AvailableMeMoteLanguages();
+        // g_MeMoteLanguage is clamped at every write to AvailableMeMoteLanguages(),
+        // so this lookup almost always hits — but a manually-cleared me_motes.json
+        // can leave g_MeMoteLanguage empty for a frame, and an upcoming bundle drop
+        // could theoretically narrow the language set. Falling back to "en" keeps
+        // the preview readable in either case.
+        std::string current = g_MeMoteLanguage.empty() ? std::string("en")
+                                                       : g_MeMoteLanguage;
+        int curIdx = 0;
+        for (size_t i = 0; i < mmLangs.size(); ++i)
+            if (mmLangs[i] == current) { curIdx = (int)i; break; }
+
+        ImGui::Text("%s", L("opt.mm.me_mote_language"));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(160.f);
+        std::string mmPreview = (curIdx < (int)mmLangs.size())
+            ? std::string(L(("lang." + mmLangs[curIdx]).c_str()))
+            : std::string("en");
+        if (ImGui::BeginCombo("##memotelang", mmPreview.c_str())) {
+            for (size_t i = 0; i < mmLangs.size(); ++i) {
+                bool sel = ((int)i == curIdx);
+                if (ImGui::Selectable(L(("lang." + mmLangs[i]).c_str()), sel) && !sel) {
+                    // Preference only for NEW bundled /me-motes added by Restore
+                    // below — does NOT relocalize existing /me-motes (same
+                    // discipline as Options > Catalog's emote-language combo).
+                    LOG_INFO("/me-mote language (for new bundled samples) -> %s",
+                             mmLangs[i].c_str());
+                    g_MeMoteLanguage = mmLangs[i];
+                    if (!g_MeMotesJsonPath.empty()) SaveMeMotesJson(g_MeMotesJsonPath);
+                }
+                if (sel) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            TooltipText("opt.mm.me_mote_language_tooltip");
+
+        ImGui::Spacing();
+        if (ImGui::Button(L("opt.mm.restore_bundled"))) {
+            int added = SeedBundledMeMotes(
+                g_MeMoteLanguage.empty() ? std::string("en") : g_MeMoteLanguage);
+            if (added > 0) Persist();
+        }
+        if (ImGui::IsItemHovered()) TooltipText("opt.mm.restore_bundled_tooltip");
     }
 }

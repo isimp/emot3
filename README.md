@@ -68,6 +68,17 @@ missing; your edits are never overwritten. Icons resolve in order: a custom
 path, a PNG you drop in `addons/emot3/icons/`, the bundled official art, the
 optional AI fallback, then a plain letter - so every emote shows something.
 
+## /me-motes
+
+emot3's /me-motes are user-authored `/me` chat snippets for things no
+animated emote covers ("LFG", "BRB", "Ready to pull"). Each one ships up to
+three pre-written bodies — **Default** on left-click, **You** and **All** on
+right-click — so you pick the context at send time. The catalog lives in
+`addons/emot3/me_motes.json` and is editable under *Options > /me-motes*; a
+small bundled set seeds on first run (English and German today — additional
+translations welcome at
+[`resources/me_mote_data/me_motes_i18n.json`](resources/me_mote_data/me_motes_i18n.json)).
+
 ## Install
 
 1. Install [Nexus](https://raidcore.gg/Nexus) into your Guild Wars 2 folder.

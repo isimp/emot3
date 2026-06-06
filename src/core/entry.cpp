@@ -289,15 +289,17 @@ void AddonLoad(AddonAPI* aApi) {
     }
     // Upgrade hook: a returning user with seeded emotes (g_EmoteLanguage set)
     // but no me_motes.json on disk (the feature is newer than their install)
-    // gets the bundled samples seeded automatically in their existing emote
-    // language. Truly-fresh installs land here with g_EmoteLanguage empty —
-    // skipped, then seeded later by MainPanel's first-run dialog when the
-    // user picks a language and clicks Add (alongside SeedDefaultEmotes).
-    // A user who manually emptied me_motes.json (file exists but loads zero
-    // entries) is NOT reseeded here — we only seed when the file genuinely
-    // didn't exist, so deliberate clears stick.
+    // gets the bundled samples seeded automatically. We clamp the emote
+    // language down to the /me-mote bundle's supported set (en + de today;
+    // "fr" / "es" players fall through to "en"), then stamp g_MeMoteLanguage
+    // so the Options > /me-motes language combo opens to the right value.
+    // Truly-fresh installs land here with g_EmoteLanguage empty — skipped,
+    // then seeded later by MainPanel's first-run dialog. A user who manually
+    // emptied me_motes.json (file exists but loads zero entries) is NOT
+    // reseeded — we only seed when the file genuinely didn't exist.
     if (!meMotesLoaded && !g_EmoteLanguage.empty() && !g_MeMotesJsonPath.empty()) {
-        int added = SeedBundledMeMotes(g_EmoteLanguage);
+        g_MeMoteLanguage = ClampMeMoteLanguage(g_EmoteLanguage);
+        int added = SeedBundledMeMotes(g_MeMoteLanguage);
         if (added > 0) {
             SaveMeMotesJson(g_MeMotesJsonPath);
             MarkMeMotesDirty();

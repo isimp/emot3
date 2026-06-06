@@ -503,11 +503,13 @@ static void RenderEmptyCatalogDialog() {
         MarkEmotesDirty();
         LoadEmoteTextures();
         // First-run: seed bundled /me-motes too so the catalog isn't an empty
-        // "Add some under Options" hint. Idempotent by Id (a returning user
-        // who hit Restore once already has the samples — this is a no-op).
-        // EN fallback is automatic for languages the seed table doesn't carry
-        // yet (only EN + DE today).
-        int added = SeedBundledMeMotes(langs[sel]);
+        // "Add some under Options" hint. ClampMeMoteLanguage maps the emote
+        // bundle's choice down to the /me-mote bundle's supported set —
+        // picks like "fr" / "es" land at "en" so g_MeMoteLanguage is always
+        // a value SeedBundledMeMotes can resolve. Idempotent by Id (a
+        // returning user who already hit Restore won't see duplicates).
+        g_MeMoteLanguage = ClampMeMoteLanguage(langs[sel]);
+        int added = SeedBundledMeMotes(g_MeMoteLanguage);
         if (added > 0 && !g_MeMotesJsonPath.empty()) {
             SaveMeMotesJson(g_MeMotesJsonPath);
             MarkMeMotesDirty();

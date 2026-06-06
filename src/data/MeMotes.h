@@ -66,6 +66,16 @@ struct MeMote {
 extern std::vector<MeMote> g_MeMotes;
 extern std::mutex          g_MeMotesMutex;
 
+// The language the bundled /me-mote samples seed in (e.g. "de"). Defaults to
+// "en" at first creation; the first-run dialog and AddonLoad upgrade hook
+// stamp it to match the picked emote language (clamped to
+// AvailableMeMoteLanguages() so the value is always one the bundle ships).
+// Read by SeedBundledMeMotes for the Restore path; the Options > /me-motes
+// language combo writes it. Saved to me_motes.json as "language". Parallel
+// to g_EmoteLanguage in EmoteData.h — separate so the user can keep their
+// emote catalog in one language and re-seed /me-motes in another.
+extern std::string         g_MeMoteLanguage;
+
 // Clear the in-memory catalog (held under g_MeMotesMutex). Called at AddonLoad
 // before LoadMeMotesJson runs, so a hand-cleared file maps to an empty catalog
 // rather than retaining stale entries.
@@ -133,6 +143,13 @@ int SeedBundledMeMotes(const std::string& lang);
 // reason about whether the user's chosen language has localized samples or
 // will fall back to English.
 std::vector<std::string> AvailableMeMoteLanguages();
+
+// Map an arbitrary language code to one the /me-mote bundle actually carries:
+// returns `lang` when it's in AvailableMeMoteLanguages(), else "en". Used at
+// every seed-language ingress (first-run dialog, AddonLoad upgrade hook,
+// Options combo write) so g_MeMoteLanguage is always a value the seeder can
+// resolve without a per-entry fallback. Empty input returns "en".
+std::string ClampMeMoteLanguage(const std::string& lang);
 
 // GW2 chat caps each transmitted line at ~199 characters; "/me " (4 chars) is
 // prepended at send time, so the usable BODY budget per /me-mote variant is

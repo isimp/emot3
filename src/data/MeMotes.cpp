@@ -18,6 +18,7 @@
 
 std::vector<MeMote> g_MeMotes;
 std::mutex          g_MeMotesMutex;
+std::string         g_MeMoteLanguage;
 
 using json = nlohmann::json;
 
@@ -194,6 +195,13 @@ std::vector<std::string> AvailableMeMoteLanguages() {
     return s_seedLangs;
 }
 
+std::string ClampMeMoteLanguage(const std::string& lang) {
+    if (lang.empty()) return std::string("en");
+    LoadBundledMeMotesTable();
+    for (const auto& l : s_seedLangs) if (l == lang) return lang;
+    return std::string("en");
+}
+
 int SeedBundledMeMotes(const std::string& lang) {
     LoadBundledMeMotesTable();
     if (s_seed.empty()) return 0;
@@ -290,6 +298,21 @@ bool LoadMeMotesJson(const std::string& path) {
     // recorded so the user can see what changed. `changed` drives the
     // re-save.
     bool changed = false;
+
+    // Language field — clamp to AvailableMeMoteLanguages() so a stale value
+    // (e.g. user hand-edited a code the bundle doesn't carry) heals to a
+    // working choice. Parallels emotes.json's "emote_language" field.
+    {
+        std::string lang = jsonutil::GetString(j, "language", std::string());
+        std::string normLang = ClampMeMoteLanguage(lang);
+        if (!lang.empty() && normLang != lang) {
+            LOG_WARNING("me_motes.json: language '%s' not in bundle, falling back to '%s'",
+                        lang.c_str(), normLang.c_str());
+        }
+        if (normLang != lang) changed = true;
+        g_MeMoteLanguage = normLang;
+    }
+
     std::vector<MeMote> parsed;
     int skippedNonObj = 0, droppedNoId = 0, droppedNoText = 0, droppedDup = 0;
     for (const auto& item : j["me_motes"]) {
@@ -414,6 +437,9 @@ void SaveMeMotesJson(const std::string& path) {
 
     f << "{\n";
     f << "  \"version\": 1,\n";
+    f << "  \"language\": "
+      << quoted(g_MeMoteLanguage.empty() ? std::string("en") : g_MeMoteLanguage)
+      << ",\n";
     f << "  \"me_motes\": [";
 
     {
