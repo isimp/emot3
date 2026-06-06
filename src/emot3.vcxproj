@@ -328,6 +328,7 @@
     <ClInclude Include="resources\Resources.h" />
     <ClInclude Include="ui\Cells.h" />
     <ClInclude Include="ui\IconBrowse.h" />
+    <ClInclude Include="ui\OptionsMeMotes.h" />
     <ClInclude Include="ui\Icons.h" />
     <ClInclude Include="ui\Layout.h" />
     <ClInclude Include="ui\MainPanel.h" />
@@ -387,6 +388,7 @@
     <ClCompile Include="ui\OptionsGeneral.cpp" />
     <ClCompile Include="ui\OptionsQuickbar.cpp" />
     <ClCompile Include="ui\OptionsEmotes.cpp" />
+    <ClCompile Include="ui\OptionsMeMotes.cpp" />
     <ClCompile Include="ui\OptionsUnlocks.cpp" />
     <ClCompile Include="ui\Quickbar.cpp" />
     <ClCompile Include="ui\TextCache.cpp" />
