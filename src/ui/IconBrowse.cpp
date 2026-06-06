@@ -3,6 +3,7 @@
 #include "Logging.h"
 #include "Icons.h"
 #include "EmoteData.h"
+#include "MeMotes.h"
 
 #include <Windows.h>
 #include <commdlg.h>
@@ -14,7 +15,8 @@
 
 IconBrowseState g_IconBrowse;
 
-void StartIconBrowse(const std::string& emoteCommand,
+void StartIconBrowse(EIconTargetKind kind,
+                     const std::string& targetId,
                      const std::string& currentValue)
 {
     if (g_IconBrowse.active.load() || g_IconBrowse.ready.load()) {
@@ -22,10 +24,13 @@ void StartIconBrowse(const std::string& emoteCommand,
         return;
     }
 
-    LOG_DEBUG("Opening icon-browse dialog for %s", emoteCommand.c_str());
+    LOG_DEBUG("Opening icon-browse dialog for %s %s",
+              kind == EIconTargetKind::Emote ? "emote" : "/me-mote",
+              targetId.c_str());
     {
         std::lock_guard<std::mutex> lk(g_IconBrowse.m);
-        g_IconBrowse.targetId = emoteCommand;
+        g_IconBrowse.targetKind = kind;
+        g_IconBrowse.targetId   = targetId;
         g_IconBrowse.result.clear();
     }
     g_IconBrowse.active.store(true);
@@ -135,9 +140,11 @@ void StartIconBrowse(const std::string& emoteCommand,
 bool DrainIconBrowse() {
     if (!g_IconBrowse.ready.load()) return false;
 
+    EIconTargetKind kind;
     std::string targetId, result;
     {
         std::lock_guard<std::mutex> lk(g_IconBrowse.m);
+        kind     = g_IconBrowse.targetKind;
         targetId = g_IconBrowse.targetId;
         result   = g_IconBrowse.result;
         g_IconBrowse.targetId.clear();
@@ -151,18 +158,42 @@ bool DrainIconBrowse() {
         return false;
     }
 
+    // Route the picked path to the correct catalog. Each branch persists +
+    // marks dirty internally so the call site (AddonOptions) doesn't have to
+    // know which catalog was touched. Stale targets (entry deleted between
+    // dialog open and drain) log a warning and drop the pick.
     bool applied = false;
-    {
-        std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        for (auto& e : g_Emotes) {
-            if (e.Id == targetId) { e.IconPath = result; applied = true; break; }
+    if (kind == EIconTargetKind::Emote) {
+        {
+            std::lock_guard<std::mutex> lk(g_EmotesMutex);
+            for (auto& e : g_Emotes) {
+                if (e.Id == targetId) { e.IconPath = result; applied = true; break; }
+            }
         }
-    }
-    if (applied) {
-        LOG_INFO("Icon for %s set to: %s", targetId.c_str(), result.c_str());
-    } else {
-        LOG_WARNING("Browse result discarded - emote %s no longer exists",
-                    targetId.c_str());
+        if (applied) {
+            LOG_INFO("Icon for emote %s set to: %s", targetId.c_str(), result.c_str());
+            if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+            MarkEmotesDirty();
+        } else {
+            LOG_WARNING("Browse result discarded - emote %s no longer exists",
+                        targetId.c_str());
+        }
+    } else {  // MeMote
+        {
+            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+            for (auto& m : g_MeMotes) {
+                if (m.Id == targetId) { m.IconPath = result; applied = true; break; }
+            }
+        }
+        if (applied) {
+            LOG_INFO("Icon for /me-mote %s set to: %s",
+                     targetId.c_str(), result.c_str());
+            if (!g_MeMotesJsonPath.empty()) SaveMeMotesJson(g_MeMotesJsonPath);
+            MarkMeMotesDirty();
+        } else {
+            LOG_WARNING("Browse result discarded - /me-mote %s no longer exists",
+                        targetId.c_str());
+        }
     }
     return applied;
 }

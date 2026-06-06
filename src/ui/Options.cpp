@@ -34,11 +34,10 @@ void ApplyQbCloseOnEsc() {
 void AddonOptions() {
     PROFILE_SCOPE("opt.frame");  // dev perf overlay
     // Pick up any completed file-browse result from the worker thread
-    // before drawing this frame.
-    if (DrainIconBrowse()) {
-        if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-        MarkEmotesDirty();
-    }
+    // before drawing this frame. DrainIconBrowse persists + marks dirty
+    // internally based on the target's catalog (Emote vs /me-mote), so the
+    // caller doesn't need to know which one was touched.
+    DrainIconBrowse();
     // Apply any completed GW2-API unlock sync + drive H&S retries (render-side).
     DrainUnlockSync();
     // Plus-only: tick the "newer release available" check (no-op stub otherwise).
