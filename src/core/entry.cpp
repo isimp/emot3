@@ -48,7 +48,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
 
 extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.APIVersion  = NEXUS_API_VERSION;
-    AddonDef.Version     = { 1, 0, 0, 0 };
+    AddonDef.Version     = { 1, 1, 0, 0 };
     AddonDef.Author      = "Morlaed";
     AddonDef.Description = "Clickable emote panel with unlock tracking.";
     AddonDef.Load        = AddonLoad;
