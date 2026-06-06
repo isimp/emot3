@@ -7,6 +7,7 @@
 #include "Favorites.h"
 #include "Icons.h"
 #include "Layout.h"
+#include "MeMotes.h"         // /me-mote struct + lookups (RenderMeMoteCellBody)
 #include "TextCache.h"       // EllipsizeCached / FitNameCached (per-cell label memo)
 #include "CharacterState.h"  // g_QbUnusableKey (reason-aware block UI)
 #include "Feedback.h"        // ShowFeedback - in-window refusal line (replaces SendAlert)
@@ -243,6 +244,205 @@ static void RenderSendVariants(const Emote& e) {
         SendOrFillEmote(e, true, true);
 }
 
+// /me-mote cell renderer. Same signature as RenderEmoteCell so RenderEmoteSection
+// can dispatch without knowing the kind. Significantly shorter than the Emote
+// path because /me-motes carry no IsCore / IsTargetable / lock state — no
+// targetable dot, no lock overlay, no unlock toggle in the right-click menu.
+// Icons are letter-fallback only for this checkpoint (texture loading for
+// /me-mote icon paths is a follow-up; the Browse path already saves IconPath
+// to me_motes.json so re-enabling textures later picks them up). Drag-drop is
+// also explicitly out of scope here — would require extending EmoteDragPayload
+// with a type tag + ApplyEmoteDrop branching, which is the next stage. Click
+// + right-click variants + Quickbar click-rect tracking are all wired here so
+// the cell is fully functional within the constraints above.
+static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
+                                 float cellX, float cellY,
+                                 float cellW, float cellH, float iconSz,
+                                 EViewMode mode,
+                                 bool allowReorder,
+                                 int  categoryIdx,
+                                 bool isQuickbar)
+{
+    (void)sectionRow; (void)allowReorder;
+    const MeMote& m = *ci.m;
+
+    // Quickbar-only "can't send right now" dim, same as the Emote path —
+    // /me-motes use the same chat-injection gates (combat, textbox, held key,
+    // airborne, ...) so the dim semantics apply identically.
+    bool blocked   = isQuickbar && g_QbUnusableKey != nullptr;
+    float alphaMul = blocked ? 0.40f : 1.f;
+    bool dimmed    = blocked;
+
+    ImGui::PushID(m.Id.c_str());
+    if (dimmed) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                                     ImGui::GetStyle().Alpha * alphaMul);
+
+    bool clicked = false;
+    if (mode == EViewMode::TextOnly) {
+        float labelMaxW = cellW - 12.f;
+        const auto& cached = TextCache::EllipsizeCached(m.Id, m.Name, mode, labelMaxW);
+        ImGui::SetCursorPos(ImVec2(cellX, cellY));
+        int hiContrastPushes = 0;
+        if (isQuickbar && g_Settings.QuickbarHighContrast)
+            hiContrastPushes = PushHighContrastButtonStyles(/*includeFrameBg=*/false);
+        clicked = ImGui::Button(cached.label.c_str(), ImVec2(cellW, cellH));
+        if (hiContrastPushes > 0) ImGui::PopStyleColor(hiContrastPushes);
+    } else {
+        const int pad = 2;
+        float btnTotal = iconSz + pad * 2;
+        float btnX     = cellX + (cellW - btnTotal) * 0.5f;
+        ImGui::SetCursorPos(ImVec2(btnX, cellY));
+        // Letter fallback always (texture loading for /me-mote icon paths is
+        // a separate checkpoint). The Name's first character lands the same
+        // way it does for Emote cells when their texture isn't loaded.
+        clicked = RenderStyledFallback("##fb", m.Name.c_str(), btnTotal, alphaMul);
+
+        // Compact mode strip — same dark band as the Emote path, with the
+        // /me-mote's Name ellipsized inside it.
+        if (mode == EViewMode::Compact) {
+            ImVec2 itemMin = ImGui::GetItemRectMin();
+            ImVec2 itemMax = ImGui::GetItemRectMax();
+            float  fontH   = ImGui::GetFontSize();
+            float  stripPadY = 2.f;
+            float  stripH    = fontH + stripPadY * 2.f;
+            ImVec2 stripMin(itemMin.x, itemMax.y - stripH);
+            ImVec2 stripMax(itemMax.x, itemMax.y);
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            int bgA = (int)(180.f * alphaMul);
+            dl->AddRectFilled(stripMin, stripMax, IM_COL32(0, 0, 0, bgA));
+            float stripPadX = 3.f;
+            float maxTextW  = (stripMax.x - stripMin.x) - stripPadX * 2.f;
+            const auto& cached = TextCache::EllipsizeCached(m.Id, m.Name, mode, maxTextW);
+            float tx = stripMin.x + (stripMax.x - stripMin.x - cached.size.x) * 0.5f;
+            float ty = stripMin.y + stripPadY;
+            int textA = (int)(245.f * alphaMul);
+            dl->AddText(ImVec2(tx, ty), IM_COL32(245, 245, 245, textA),
+                        cached.label.c_str());
+        }
+    }
+
+    if (isQuickbar) {
+        g_QbIconRects.emplace_back(ImGui::GetItemRectMin(),
+                                   ImGui::GetItemRectMax());
+    }
+
+    // Right-click context menu. Quickbar shows execute-variants only;
+    // main panel adds favorites management. Drag-drop is out of scope (see
+    // header comment) so no source/target wiring here.
+    if (dimmed) ImGui::PopStyleVar();
+    if (ImGui::BeginPopupContextItem("##ctx")) {
+        // Send variants — You / All are visible always but disabled when
+        // their body is empty (so users see the concept exists), matching the
+        // plan's "discoverable" gray state. Plain Send is omitted (left-click
+        // is the default).
+        auto sendVariantItem = [&](EMeMoteVariant variant, const char* labelKey,
+                                   bool enabled) {
+            if (!enabled) {
+                ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                                    ImGui::GetStyle().Alpha * 0.5f);
+            }
+            if (ImGui::MenuItem(L(labelKey)) && enabled)
+                SendOrFillMeMote(m, variant);
+            if (!enabled) {
+                ImGui::PopStyleVar();
+                ImGui::PopItemFlag();
+            }
+        };
+        if (isQuickbar) {
+            if (blocked) {
+                ImGui::TextDisabled("%s", L(g_QbUnusableKey));
+            } else {
+                sendVariantItem(EMeMoteVariant::You, "cells.send_you", !m.TextYou.empty());
+                sendVariantItem(EMeMoteVariant::All, "cells.send_all", !m.TextAll.empty());
+            }
+        } else {
+            // Favorites management (mirrors the emote path but operates on
+            // MeMote-typed refs via the generic FavoriteRef API).
+            int currentCat = FindCategoryContaining(EFavoriteRefType::MeMote, m.Id);
+            int catCount   = (int)g_Settings.FavoriteCategories.size();
+            if (catCount == 0) {
+                ImGui::TextDisabled("%s", L("cells.no_categories"));
+                ImGui::Separator();
+                if (ImGui::MenuItem(L("cells.create_and_add"))) {
+                    EnsureDefaultCategory();
+                    AddRefToCategory(0, EFavoriteRefType::MeMote, m.Id, false);
+                }
+            } else if (currentCat < 0) {
+                if (catCount == 1) {
+                    char lbl[96];
+                    std::snprintf(lbl, sizeof(lbl), L("cells.add_to"),
+                                  g_Settings.FavoriteCategories[0].Name.c_str());
+                    if (ImGui::MenuItem(lbl))
+                        AddRefToCategory(0, EFavoriteRefType::MeMote, m.Id, false);
+                } else if (catCount > 1) {
+                    if (ImGui::BeginMenu(L("cells.add_to_category"))) {
+                        for (int i = 0; i < catCount; ++i) {
+                            if (ImGui::MenuItem(g_Settings.FavoriteCategories[i].Name.c_str()))
+                                AddRefToCategory(i, EFavoriteRefType::MeMote, m.Id, false);
+                        }
+                        ImGui::EndMenu();
+                    }
+                }
+            } else {
+                if (catCount > 1) {
+                    if (ImGui::BeginMenu(L("cells.move_to_category"))) {
+                        for (int i = 0; i < catCount; ++i) {
+                            if (i == currentCat) continue;
+                            if (ImGui::MenuItem(g_Settings.FavoriteCategories[i].Name.c_str()))
+                                AddRefToCategory(i, EFavoriteRefType::MeMote, m.Id, false);
+                        }
+                        ImGui::EndMenu();
+                    }
+                }
+                if (ImGui::MenuItem(L("cells.remove_from_fav")))
+                    RemoveRefFromCategories(EFavoriteRefType::MeMote, m.Id);
+            }
+            ImGui::Separator();
+            sendVariantItem(EMeMoteVariant::You, "cells.send_you", !m.TextYou.empty());
+            sendVariantItem(EMeMoteVariant::All, "cells.send_all", !m.TextAll.empty());
+        }
+        ImGui::EndPopup();
+    }
+
+    // Tooltip — Name + right-click hint. No Command (doesn't exist) and no
+    // body preview (could be sentence-long). Suppressed by the same Quickbar
+    // opt-out emotes use.
+    bool suppressTip = isQuickbar && !g_Settings.ShowQuickbarTooltips;
+    if (!suppressTip &&
+        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s\n%s", m.Name.c_str(), L("cells.rightclick"));
+    }
+
+    if (dimmed) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                                     ImGui::GetStyle().Alpha * alphaMul);
+
+    // Full mode label below the button.
+    if (mode == EViewMode::Full) {
+        const int pad = 2;
+        float btnTotal = iconSz + pad * 2;
+        float labelY   = cellY + btnTotal + 4.f;
+        const auto& cached = TextCache::FitNameCached(m.Id, m.Name, cellW);
+        ImGui::SetCursorPos(ImVec2(cellX + (cellW - cached.size1.x) * 0.5f, labelY));
+        ImGui::TextUnformatted(cached.line1.c_str());
+        if (!cached.line2.empty()) {
+            float ly2 = labelY + cached.size1.y;
+            ImGui::SetCursorPos(ImVec2(cellX + (cellW - cached.size2.x) * 0.5f, ly2));
+            ImGui::TextUnformatted(cached.line2.c_str());
+        }
+    }
+
+    if (dimmed) ImGui::PopStyleVar();
+    if (clicked) {
+        if (blocked) {
+            ShowFeedback(L(g_QbUnusableKey));
+        } else {
+            SendOrFillMeMote(m, EMeMoteVariant::Default);
+        }
+    }
+    ImGui::PopID();
+}
+
 void RenderEmoteCell(const CellInfo& ci, int sectionRow,
                      float cellX, float cellY,
                      float cellW, float cellH, float iconSz,
@@ -251,6 +451,14 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
                      int  categoryIdx,
                      bool isQuickbar)
 {
+    // Dispatch: /me-mote cells take the simpler path (no lock/target/IsCore
+    // concepts, no drag-drop yet). Emote cells fall through to the existing
+    // renderer below — its behavior is unchanged for the existing Emote path.
+    if (ci.m) {
+        RenderMeMoteCellBody(ci, sectionRow, cellX, cellY, cellW, cellH,
+                             iconSz, mode, allowReorder, categoryIdx, isQuickbar);
+        return;
+    }
     const Emote& e   = *ci.e;
     // Unlocked state is precomputed once per frame at build time (see
     // CellInfo.unlocked) - cores always count as unlocked, non-cores are

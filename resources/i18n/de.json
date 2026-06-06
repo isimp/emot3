@@ -89,6 +89,7 @@
   "mp.unlock_filtered": "  (freischaltbare Emotes sind durch die aktuellen Filter ausgeblendet)",
   "mp.core_none_flagged": "  (keine Emotes als Standard markiert - schalte das Flag bei Einträgen unter Optionen > Katalog um)",
   "mp.unlock_none": "  (keine freischaltbaren Emotes in deinem Katalog)",
+  "mp.me_motes_none": "  (noch keine /me-motes - lege welche unter Optionen > /me-motes an)",
 
   "cells.moving": "Bewegen: %s",
   "cells.no_drop_here": "Hier nicht ablegbar - auf eine Favoritenkategorie ziehen",
@@ -121,6 +122,10 @@
   "cells.rightclick": "Rechtsklick für Optionen.",
   "cells.delete_category": "Kategorie löschen",
   "cells.rename_category": "Kategorie umbenennen",
+  "cells.send_you": "Senden (Du)",
+  "cells.send_all": "Senden (Alle)",
+  "cat.me_motes": "/me-motes",
+  "qb.cat_me_motes": "/me-motes",
 
   "qb.no_categories": "Hier gibt es nichts zu zeigen. Erstelle eine Favoritenkategorie über die Schaltfläche \"+ Kategorie\" in der Library oder in den Nexus-Optionen des Addons, oder aktiviere eine eingebaute Kategorie unter Optionen > Allgemein > Quickbar-Kategorien.",
   "qb.empty_category": "Keine Emotes in dieser Kategorie. Rechtsklick auf ein Emote in der Library zum Hinzufügen.",

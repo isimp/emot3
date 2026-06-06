@@ -4,6 +4,7 @@
 #include "I18n.h"
 #include "Settings.h"
 #include "EmoteData.h"
+#include "MeMotes.h"           // /me-motes Library section + favorites mixing
 #include "EmoteAction.h"
 #include "CharacterState.h" // TickCharacterState (per-frame falling check)
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
@@ -832,47 +833,65 @@ void AddonRender() {
     // is truly empty" from "category has emotes but the active
     // filter/search hides them all" when rendering the empty-state line.
     std::vector<int> catTotal(g_Settings.FavoriteCategories.size(), 0);
-    std::vector<CellInfo> coreItems, unlockItems;
+    std::vector<CellInfo> coreItems, unlockItems, meMoteItems;
     // Totals of non-favorited emotes ignoring filter/search - lets us tell
     // "all favorited" apart from "filter/search hides everything".
     int coreUnfavCount = 0, unlockUnfavCount = 0;
     // Totals over the whole catalog (favorited or not), so an empty section
     // can say "none of this class exist" vs "they're hidden by the filter".
     int coreTotal = 0, unlockTotal = 0;
+    int meMoteTotal = 0;
+
+    // Snapshot a /me-mote Id -> ptr map under g_MeMotesMutex so we don't have
+    // to nest with g_EmotesMutex below. Pointers stay stable while no one is
+    // mutating g_MeMotes (the editor runs on the same render thread).
+    std::unordered_map<std::string, const MeMote*> meMotesById;
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        meMotesById.reserve(g_MeMotes.size());
+        for (const auto& m : g_MeMotes) meMotesById[m.Id] = &m;
+        meMoteTotal = (int)g_MeMotes.size();
+    }
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
 
         { PROFILE_SCOPE("mp.build");  // dev perf overlay
         // Populate the per-frame lookup tables (rebuilt each frame, never cached).
         BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
-        // favoritedIds tracks which Emote IDs are currently favorited (drives the
-        // "already in favorites" star on Emote cells). /me-mote-typed refs are
-        // skipped — they have their own favorited surface once the CellItem
-        // adapter ships.
+        // favoritedIds tracks which Emote IDs are currently favorited (drives
+        // the "already in favorites" star on Emote cells). Only Emote-typed
+        // refs are counted — /me-motes have their own Library section + their
+        // own favorited surface, surfaced below.
         for (const auto& c : g_Settings.FavoriteCategories)
             for (const auto& r : c.Refs)
                 if (r.Type == EFavoriteRefType::Emote)
                     favoritedIds.insert(r.Id);
 
         // One filtered list per favorites category, preserving user order.
-        // catTotal counts real-but-hidden entries so the empty-state
-        // message can distinguish "filtered out" from "actually empty."
+        // Each Ref is resolved to its catalog by Type — Emote-typed refs go
+        // through idx.byId (g_Emotes); /me-mote-typed refs go through the
+        // snapshot map above. CellInfo carries the right pointer (e XOR m)
+        // and RenderEmoteCell dispatches accordingly. Search/filter doesn't
+        // apply to /me-mote favorites yet — they always pass.
         for (size_t ci = 0; ci < g_Settings.FavoriteCategories.size(); ++ci) {
             const auto& cat = g_Settings.FavoriteCategories[ci];
             for (size_t i = 0; i < cat.Refs.size(); ++i) {
                 const auto& ref = cat.Refs[i];
-                // /me-mote-typed refs are stored but not rendered here yet —
-                // the CellItem adapter + Library "Text" section land in a
-                // later checkpoint. Skipping them keeps the Emote-only render
-                // path correct until then; refs aren't dropped from storage.
-                if (ref.Type != EFavoriteRefType::Emote) continue;
-                auto it = idx.byId.find(ref.Id);
-                if (it == idx.byId.end()) continue;  // stale reference - not really "in" the category
-                const Emote* e = it->second;
-                ++catTotal[ci];
-                std::string note;
-                if (passes(*e, note))
-                    catItems[ci].push_back({ e, (int)i, isUnlk(*e), std::move(note) });
+                if (ref.Type == EFavoriteRefType::Emote) {
+                    auto it = idx.byId.find(ref.Id);
+                    if (it == idx.byId.end()) continue;  // stale reference
+                    const Emote* e = it->second;
+                    ++catTotal[ci];
+                    std::string note;
+                    if (passes(*e, note))
+                        catItems[ci].push_back({ e, nullptr, (int)i, isUnlk(*e), std::move(note) });
+                } else {  // MeMote
+                    auto it = meMotesById.find(ref.Id);
+                    if (it == meMotesById.end()) continue;
+                    const MeMote* m = it->second;
+                    ++catTotal[ci];
+                    catItems[ci].push_back({ nullptr, m, (int)i, /*unlocked=*/true, std::string() });
+                }
             }
         }
 
@@ -883,12 +902,30 @@ void AddonRender() {
             if (e.IsCore) ++coreUnfavCount; else ++unlockUnfavCount;
             std::string note;
             if (!passes(e, note)) continue;
-            (e.IsCore ? coreItems : unlockItems).push_back({ &e, -1, isUnlk(e), std::move(note) });
+            (e.IsCore ? coreItems : unlockItems).push_back({ &e, nullptr, -1, isUnlk(e), std::move(note) });
         }
+        // /me-mote built-in section ("Text" / "/me-motes"). All entries are
+        // surfaced; the user's favorites list (above) may also reference some
+        // of them — that's fine, they show in both places like Emote
+        // favorites would if we didn't hide-when-favorited (we don't for
+        // /me-motes since the Library section is the primary discovery
+        // surface for them).
+        for (const auto& kv : meMotesById)
+            meMoteItems.push_back({ nullptr, kv.second, -1, /*unlocked=*/true, std::string() });
+
         auto byName = [](const CellInfo& a, const CellInfo& b) {
+            // Both sides are Emote cells in coreItems/unlockItems (built
+            // above); the comparison reads a->e safely.
             return a.e->Name < b.e->Name;
         };
         std::sort(coreItems.begin(), coreItems.end(), byName);
+        // Sort /me-motes by Name as well (or Id when Name empty).
+        std::sort(meMoteItems.begin(), meMoteItems.end(),
+            [](const CellInfo& a, const CellInfo& b) {
+                const std::string& na = !a.m->Name.empty() ? a.m->Name : a.m->Id;
+                const std::string& nb = !b.m->Name.empty() ? b.m->Name : b.m->Id;
+                return na < nb;
+            });
 
         // Unlockable: unlocked first, then locked, alphabetical within each.
         // CellInfo.unlocked was precomputed above (covers cores internally -
@@ -1084,6 +1121,19 @@ void AddonRender() {
                 ImGui::TextDisabled("%s", emptyMsgFor(/*core=*/false, unlockTotal, unlockUnfavCount));
             else
                 RenderEmoteSection(unlockItems, /*allowReorder=*/false, -1, g_Settings.ViewMode, mainScale);
+        }
+        // /me-motes built-in section ("/me-motes"). Header always renders so
+        // users see the section even before they've added any /me-motes
+        // (matches Core/Unlockable behavior). Empty state directs to the
+        // Options > /me-motes tab where new entries are created.
+        bool meCollapsed = SectionHeader(L("cat.me_motes"), /*isUser=*/false,
+                                         &g_Settings.MainMeMotesCollapsed, searchActive);
+        if (!meMoteItems.empty()) anyShown = true;
+        if (!meCollapsed) {
+            if (meMoteItems.empty())
+                ImGui::TextDisabled("%s", L("mp.me_motes_none"));
+            else
+                RenderEmoteSection(meMoteItems, /*allowReorder=*/false, -1, g_Settings.ViewMode, mainScale);
         }
         if (!anyShown) {
             ImGui::TextDisabled("%s", L("mp.no_match_filter"));

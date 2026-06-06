@@ -253,6 +253,7 @@ bool SanitizeSettings(Settings& s) {
         int n = (s.QuickbarShowFavoriteCategories ? (int)s.FavoriteCategories.size() : 0)
               + (s.QuickbarShowCoreCategory        ? 1 : 0)
               + (s.QuickbarShowMadKingCategory     ? 1 : 0)
+              + (s.QuickbarShowMeMotesCategory     ? 1 : 0)
               + (s.QuickbarShowUnlockedCategory    ? 1 : 0)
               + (s.QuickbarShowUnlockedAllCategory ? 1 : 0);
         int ci = s.QuickbarCategoryIdx;

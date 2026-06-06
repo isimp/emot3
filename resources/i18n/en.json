@@ -92,6 +92,7 @@
   "mp.unlock_filtered": "  (unlockable emotes are hidden by the current filters)",
   "mp.core_none_flagged": "  (no emotes flagged as core - toggle the flag on entries in Options > Catalog)",
   "mp.unlock_none": "  (no unlockable emotes in your catalog)",
+  "mp.me_motes_none": "  (no /me-motes yet - create some under Options > /me-motes)",
 
   "cells.moving": "Moving: %s",
   "cells.no_drop_here": "Can't drop here - drag onto a favorites category",
@@ -124,6 +125,10 @@
   "cells.rightclick": "Right-click for options.",
   "cells.delete_category": "Delete category",
   "cells.rename_category": "Rename category",
+  "cells.send_you": "Send (you)",
+  "cells.send_all": "Send (all)",
+  "cat.me_motes": "/me-motes",
+  "qb.cat_me_motes": "/me-motes",
 
   "qb.no_categories": "Nothing to show here. Add a favorites category via the \"+ Category\" button in the Library or the addon's Nexus options, or enable a built-in category under Options > General > Quickbar categories.",
   "qb.empty_category": "No emotes in this category. Right-click any emote in the Library to add.",

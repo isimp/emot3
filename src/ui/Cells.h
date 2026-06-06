@@ -10,18 +10,26 @@
 #include "Settings.h"      // EViewMode
 
 struct Emote;
+struct MeMote;
 
+// One cell to draw. Exactly one of `e` (Emote) or `m` (/me-mote) is non-null;
+// RenderEmoteCell dispatches on which is set. Keeping both pointers in the
+// same struct (rather than forking the vector type) means RenderEmoteSection
+// + its drop-zone + grid-fit code stay type-agnostic and unchanged — adding
+// the second kind only touches the per-cell render path.
 struct CellInfo {
-    const Emote* e;
-    int          favIdx;          // index into FavoriteCategory.Emotes when reorderable, else -1
-    bool         unlocked = false; // precomputed at build time (e->IsCore ||
-                                   // in ManuallyUnlocked) so the render loop and
-                                   // the unlockables sort don't each re-run the
-                                   // O(N) IsEmoteUnlocked/FindEmote per cell.
+    const Emote*  e = nullptr;
+    const MeMote* m = nullptr;
+    int           favIdx;          // index into FavoriteCategory.Refs when reorderable, else -1
+    bool          unlocked = false; // precomputed at build time (e->IsCore ||
+                                    // in ManuallyUnlocked) so the render loop and
+                                    // the unlockables sort don't each re-run the
+                                    // O(N) IsEmoteUnlocked/FindEmote per cell.
+                                    // For /me-mote cells always true (no unlock concept).
     // Why this emote matched the active search, when the reason isn't visible in
     // the cell (an alias hit - aliases show nowhere else). Empty otherwise. Shown
     // as an extra tooltip line. Main-panel only; the Quickbar leaves it empty.
-    std::string  searchNote;
+    std::string   searchNote;
 };
 
 // Drag payload identifies a single emote being dragged. categoryIdx
