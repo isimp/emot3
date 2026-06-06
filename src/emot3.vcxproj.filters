@@ -76,6 +76,7 @@
     <ClCompile Include="ui\OptionsEmotes.cpp">    <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsUnlocks.cpp">   <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\Quickbar.cpp">         <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\TextCache.cpp">        <Filter>ui</Filter></ClCompile>
     <ClCompile Include="resources\Resources.cpp"> <Filter>resources</Filter></ClCompile>
     <ClCompile Include="generated\ResourcesGenerated.cpp"> <Filter>generated</Filter></ClCompile>
     <ClCompile Include="..\vendor\imgui\imgui.cpp">         <Filter>vendor\imgui</Filter></ClCompile>
@@ -116,6 +117,7 @@
     <ClInclude Include="ui\Options.h">       <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\OptionsCommon.h"> <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\Quickbar.h">      <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\TextCache.h">     <Filter>ui</Filter></ClInclude>
     <ClInclude Include="resources\Resources.h"> <Filter>resources</Filter></ClInclude>
     <ClInclude Include="..\vendor\imgui\imconfig.h">       <Filter>vendor\imgui</Filter></ClInclude>
     <ClInclude Include="..\vendor\imgui\imgui.h">          <Filter>vendor\imgui</Filter></ClInclude>

@@ -4,19 +4,15 @@
 // and the Options tabs. Pure ImGui — no project-specific state.
 
 #include <string>
-#include <utility>
 
 #include "imgui/imgui.h"
 
 // Truncate `name` to a single line that fits within `maxW`, appending ".."
-// when truncation happens.
+// when truncation happens. Used by the lightweight non-per-cell callers
+// (Quickbar category bar labels, the Options icon-source status line). The
+// per-emote-cell label path goes through ui/TextCache - keyed memoization on
+// emote id - because those run for every visible cell every frame.
 std::string Ellipsize(const std::string& name, float maxW);
-
-// Fit `name` into `maxW` pixels of horizontal space:
-//   - returns (name, "")       if it fits on one line
-//   - returns (first, second)  split at the last space that keeps both lines under maxW
-//   - returns (truncated, "")  with ".." otherwise
-std::pair<std::string, std::string> FitName(const std::string& name, float maxW);
 
 // Square button drawn with the addon's "no texture" look — used in cells
 // when an emote PNG isn't loaded. Returns true when clicked. `alphaMul`

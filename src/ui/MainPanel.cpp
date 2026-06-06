@@ -431,7 +431,7 @@ static void RenderEmptyCatalogDialog() {
     if (addClicked && sel >= 0 && sel < (int)langs.size()) {
         SeedDefaultEmotes(langs[sel], s_secondary);
         if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-        g_EmotesDirty = true;
+        MarkEmotesDirty();
         LoadEmoteTextures();
     }
 
@@ -546,7 +546,7 @@ static void RenderNewEmotesDialog() {
         int n = AddBundledEmotesByIds(g_NewBundledEmoteIds, lang);
         if (n > 0) {
             if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-            g_EmotesDirty = true;
+            MarkEmotesDirty();
             LoadEmoteTextures();
         }
         LOG_INFO("notifier: user added %d new bundled emote(s)", n);

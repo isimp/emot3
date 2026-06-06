@@ -176,7 +176,7 @@ void RenderGeneralOptionsTab() {
         // no eviction API, so emotes whose AI image is already loaded
         // keep showing it until the game restarts. The tooltip says as
         // much.
-        g_EmotesDirty = true;
+        MarkEmotesDirty();
     }
 
     CheckboxWithSaveAndTooltip("opt.gen.show_target_dot", &g_Settings.ShowTargetDot, /*defaultIsOn=*/true);

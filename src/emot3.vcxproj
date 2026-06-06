@@ -332,6 +332,7 @@
     <ClInclude Include="ui\Options.h" />
     <ClInclude Include="ui\OptionsCommon.h" />
     <ClInclude Include="ui\Quickbar.h" />
+    <ClInclude Include="ui\TextCache.h" />
     <ClInclude Include="..\vendor\imgui\imconfig.h" />
     <ClInclude Include="..\vendor\imgui\imgui.h" />
     <ClInclude Include="..\vendor\imgui\imgui_internal.h" />
@@ -383,6 +384,7 @@
     <ClCompile Include="ui\OptionsEmotes.cpp" />
     <ClCompile Include="ui\OptionsUnlocks.cpp" />
     <ClCompile Include="ui\Quickbar.cpp" />
+    <ClCompile Include="ui\TextCache.cpp" />
     <ClCompile Include="..\vendor\imgui\imgui.cpp" />
     <ClCompile Include="..\vendor\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\vendor\imgui\imgui_tables.cpp" />

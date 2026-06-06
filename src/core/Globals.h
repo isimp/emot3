@@ -12,6 +12,7 @@
 #endif
 #include <Windows.h>
 #include <atomic>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <utility>
@@ -37,8 +38,35 @@ extern std::string g_PresetsDir;      // presets/ (one JSON per Quickbar preset)
 // --- Cross-module flags ------------------------------------------------
 
 // True when the unlockable-emote catalog mutated this frame, so the
-// renderer re-kicks the texture loader without a full reload.
+// renderer re-kicks the texture loader without a full reload. Consumed and
+// cleared at the top of every render call by LoadEmoteTextures (MainPanel.cpp)
+// - it's a one-frame edge signal, not a multi-frame epoch. Anything that needs
+// to detect mutations LATER in the frame (e.g. TextCache, which looks at the
+// catalog from RenderEmoteCell after LoadEmoteTextures has already cleared the
+// flag) must read g_EmoteCatalogVersion below instead.
 extern bool g_EmotesDirty;
+
+// Monotonically-incrementing catalog epoch. Bumped (paired with g_EmotesDirty)
+// by every mutation site via MarkEmotesDirty() below. Read by the per-frame
+// text-shaping cache (ui/TextCache) so it can invalidate when a name changes,
+// an emote is added/removed, etc. Atomic because UnlockScan bumps it from a
+// background scan thread (relaxed ordering is enough - the actual catalog
+// mutation already happens under g_EmotesMutex, which carries the
+// happens-before).
+extern std::atomic<uint64_t> g_EmoteCatalogVersion;
+
+// Single helper for "the catalog (or anything that affects icon eligibility)
+// just changed." Sets the one-frame texture-reload edge AND bumps the
+// monotonic version that the text cache observes. Inline so any TU touching
+// g_EmotesDirty can call it without an extra include - paired 1:1 with what
+// used to be `g_EmotesDirty = true;` at every mutation site. Slightly
+// over-invalidates a few non-catalog cases (e.g. the AI-icon-fallback toggle),
+// but the cost is a single-frame text-cache repop (invisible), and the 1:1
+// pairing prevents the two flags from drifting if a future site forgets one.
+inline void MarkEmotesDirty() {
+    g_EmotesDirty = true;
+    g_EmoteCatalogVersion.fetch_add(1, std::memory_order_relaxed);
+}
 
 // --- New-bundled-emote notifier ----------------------------------------
 //

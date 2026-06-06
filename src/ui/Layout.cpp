@@ -11,31 +11,11 @@ std::string Ellipsize(const std::string& name, float maxW) {
     return std::string("..");
 }
 
-std::pair<std::string, std::string> FitName(const std::string& name, float maxW) {
-    if (ImGui::CalcTextSize(name.c_str()).x <= maxW) return { name, std::string() };
-
-    // Try to split into two lines at the last space that makes both lines fit.
-    size_t bestSplit = std::string::npos;
-    for (size_t i = 0; i < name.size(); ++i) {
-        if (name[i] != ' ') continue;
-        std::string l1 = name.substr(0, i);
-        std::string l2 = name.substr(i + 1);
-        if (ImGui::CalcTextSize(l1.c_str()).x <= maxW &&
-            ImGui::CalcTextSize(l2.c_str()).x <= maxW)
-            bestSplit = i;
-    }
-    if (bestSplit != std::string::npos)
-        return { name.substr(0, bestSplit), name.substr(bestSplit + 1) };
-
-    // Fall back to single-line ellipsis.
-    std::string s = name;
-    while (!s.empty()) {
-        std::string trial = s + "..";
-        if (ImGui::CalcTextSize(trial.c_str()).x <= maxW) return { trial, std::string() };
-        s.pop_back();
-    }
-    return { std::string(".."), std::string() };
-}
+// FitName (two-line label fit) used to live here. The only caller was the
+// per-cell Full-mode label in RenderEmoteCell, which now goes through
+// ui/TextCache (TextCache::FitNameCached) - same algorithm, but memoized on
+// (emote id, max width) so it runs once per name change instead of once per
+// cell per frame.
 
 bool RenderStyledFallback(const char* uniqueId, const char* displayName,
                           float size, float alphaMul)
