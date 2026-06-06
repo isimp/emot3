@@ -64,7 +64,9 @@ static DevStateRegistrar s_settingsSection("Settings (key flags)", [] {
 //         "show_category_bar": true,
 //         "use_dropdown": false,
 //         "horizontal_scroll": false,
-//         "snap_window": true, "snap_scroll": true, "scroll_wrap": false
+//         "snap_window": true,
+//         "snap_scroll": 1,  // 0 off, 1 snap to cells, 2 snap to pages
+//         "scroll_wrap": false
 //       },
 //       "window": {
 //         "allow_resize": true,
@@ -226,6 +228,14 @@ bool SanitizeSettings(Settings& s) {
             s.QuickbarScrollIndicator = v; changed = true;
         }
     }
+    {
+        EQbScrollSnap v = NormalizeScrollSnap((int)s.QuickbarSnapScroll);
+        if (v != s.QuickbarSnapScroll) {
+            LOG_WARNING("settings: quickbar.snap_scroll %d invalid -> %d",
+                        (int)s.QuickbarSnapScroll, (int)v);
+            s.QuickbarSnapScroll = v; changed = true;
+        }
+    }
 
     // Unlock key-source enum is 0/1; clamp any out-of-range hand edit to 0.
     if (s.UnlockApiKeySource < 0 || s.UnlockApiKeySource > 1) {
@@ -329,6 +339,10 @@ EQbScrollIndicator NormalizeScrollIndicator(int raw) {
     return (raw >= 0 && raw <= 2) ? (EQbScrollIndicator)raw : EQbScrollIndicator::Scrollbar;
 }
 
+EQbScrollSnap NormalizeScrollSnap(int raw) {
+    return (raw >= 0 && raw <= 2) ? (EQbScrollSnap)raw : EQbScrollSnap::Cells;
+}
+
 float MinIconScaleForMode(EViewMode mode) {
     // Full / TextOnly / Compact reserve vertical room for a label and break
     // below 1×; Icon has no label and scales freely from 0.5×.
@@ -391,7 +405,10 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarUseDropdown      = GetBool (qbLayout, "use_dropdown",      s.QuickbarUseDropdown);
     s.QuickbarHorizontalScroll = GetBool (qbLayout, "horizontal_scroll", s.QuickbarHorizontalScroll);
     s.QuickbarSnapWindow       = GetBool (qbLayout, "snap_window",       s.QuickbarSnapWindow);
-    s.QuickbarSnapScroll       = GetBool (qbLayout, "snap_scroll",       s.QuickbarSnapScroll);
+    // snap_scroll migrated from bool (true/false) to int enum (0=Off/1=Cells/2=Pages).
+    // GetIntOrBool accepts either form; SanitizeSettings runs NormalizeScrollSnap to clamp.
+    s.QuickbarSnapScroll       = (EQbScrollSnap)GetIntOrBool(qbLayout, "snap_scroll",
+                                                              (int)s.QuickbarSnapScroll);
     s.QuickbarScrollWrap       = GetBool (qbLayout, "scroll_wrap",       s.QuickbarScrollWrap);
 
     const json& qbWindow = GetObj(qb, "window");
@@ -523,7 +540,7 @@ void SaveSettings(const std::string& path) {
     f << "      \"use_dropdown\": "      << B(s.QuickbarUseDropdown)     << ",\n";
     f << "      \"horizontal_scroll\": " << B(s.QuickbarHorizontalScroll) << ",\n";
     f << "      \"snap_window\": "       << B(s.QuickbarSnapWindow)      << ",\n";
-    f << "      \"snap_scroll\": "       << B(s.QuickbarSnapScroll)      << ",\n";
+    f << "      \"snap_scroll\": "       << (int)s.QuickbarSnapScroll    << ",\n";
     f << "      \"scroll_wrap\": "       << B(s.QuickbarScrollWrap)      << "\n";
     f << "    },\n";
 

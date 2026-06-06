@@ -40,6 +40,16 @@ enum class EQbCombat { Off = 0, Grey = 1, Hide = 2 };
 //               standard bar in pure free mode).
 enum class EQbScrollIndicator { Off = 0, Hints = 1, Scrollbar = 2 };
 
+// How the Quickbar snaps wheel + scrollbar-drag to a grid:
+//   Off    — smooth pixel scrolling (ImGui's default), no snap.
+//   Cells  — one notch = one cell, scroll rounds to whole cells. Scrolling
+//            back up always lands on clean rows.
+//   Pages  — one notch = one full viewport (g_QbRows * cell pitch vertical,
+//            g_QbCols * cell pitch horizontal). Scroll rounds to whole pages.
+// Either Cells or Pages takes scrolling ownership from ImGui (draws the
+// custom slim scrollbar). Default Cells.
+enum class EQbScrollSnap { Off = 0, Cells = 1, Pages = 2 };
+
 struct FavoriteCategory {
     std::string              Name;
     std::vector<std::string> Emotes;  // emote IDs in user order
@@ -112,10 +122,11 @@ struct Settings {
     // (title / category bar wrap / scrollbar) changes, so it re-snaps with a
     // one-frame jump. See Quickbar.cpp.
     bool                          QuickbarSnapWindow       = true;
-    // Cell-snapped scrolling: one wheel notch = one cell, scroll position rounds
-    // to whole cells (so scrolling back up always lands on clean rows). On by
-    // default; off restores ImGui's smooth wheel.
-    bool                          QuickbarSnapScroll       = true;
+    // Snap scrolling mode: Off (smooth), Cells (one notch = one emote, lands on
+    // row boundaries) or Pages (one notch = one full viewport's worth of cells).
+    // Default Cells. Either snap mode takes scrolling ownership from ImGui and
+    // draws the custom slim scrollbar. See EQbScrollSnap and Quickbar.cpp.
+    EQbScrollSnap                 QuickbarSnapScroll       = EQbScrollSnap::Cells;
     // Wheel scroll-wrap: wheeling past the bottom row jumps to the top (and the
     // reverse). Mouse-wheel only - dragging the scrollbar still clamps at the
     // ends. Off by default. Works in every scroll mode (in smooth vertical mode
@@ -250,6 +261,11 @@ EQbCombat NormalizeQbCombat(int raw);
 // falling back to Scrollbar (the default) when out of range. Shared by the
 // settings and Quickbar-preset loaders, same as NormalizeViewMode.
 EQbScrollIndicator NormalizeScrollIndicator(int raw);
+
+// Map a raw integer to a valid EQbScrollSnap (Off/Cells/Pages), falling back
+// to Cells (the default) when out of range. Shared by the settings and
+// Quickbar-preset loaders, same shape as NormalizeScrollIndicator.
+EQbScrollSnap NormalizeScrollSnap(int raw);
 
 // Minimum icon scale for a view mode. Full / TextOnly / Compact need a 1.0
 // floor — their label area (two-line name / centered text line / alpha strip)

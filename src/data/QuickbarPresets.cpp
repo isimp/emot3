@@ -86,7 +86,9 @@ json PresetToJson(const QuickbarPreset& p) {
     s["show_category_bar"]              = p.ShowCategoryBar;
     s["horizontal_scroll"]              = p.HorizontalScroll;
     s["snap_window"]                    = p.SnapWindow;
-    s["snap_scroll"]                    = p.SnapScroll;
+    // snap_scroll: enum int (0=Off/1=Cells/2=Pages). Older bool-typed presets
+    // still read via GetIntOrBool on parse (true -> 1, false -> 0).
+    s["snap_scroll"]                    = (int)p.SnapScroll;
     s["allow_resize"]                   = p.AllowResize;
     s["allow_move"]                     = p.AllowMove;
     s["show_background"]                = p.ShowBg;
@@ -129,7 +131,9 @@ QuickbarPreset ParsePresetJson(const json& j) {
     p.ShowCategoryBar  = GetBool (s, "show_category_bar",              p.ShowCategoryBar);
     p.HorizontalScroll = GetBool (s, "horizontal_scroll",             p.HorizontalScroll);
     p.SnapWindow       = GetBool (s, "snap_window",                   p.SnapWindow);
-    p.SnapScroll       = GetBool (s, "snap_scroll",                   p.SnapScroll);
+    // Migrate the old bool form (true -> Cells, false -> Off) alongside reading
+    // the new int form. NormalizeScrollSnap runs in SanitizeSettings on apply.
+    p.SnapScroll       = (EQbScrollSnap)GetIntOrBool(s, "snap_scroll", (int)p.SnapScroll);
     p.AllowResize      = GetBool (s, "allow_resize",                  p.AllowResize);
     p.AllowMove        = GetBool (s, "allow_move",                    p.AllowMove);
     p.ShowBg           = GetBool (s, "show_background",               p.ShowBg);

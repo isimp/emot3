@@ -99,6 +99,64 @@ float s_qbBarGrabPx = 0.f;   // cursor offset within the thumb at grab time
 // "wrap up" (the start is always exactly 0) keeps working. The tolerance is half
 // a cell when snapping (resting positions are a full cell apart, so it can't
 // misfire one cell early) and a couple px otherwise.
+// Pages-mode helpers. WheelScroll's round-to-nearest works for cell-snap (the
+// cull math guarantees maxS is a cell-multiple, so every snap landing is a real
+// cell row), but breaks for pages: maxS = (totalRows - visRows) * cellStep is
+// NOT generally a multiple of pageStep = visRows * cellStep, so a wheel-up from
+// the end computes cur - pageStep that rounds to zero past the "midpoint" of
+// the last partial page, skipping the page boundary just below the end. The
+// "endTol = snapStep / 2" wrap zone also explodes from half-a-cell to half-a-
+// viewport. These helpers replace both behaviours for pages mode only - cells/
+// off still use WheelScroll unchanged.
+
+// Drag-snap target: round to whichever of (page boundary below, page boundary
+// above, maxS) sits closest to `target`. Lets the drag reach maxS even when
+// maxS isn't a whole multiple of the page step.
+float SnapPage(float target, float pageStep, float maxS) {
+    target = std::max(0.f, std::min(target, maxS));
+    if (pageStep <= 1.f) return target;
+    const float below = std::floor(target / pageStep) * pageStep;
+    const float above = std::min(below + pageStep, maxS);
+    return (target - below <= above - target) ? below : above;
+}
+
+// Wheel one page from cur. wheel<0 (scroll down) goes to the next page
+// boundary above cur, or maxS, whichever is smaller; wheel>0 (scroll up) goes
+// to the previous page boundary, or 0. Quantizes cur to the nearest page (or
+// maxS) FIRST so a cur that's drifted slightly off a page boundary (ImGui
+// float-rounding, post-resize) still steps cleanly - without this, cur=542
+// when page=542.4 would compute curPage=0 and "advance" by 0.4 px, tripping
+// the wrap. wrap fires only when no movement is possible (parked at the
+// extreme); a cur mid-content never wraps.
+float PageWheelScroll(float cur, float wheel, float pageStep,
+                      float maxS, bool wrap) {
+    if (wheel == 0.f || pageStep <= 1.f) return cur;
+    const float eps = 2.0f;
+    const float curSnap = SnapPage(cur, pageStep, maxS);  // align to a page or maxS
+    float newScroll;
+    if (wheel < 0.f) {
+        if (curSnap >= maxS - 0.5f) {
+            newScroll = maxS;                              // already at end
+        } else {
+            const int curPage = (int)std::floor(curSnap / pageStep);
+            newScroll = std::min(maxS, (float)(curPage + 1) * pageStep);
+        }
+    } else {
+        if (curSnap <= 0.5f) {
+            newScroll = 0.f;                               // already at start
+        } else {
+            // -0.5 so curSnap exactly at a page boundary still steps back.
+            const int newPage = (int)std::floor((curSnap - 0.5f) / pageStep);
+            newScroll = std::max(0.f, (float)newPage * pageStep);
+        }
+    }
+    if (wrap && std::fabs(newScroll - cur) < eps) {
+        if (wheel < 0.f) return 0.f;   // parked at end   -> wrap to start
+        if (wheel > 0.f) return maxS;  // parked at start -> wrap to end
+    }
+    return newScroll;
+}
+
 float WheelScroll(float cur, float wheel, float step, float snapStep,
                   float maxS, bool snap, bool wrap) {
     float s = cur - wheel * step;
@@ -157,12 +215,28 @@ void QbCustomScrollbar(ImGuiWindow* child, bool axisY,
     if (held && maxThumbOff > 0.f) {
         float wantOff = (mAxis - s_qbBarGrabPx) - trackStart;
         newScroll = (wantOff / maxThumbOff) * scrollMax;
-        // Cell-snap the drag too, matching the wheel (the bar only exists in
-        // the fit layout, where scrolling steps by whole icons). scrollMax is
-        // already a whole multiple of step, so the ends stay reachable.
-        float step = axisY ? g_QbStepY : g_QbStepX;
-        if (g_Settings.QuickbarSnapScroll && step > 1.f)
-            newScroll = std::round(newScroll / step) * step;
+        // Snap the drag too, matching the wheel: rounds to whole cells in Cells
+        // mode and to whole pages in Pages mode (one page = the VIEWPORT size
+        // on the scroll axis = total grid extent - max scroll). Off lets the
+        // drag land at any pixel.
+        //
+        // Cells: maxScroll is a whole multiple of cellStep (the cull math
+        // guarantees it), so std::round + clamp lands cleanly.
+        // Pages: maxScroll generally ISN'T a multiple of pageStep (e.g. 10
+        // total rows, 4 visible, page = 4 rows but max scroll = 6 rows), so
+        // we use SnapPage which treats maxS as a third snap target alongside
+        // the page boundaries below/above target. Lets the drag actually
+        // reach the end of the list.
+        const float cellStep  = axisY ? g_QbStepY     : g_QbStepX;
+        if (g_Settings.QuickbarSnapScroll == EQbScrollSnap::Cells && cellStep > 1.f) {
+            newScroll = std::round(newScroll / cellStep) * cellStep;
+        } else if (g_Settings.QuickbarSnapScroll == EQbScrollSnap::Pages) {
+            const float totalSize = axisY ? (g_QbRows * g_QbStepY)
+                                          : (g_QbCols * g_QbStepX);
+            const float maxScrl   = axisY ? g_QbMaxScrollY : g_QbMaxScrollX;
+            const float pageStep  = std::max(cellStep, totalSize - maxScrl);
+            newScroll = SnapPage(newScroll, pageStep, scrollMax);
+        }
         newScroll = std::max(0.f, std::min(newScroll, scrollMax));
         if (axisY) ImGui::SetScrollY(child, newScroll);
         else       ImGui::SetScrollX(child, newScroll);
@@ -507,7 +581,7 @@ void QuickbarRender() {
     // / "few-px push"). With it suppressed that becomes a harmless sub-pixel
     // clip. Pure free mode (neither snap) keeps the old gate.
     const bool ownScroll = g_Settings.QuickbarSnapWindow ||
-                           g_Settings.QuickbarSnapScroll;
+                           g_Settings.QuickbarSnapScroll != EQbScrollSnap::Off;
     if (ownScroll || g_Settings.QuickbarScrollIndicator != EQbScrollIndicator::Scrollbar)
         qbFlags |= ImGuiWindowFlags_NoScrollbar;
 
@@ -1085,7 +1159,13 @@ void QuickbarRender() {
     // wheel). g_QbStep* are last frame's cell steps (set by RenderEmoteSection).
     {
         bool horiz = horizScroll;
-        bool snap  = g_Settings.QuickbarSnapScroll;
+        // Snap mode drives both the per-notch step AND the round-to-grid: Off
+        // is smooth (snap=false, step = font*5px), Cells = one cell per notch,
+        // Pages = the full visible viewport per notch (g_QbRows/g_QbCols last
+        // frame's count). pageStep falls back to cellStep when the QB hasn't
+        // drawn yet (vis count == 0), so the very first wheel works.
+        bool snap  = g_Settings.QuickbarSnapScroll != EQbScrollSnap::Off;
+        bool pages = g_Settings.QuickbarSnapScroll == EQbScrollSnap::Pages;
         // Own the wheel whenever the child can't scroll itself: horizontal
         // routing OR owned-scroll mode (child is NoScrollWithMouse there).
         // Note: snap is NOT forced on by SnapWindow - the cell-aligned
@@ -1118,24 +1198,53 @@ void QuickbarRender() {
                 // Owned scroll bounds by whole cells (g_QbMaxScroll*, the
                 // cell-aligned max); pure free mode uses ImGui's pixel
                 // ScrollMax.
+                // Page step = viewport size on the scroll axis (NOT total
+                // content). g_QbRows / g_QbCols hold TOTAL row/col counts on
+                // the scroll axis; the visible portion is what's left after
+                // subtracting g_QbMaxScroll*. When content fits, maxScroll is
+                // 0 and pageStep collapses to a single viewport.
+                //
+                // Pages mode goes through PageWheelScroll, which steps in the
+                // wheel direction (floor/ceil, not round-to-nearest) - so
+                // wheel-up from the end always lands on the page boundary
+                // strictly below, even when maxS is not a whole multiple of
+                // pageStep. Wrap fires only when no movement is possible
+                // (parked at the extreme); a cur mid-content never wraps.
+                // Cells / Off keep the existing WheelScroll path: cells'
+                // maxS is a multiple of cellStep (the cull guarantees it), so
+                // round-to-nearest works cleanly.
                 if (horiz) {
-                    float step = (snap && g_QbStepX > 1.f) ? g_QbStepX
-                                                           : ImGui::GetFontSize() * 5.f;
-                    // Cap the cell-aligned max to ImGui's real scroll range so the
-                    // end stays reachable (and wrap can detect it) at every scale.
-                    float maxS = ownScroll
+                    const float cellStep = g_QbStepX;
+                    const float maxS = ownScroll
                         ? std::min(g_QbMaxScrollX, ImGui::GetScrollMaxX())
                         : ImGui::GetScrollMaxX();
-                    ImGui::SetScrollX(WheelScroll(ImGui::GetScrollX(), qbWheel, step,
-                                                  g_QbStepX, maxS, snap, wrap));
+                    if (pages) {
+                        const float pageStep = std::max(cellStep,
+                                                        g_QbCols * cellStep - g_QbMaxScrollX);
+                        ImGui::SetScrollX(PageWheelScroll(ImGui::GetScrollX(),
+                                                          qbWheel, pageStep, maxS, wrap));
+                    } else {
+                        const float step = (snap && cellStep > 1.f) ? cellStep
+                                                                    : ImGui::GetFontSize() * 5.f;
+                        ImGui::SetScrollX(WheelScroll(ImGui::GetScrollX(), qbWheel, step,
+                                                      cellStep, maxS, snap, wrap));
+                    }
                 } else {  // vertical (owned: snap / fit mode, or scroll-wrap)
-                    float step = (snap && g_QbStepY > 1.f) ? g_QbStepY
-                                                           : ImGui::GetFontSize() * 5.f;
-                    float maxS = ownScroll
+                    const float cellStep = g_QbStepY;
+                    const float maxS = ownScroll
                         ? std::min(g_QbMaxScrollY, ImGui::GetScrollMaxY())
                         : ImGui::GetScrollMaxY();
-                    ImGui::SetScrollY(WheelScroll(ImGui::GetScrollY(), qbWheel, step,
-                                                  g_QbStepY, maxS, snap, wrap));
+                    if (pages) {
+                        const float pageStep = std::max(cellStep,
+                                                        g_QbRows * cellStep - g_QbMaxScrollY);
+                        ImGui::SetScrollY(PageWheelScroll(ImGui::GetScrollY(),
+                                                          qbWheel, pageStep, maxS, wrap));
+                    } else {
+                        const float step = (snap && cellStep > 1.f) ? cellStep
+                                                                    : ImGui::GetFontSize() * 5.f;
+                        ImGui::SetScrollY(WheelScroll(ImGui::GetScrollY(), qbWheel, step,
+                                                      cellStep, maxS, snap, wrap));
+                    }
                 }
             }
         }

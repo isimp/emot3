@@ -24,8 +24,8 @@ struct QuickbarPreset {
     bool      UseDropdown      = false;
     bool      ShowCategoryBar  = true;
     bool      HorizontalScroll = false;
-    bool      SnapWindow       = false;
-    bool      SnapScroll       = true;
+    bool          SnapWindow       = false;
+    EQbScrollSnap SnapScroll       = EQbScrollSnap::Cells;
     bool      AllowResize      = true;
     bool      AllowMove        = true;
     bool      ShowBg           = true;
