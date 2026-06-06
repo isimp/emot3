@@ -238,7 +238,27 @@ void LoadEmoteTextures() {
         LOG_DEBUG("Emote icon reload: %d found, %d missing", loaded, missing);
     }
     s_emoteTexturesPrimed = true;
-    g_EmotesDirty         = false;
+
+    // /me-mote textures share the same dirty epoch — MarkMeMotesDirty sets
+    // g_EmotesDirty too, so any /me-mote edit triggers this branch on the
+    // next render frame. /me-motes only have explicit IconPath (no bundled
+    // art, no folder convention), so the loader is just a single Get-or-
+    // Create per /me-mote that carries one.
+    int meLoaded = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        for (const auto& m : g_MeMotes) {
+            std::string p = ResolveMeMoteIconPath(m);
+            if (p.empty()) continue;
+            APIDefs->Textures.GetOrCreateFromFile(MeMoteCacheKey(m.Id).c_str(),
+                                                  p.c_str());
+            ++meLoaded;
+        }
+    }
+    if (meLoaded > 0)
+        LOG_DEBUG("/me-mote icon load: %d found", meLoaded);
+
+    g_EmotesDirty = false;
 }
 
 void LoadUiIconOverrides() {

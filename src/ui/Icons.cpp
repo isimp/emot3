@@ -1,6 +1,7 @@
 #include "Icons.h"
 #include "Globals.h"
 #include "EmoteData.h"
+#include "MeMotes.h"      // MeMote struct for ResolveMeMoteIconPath
 #include "Settings.h"     // g_Settings.UseAIIconFallback (AI fallback gate)
 #include "Resources.h"    // LookupBundledResource + kOfficialIcons / kAIIcons
 
@@ -59,6 +60,34 @@ std::string EmoteCacheKey(const std::string& command) {
 
 Texture* GetEmoteTexture(const std::string& command) {
     return APIDefs->Textures.Get(EmoteCacheKey(command).c_str());
+}
+
+std::string ResolveMeMoteIconPath(const MeMote& m) {
+    // /me-motes only have an explicit IconPath (no `<id>.png` folder
+    // convention; if the user didn't set a path, there's nothing on disk to
+    // resolve to and the cell falls back to the styled letter button).
+    if (m.IconPath.empty()) return std::string();
+    const std::string& p = m.IconPath;
+    bool isAbs = (p.size() >= 3 && p[1] == ':' &&
+                  (p[2] == '\\' || p[2] == '/')) ||
+                 (p.size() >= 2 && p[0] == '\\' && p[1] == '\\');
+    if (isAbs) return p;
+    if (g_IconsDir.empty()) return p;
+    return g_IconsDir + "\\" + p;
+}
+
+std::string MeMoteCacheKey(const std::string& id) {
+    // Separate namespace from Emotes (EMOT3_<id>) so an Emote "wave" and a
+    // /me-mote "wave" don't fight over the same Nexus texture cache slot.
+    std::string s = id;
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c){ return (char)std::tolower(c); });
+    return std::string("EMOT3_MM_") + s;
+}
+
+Texture* GetMeMoteTexture(const std::string& id) {
+    if (!APIDefs) return nullptr;
+    return APIDefs->Textures.Get(MeMoteCacheKey(id).c_str());
 }
 
 // All UI icons (star / paperclip / lock / target_dot) are now sourced

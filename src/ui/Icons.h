@@ -16,6 +16,14 @@ struct Texture;
 // resolves regardless of the catalog's emote language.
 std::string ResolveIconPath(const Emote& e);
 
+// /me-mote icon resolution — simpler than the Emote chain because /me-motes
+// have no bundled artwork and no `<id>.png` folder convention. Only the
+// user's explicit IconPath applies; everything else falls back to the
+// styled letter button drawn by RenderMeMoteCellBody. Relative paths
+// resolve against g_IconsDir (so users can drop a PNG into addons/emot3/
+// icons/ and reference it by filename in the catalog).
+std::string ResolveMeMoteIconPath(const struct MeMote& m);
+
 // Where an emote's icon resolves from, in priority order. Single source of
 // truth for that order, shared by the texture loader (LoadEmoteTextures, which
 // picks what to load) and the Catalog tab's status line (DescribeIconSource,
@@ -44,6 +52,12 @@ std::string EmoteCacheKey(const std::string& id);
 
 // Lookup-only - returns nullptr if the texture isn't loaded yet. Pass Id.
 Texture* GetEmoteTexture(const std::string& id);
+
+// /me-mote texture lookup. Cache key uses a different prefix than Emotes
+// (EMOT3_MM_<id> vs EMOT3_<id>) so an Emote and a /me-mote that happen
+// to share an Id don't collide in the Nexus texture cache.
+std::string MeMoteCacheKey(const std::string& id);
+Texture*    GetMeMoteTexture(const std::string& id);
 
 // Section-header glyphs. Each one prefers the corresponding PNG under
 // addons/emot3/icons/ui/ when present; otherwise falls back to the

@@ -308,10 +308,16 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
         float btnTotal = iconSz + pad * 2;
         float btnX     = cellX + (cellW - btnTotal) * 0.5f;
         ImGui::SetCursorPos(ImVec2(btnX, cellY));
-        // Letter fallback always (texture loading for /me-mote icon paths is
-        // a separate checkpoint). The Name's first character lands the same
-        // way it does for Emote cells when their texture isn't loaded.
-        clicked = RenderStyledFallback("##fb", m.Name.c_str(), btnTotal, alphaMul);
+        // Custom icon if loaded, else styled letter button. /me-motes don't
+        // have bundled art or AI-fallback layers — it's the user's PNG (set
+        // via Options > /me-motes > Browse) or nothing.
+        Texture* tex = GetMeMoteTexture(m.Id);
+        if (tex && tex->Resource) {
+            clicked = ImGui::ImageButton((ImTextureID)tex->Resource,
+                ImVec2(iconSz, iconSz), ImVec2(0, 0), ImVec2(1, 1), pad);
+        } else {
+            clicked = RenderStyledFallback("##fb", m.Name.c_str(), btnTotal, alphaMul);
+        }
 
         // Compact mode strip — same dark band as the Emote path, with the
         // /me-mote's Name ellipsized inside it.
