@@ -93,6 +93,7 @@
   "mp.core_none_flagged": "  (no emotes flagged as core - toggle the flag on entries in Options > Catalog)",
   "mp.unlock_none": "  (no unlockable emotes in your catalog)",
   "mp.me_motes_none": "  (no /me-motes yet - create some under Options > /me-motes)",
+  "mp.me_motes_all_fav": "  (all /me-motes are in favorites)",
 
   "cells.moving": "Moving: %s",
   "cells.no_drop_here": "Can't drop here - drag onto a favorites category",
