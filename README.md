@@ -32,17 +32,23 @@ them from the official ArenaNet artwork.
 
 <table>
 <tr>
-<td align="center" width="33%">
+<td align="center" width="50%">
   <a href="https://github.com/user-attachments/assets/5db7fd74-770c-429c-af1b-5946f9c24af6"><img src="https://github.com/user-attachments/assets/5db7fd74-770c-429c-af1b-5946f9c24af6" alt="Library" width="280"></a>
   <br><b>Library</b>
 </td>
-<td align="center" width="33%">
+<td align="center" width="50%">
   <a href="https://github.com/user-attachments/assets/8f9d20d1-245b-4191-98f6-29a67ebd7e7e"><img src="https://github.com/user-attachments/assets/8f9d20d1-245b-4191-98f6-29a67ebd7e7e" alt="Quickbar" width="280"></a>
   <br><b>Quickbar</b>
 </td>
-<td align="center" width="33%">
+</tr>
+<tr>
+<td align="center" width="50%">
   <a href="https://github.com/user-attachments/assets/eb13f7ea-e0ad-46a0-93d9-f637211d2329"><img src="https://github.com/user-attachments/assets/eb13f7ea-e0ad-46a0-93d9-f637211d2329" alt="Catalog & Unlocks" width="280"></a>
   <br><b>Catalog & Unlocks</b>
+</td>
+<td align="center" width="50%">
+  <a href="https://github.com/user-attachments/assets/519c7544-b76d-4f54-a5b9-9dddac7e9a1a"><img src="https://github.com/user-attachments/assets/519c7544-b76d-4f54-a5b9-9dddac7e9a1a" alt="/me-motes" width="280"></a>
+  <br><b>/me-motes</b>
 </td>
 </tr>
 </table>
