@@ -98,7 +98,13 @@ releases page when an update is available.
   Options > User Interface > Chat Command*).
 - **Unlock tracking** is manual by default - right-click an unlockable emote to
   toggle. The Unlocks tab can also read your account from the GW2 API (via Hoard
-  & Seek or your own key) to fill these in; it only ever adds unlocks.
+  & Seek or your own key) to fill these in; it only ever adds unlocks
+- **Plus features** work by consuming Windows keyboard and mouse-wheel messages 
+  from inside the game process before they reach the game — 
+  see [`src/plus/SendSuppress.cpp`](src/plus/SendSuppress.cpp) and 
+  [`src/plus/QuickbarWheel.cpp`](src/plus/QuickbarWheel.cpp). That message-filtering 
+  pattern is indistinguishable from a keylogger to static analysis, which is why 
+  they're kept in a separate opt-in build.
 
 ## Contributing
 

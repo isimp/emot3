@@ -26,8 +26,9 @@ bundles, for runtime convenience:
 - Official emote artwork under resources/emotes_official/ is copyrighted by
   ArenaNet. These remain ArenaNet's property and are not licensed under MIT;
   they are redistributed here purely as cosmetic assets for the addon.
-- AI-generated emote artwork under resources/emotes_ai/ is opt-in at runtime
-  and covered by this MIT license alongside the rest of the project.
+- AI-generated emote artwork under resources/emotes_ai/ and 
+  resources/me_motes_ai/ is opt-in at runtime and covered by this MIT license 
+  alongside the rest of the project.
 - UI artwork under resources/ui/ was authored for this project and is covered
   by this MIT license.
 
