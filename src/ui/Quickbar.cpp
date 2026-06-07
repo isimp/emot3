@@ -9,7 +9,6 @@
 #include "Feedback.h"    // SetActiveFeedbackSurface / DrawFeedbackOverlay
 #include "Cells.h"
 #include "Layout.h"      // Ellipsize - shared with the emote-name label fitting
-#include "MainPanel.h"   // LoadEmoteTextures - shared with AddonRender
 #include "Logging.h"     // LOG_DEBUG (active-category switch)
 #include "Profiling.h"   // dev perf overlay
 #include "QuickbarDebug.h" // dev sizing readout (only in EMOT3_DEVTOOLS builds)
@@ -411,17 +410,10 @@ void QuickbarRender() {
     // the minimap doesn't, so the HUD survives normal play.
     if (MumbleLink && MumbleLink->Context.IsMapOpen) return;
 
-    // Catalog / icon-source change since the last reload? Reprime the
-    // emote textures. The main panel's AddonRender does the same
-    // check, but only when it's actually rendering - so if the user
-    // has the main window closed and only the Quickbar open, that
-    // path never fires and the Quickbar keeps showing whatever was
-    // cached the last time the main window was open. Symmetric check
-    // here covers toggles like the AI fallback regardless of which
-    // surface is currently visible. Idempotent: when both surfaces
-    // are open, AddonRender (registered first) handles it and
-    // LoadEmoteTextures clears the flag, so we no-op here.
-    if (g_EmotesDirty) LoadEmoteTextures();
+    // Icons load lazily per visible Quickbar cell (EnsureEmoteTexture /
+    // EnsureMeMoteTexture in RenderEmoteCell), which self-invalidate on a
+    // catalog/icon-source change via the version epoch - so there's no
+    // per-frame reload to drive from here anymore, on either surface.
 
     if (!g_Settings.ShowQuickbar) return;
     PROFILE_SCOPE("qb.frame");  // dev perf overlay

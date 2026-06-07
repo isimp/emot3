@@ -11,6 +11,7 @@
 #include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
 #include "Icons.h"
+#include "IconCacheConfig.h"  // g_IconCache.poolBudgetMB (dev pool-budget readout)
 #include "Layout.h"
 #include "Cells.h"
 #include "Resources.h"
@@ -146,195 +147,48 @@ static void RenderRemoveTrashZone() {
 // host process when loading AI fallback icons.
 extern HMODULE hSelf;
 
-// Tracks whether LoadEmoteTextures has populated the cache at least once.
-// We log the first run at INFO and subsequent reloads at DEBUG.
-static bool s_emoteTexturesPrimed = false;
-
 #ifdef EMOT3_DEVTOOLS
 #include "DevStateInspector.h"
-namespace {
-// Dev-tool counters for the "Textures / resources" state section below.
-// Cheap to keep; only read by the inspector.
-int s_texLoadCalls   = 0;  // LoadEmoteTextures invocations this session
-int s_texLastLoaded  = 0;  // last call: emotes resolved to a texture source
-int s_texLastMissing = 0;  // last call: emotes that fell to the styled letter
-}
 // Runtime state inspector section: texture/resource health. Iterates the
 // catalog on the open frame only (read-only, no disk I/O), so it's safe per
 // the no-blocking-I/O-in-render rule. Self-registers via the Layer-2 standard.
 static DevStateRegistrar s_texStateSection("Textures / resources", [] {
-    int total = 0, ready = 0, pending = 0;
-    {
-        std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        for (const auto& e : g_Emotes) {
-            ++total;
-            Texture* t = GetEmoteTexture(e.Id);
-            if (t && t->Resource) ++ready; else ++pending;
-        }
-    }
-    DevStateRow("emotes",                  "%d", total);
-    DevStateRow("textures ready",          "%d", ready);
-    DevStateRow("pending (loading/none)",  "%d", pending);
+    // Catalog sizes (cheap; no I/O).
+    int emotes = 0, memotes = 0;
+    { std::lock_guard<std::mutex> lk(g_EmotesMutex);  emotes  = (int)g_Emotes.size();  }
+    { std::lock_guard<std::mutex> lk(g_MeMotesMutex); memotes = (int)g_MeMotes.size(); }
+    DevStateRow("emotes",    "%d", emotes);
+    DevStateRow("/me-motes", "%d", memotes);
 
-    // /me-motes: only entries with an explicit IconPath get a texture
-    // attempt (no `<id>.png` folder convention), so "with icon path" is
-    // the true total for the ready/pending tally — a /me-mote with empty
-    // IconPath would always read "pending" and inflate the count.
-    int mmTotal = 0, mmReady = 0, mmPending = 0;
-    {
-        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-        for (const auto& m : g_MeMotes) {
-            if (m.IconPath.empty()) continue;
-            ++mmTotal;
-            Texture* t = GetMeMoteTexture(m.Id);
-            if (t && t->Resource) ++mmReady; else ++mmPending;
-        }
-    }
-    DevStateRow("/me-motes (with icon)",    "%d", mmTotal);
-    DevStateRow("/me-mote textures ready",  "%d", mmReady);
-    DevStateRow("/me-motes pending",        "%d", mmPending);
-
-    DevStateRow("LoadEmoteTextures calls", "%d", s_texLoadCalls);
-    DevStateRow("last load found/missing", "%d / %d", s_texLastLoaded, s_texLastMissing);
-    DevStateRow("emotes dirty",            "%s", g_EmotesDirty ? "yes" : "no");
+    // Deduped content-pool accounting: every distinct icon texture we've loaded,
+    // split into in-use (drawn this/last frame) vs idle (off-screen or orphaned
+    // by an edit). Shared icons count once. The idle bucket is the lazy/churn
+    // cost made visible. Reads icon-cache state only - no catalog lock, no I/O.
+    // Once per addon load, sweep in any content textures that survived a
+    // hot-reload but whose cells are off-screen (lazy per-cell recording can't
+    // see them). Probe-only, so a cold start records nothing here.
+    static bool s_poolReconciled = false;
+    if (!s_poolReconciled) { s_poolReconciled = true; ReconcileResidentPool(); }
+    IconPoolUsage u; IconPoolStats(u);
+    auto mb = [](size_t b){ return (double)b / (1024.0 * 1024.0); };
+    const int budget = g_IconCache.poolBudgetMB;
+    if (budget > 0)
+        DevStateRow("icon pool used", "%.2f / %d MB (%.0f%%), %llu icons",
+                    mb(u.totalBytes), budget, mb(u.totalBytes) / (double)budget * 100.0,
+                    (unsigned long long)u.totalCount);
+    else
+        DevStateRow("icon pool used", "%.2f MB, %llu icons (no budget)",
+                    mb(u.totalBytes), (unsigned long long)u.totalCount);
+    DevStateRow("  in use (on screen)", "%llu (%.2f MB)", (unsigned long long)u.inUseCount, mb(u.inUseBytes));
+    DevStateRow("  loaded, off-screen", "%llu (%.2f MB)", (unsigned long long)u.idleCount,  mb(u.idleBytes));
 });
 #endif  // EMOT3_DEVTOOLS
 
-void LoadEmoteTextures() {
-    if (!APIDefs || g_IconsDir.empty()) return;
-    PROFILE_SCOPE("tex.load");  // dev perf overlay
-
-    int loaded = 0, missing = 0;
-    {
-        std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        for (const auto& e : g_Emotes) {
-            std::string key = EmoteCacheKey(e.Id);
-            // The resolution ORDER lives once in ResolveIconSource (Icons.cpp),
-            // shared with the Catalog tab's status line (DescribeIconSource) so
-            // the label can't drift from what actually loads here. This pass just
-            // turns the chosen source into the matching load call. Bundled icons
-            // are pulled from the DLL via GetOrCreateFromMemory with the correct
-            // RT_RCDATA lookup, because Nexus' GetOrCreateFromResource looks them
-            // up by string type "RCDATA" and silently misses our entries.
-            switch (ResolveIconSource(e)) {
-                case IconSource::BundledChosen: {
-                    // Icon picker: IconPath is "bundled:<bucket>:<name>". Load the
-                    // referenced bundled PNG into THIS emote's cache slot (the
-                    // bytes come from whichever bundled table the ref names).
-                    const BundledIcon* tbl = nullptr; int cnt = 0; std::string nm;
-                    const void* data = nullptr; size_t size = 0;
-                    if (ParseBundledIconRef(e.IconPath, tbl, cnt, nm) &&
-                        TryLoadBundledIconBytes(tbl, cnt, nm, data, size)) {
-                        APIDefs->Textures.GetOrCreateFromMemory(
-                            key.c_str(), const_cast<void*>(data), size);
-                        ++loaded;
-                    } else ++missing;  // unresolvable ref -> styled letter
-                    break;
-                }
-                case IconSource::Custom:
-                case IconSource::FolderOverride:
-                    // A PNG on disk (explicit IconPath or icons/<id>.png drop-in).
-                    APIDefs->Textures.GetOrCreateFromFile(
-                        key.c_str(), ResolveIconPath(e).c_str());
-                    ++loaded;
-                    break;
-                case IconSource::BundledOfficial: {
-                    const void* data = nullptr; size_t size = 0;
-                    if (TryLoadBundledIconBytes(kOfficialIcons, kOfficialIconsCount,
-                                                e.Id, data, size)) {
-                        APIDefs->Textures.GetOrCreateFromMemory(
-                            key.c_str(), const_cast<void*>(data), size);
-                        ++loaded;
-                    } else ++missing;  // unreachable: same table the resolver checked
-                    break;
-                }
-                case IconSource::BundledAI: {
-                    const void* data = nullptr; size_t size = 0;
-                    if (TryLoadBundledIconBytes(kAIIcons, kAIIconsCount,
-                                                e.Id, data, size)) {
-                        APIDefs->Textures.GetOrCreateFromMemory(
-                            key.c_str(), const_cast<void*>(data), size);
-                        ++loaded;
-                    } else ++missing;
-                    break;
-                }
-                case IconSource::TextFallback:
-                    ++missing;  // RenderEmoteCell draws the styled letter
-                    break;
-            }
-        }
-    }
-#ifdef EMOT3_DEVTOOLS
-    ++s_texLoadCalls; s_texLastLoaded = loaded; s_texLastMissing = missing;
-#endif
-    if (!s_emoteTexturesPrimed) {
-        LOG_INFO("Emote icon load: %d found, %d missing (styled fallback)",
-                 loaded, missing);
-    } else {
-        LOG_DEBUG("Emote icon reload: %d found, %d missing", loaded, missing);
-    }
-    s_emoteTexturesPrimed = true;
-
-    // /me-mote textures share the same dirty epoch — MarkMeMotesDirty sets
-    // g_EmotesDirty too, so any /me-mote edit triggers this branch on the
-    // next render frame. The /me-mote chain is shorter than the Emote
-    // chain by ONE tier (no BundledOfficial — the catalog is user-content
-    // so ArenaNet doesn't ship art for it); ResolveMeMoteIconSource picks
-    // between Custom / FolderOverride (disk PNG, either path), BundledAI
-    // (when UseAIIconFallback is on AND the Id has a bundled AI PNG), and
-    // TextFallback (the styled letter, drawn by RenderMeMoteCellBody at
-    // render time, no texture load). Caveat shared with the Emote path:
-    // GetOrCreate*From* keys on the cache name and Nexus exposes no
-    // texture-evict, so changing or clearing an IconPath for an existing
-    // Id only takes visible effect on the next reload/restart.
-    int meLoaded = 0, meMissing = 0;
-    {
-        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-        for (const auto& m : g_MeMotes) {
-            std::string key = MeMoteCacheKey(m.Id);
-            switch (ResolveMeMoteIconSource(m)) {
-                case MeMoteIconSource::BundledChosen: {
-                    // Icon picker: a "bundled:<bucket>:<name>" ref (any of the
-                    // three bundled tables) loaded into this /me-mote's slot.
-                    const BundledIcon* tbl = nullptr; int cnt = 0; std::string nm;
-                    const void* data = nullptr; size_t size = 0;
-                    if (ParseBundledIconRef(m.IconPath, tbl, cnt, nm) &&
-                        TryLoadBundledIconBytes(tbl, cnt, nm, data, size)) {
-                        APIDefs->Textures.GetOrCreateFromMemory(
-                            key.c_str(), const_cast<void*>(data), size);
-                        ++meLoaded;
-                    } else ++meMissing;  // unresolvable ref -> styled letter
-                    break;
-                }
-                case MeMoteIconSource::Custom:
-                case MeMoteIconSource::FolderOverride:
-                    // A PNG on disk (explicit IconPath or icons/<id>.png drop-in).
-                    APIDefs->Textures.GetOrCreateFromFile(
-                        key.c_str(), ResolveMeMoteIconPath(m).c_str());
-                    ++meLoaded;
-                    break;
-                case MeMoteIconSource::BundledAI: {
-                    const void* data = nullptr; size_t size = 0;
-                    if (TryLoadBundledIconBytes(kMeMoteAIIcons, kMeMoteAIIconsCount,
-                                                m.Id, data, size)) {
-                        APIDefs->Textures.GetOrCreateFromMemory(
-                            key.c_str(), const_cast<void*>(data), size);
-                        ++meLoaded;
-                    } else ++meMissing;  // unreachable: resolver checked the same table
-                    break;
-                }
-                case MeMoteIconSource::TextFallback:
-                    ++meMissing;  // RenderMeMoteCellBody draws the styled letter
-                    break;
-            }
-        }
-    }
-    if (meLoaded > 0 || meMissing > 0)
-        LOG_DEBUG("/me-mote icon load: %d found, %d letter-fallback", meLoaded, meMissing);
-
-    g_EmotesDirty = false;
-}
-
+// Per-emote / per-/me-mote textures now load lazily on first show via
+// EnsureEmoteTexture / EnsureMeMoteTexture (ui/Icons.cpp). The old
+// LoadEmoteTextures bulk loader (whole catalog on every catalog change,
+// pumped per-frame from AddonRender + the Quickbar) is gone; only UI artwork
+// is still primed up-front below.
 void LoadUiIconOverrides() {
     // UI artwork (decorations + the Nexus shortcut icons). For each
     // binding we either look at icons/ui/<stem>.png first and fall back
@@ -527,8 +381,7 @@ static void RenderEmptyCatalogDialog() {
     if (addClicked && sel >= 0 && sel < (int)langs.size()) {
         SeedDefaultEmotes(langs[sel], s_secondary);
         if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-        MarkEmotesDirty();
-        LoadEmoteTextures();
+        MarkEmotesDirty();  // lazy: visible cells load their icons on next render
         // First-run: seed bundled /me-motes too so the catalog isn't an empty
         // "Add some under Options" hint. ClampMeMoteLanguage maps the emote
         // bundle's choice down to the /me-mote bundle's supported set —
@@ -654,8 +507,7 @@ static void RenderNewEmotesDialog() {
         int n = AddBundledEmotesByIds(g_NewBundledEmoteIds, lang);
         if (n > 0) {
             if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-            MarkEmotesDirty();
-            LoadEmoteTextures();
+            MarkEmotesDirty();  // lazy: new emotes load their icons on next render
         }
         LOG_INFO("notifier: user added %d new bundled emote(s)", n);
         finish();
@@ -698,10 +550,8 @@ void AddonRender() {
     if (!g_Settings.ShowWindow) return;
     PROFILE_SCOPE("mp.frame");  // dev perf overlay
 
-    // Catalog change since last render? Re-prime the emote textures.
-    // The initial AddonLoad call already primed them once, so users
-    // don't need to open the main window to see the Quickbar populated.
-    if (g_EmotesDirty) LoadEmoteTextures();
+    // Emote/me-mote icons load lazily per visible cell (EnsureEmoteTexture in
+    // RenderEmoteCell), so there's no per-frame catalog reload here anymore.
 
     // Min size: width fits 8 Icon-mode cells (8*(56+8)-8 + padding ≈ 540); height 300.
     // Min width fits the toolbar comfortably: All / Core / Unlocked /

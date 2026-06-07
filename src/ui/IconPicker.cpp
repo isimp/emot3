@@ -25,11 +25,11 @@ namespace {
 
 // One selectable thumbnail in the grid.
 struct PickItem {
-    std::string name;       // display label (stem)
-    std::string nameLower;  // precomputed lowercase, so the search filter does
-                            // no per-frame allocation while the modal renders
-    std::string cacheKey;   // Nexus texture key in the EMOT3_PICK_ namespace
-    std::string writePath;  // what lands in IconPath on click (ref or filename)
+    std::string  name;       // display label (stem)
+    std::string  nameLower;  // precomputed lowercase, so the search filter does
+                             // no per-frame allocation while the modal renders
+    ResolvedIcon icon;       // content key + load descriptor (SHARED with cells)
+    std::string  writePath;  // what lands in IconPath on click (ref or filename)
 };
 
 const char* const kPopupId = "###emot3_icon_picker";
@@ -50,8 +50,7 @@ std::string      s_currentPath;             // target's IconPath at open (for hi
 char             s_search[64]    = {};
 float            s_pickerScale   = 1.0f;     // thumbnail zoom (scale slider; session-scoped)
 
-bool                     s_embeddedPrimed = false;  // bundled thumbnails loaded once
-std::vector<std::string> s_folderFiles;             // *.png filenames in g_IconsDir (refreshed on open)
+std::vector<std::string> s_folderFiles;             // image filenames in g_IconsDir (refreshed on open)
 
 // Built once per open from the tables + folder + AI setting, then reused every
 // frame the modal renders (no per-frame allocation churn). A modal blocks other
@@ -80,61 +79,25 @@ std::string StripImageExt(const std::string& path) {
     return out;
 }
 
-// Folder-pick cache key: a stable lowercase identifier from the full
-// folder-relative path. Backslashes (subfolder separators) AND the extension dot
-// collapse to underscores so the result is a flat Nexus texture key that is
-// UNIQUE PER FILE - "themes\\Cool.png" -> "EMOT3_PICK_dir_themes_cool_png",
-// "mycustom.jpg" -> "EMOT3_PICK_dir_mycustom_jpg". The extension is PART of the
-// key (not stripped): files that share a stem but differ by extension -
-// wave.png / wave.jpg / wave.jpeg - must get distinct keys, because this key also
-// drives the grid's ImGui PushID. Stripping it collapsed them onto one key, so
-// all but the first-rendered (alphabetically .jpeg) collided on the same widget
-// id and couldn't be clicked.
-std::string FolderCacheKeyFor(const std::string& relPath) {
-    std::string key = relPath;
-    for (auto& ch : key) if (ch == '\\' || ch == '/' || ch == '.') ch = '_';
-    return std::string("EMOT3_PICK_dir_") + ToLower(key);
-}
-
-// Append every entry of a bundled table to `out`, prefixing the cache key and
-// tagging the writable bundled ref.
+// Append every entry of a bundled table to `out`: a content-keyed ResolvedIcon
+// (SHARED with cells via MakeBundledResolved) + the writable bundled ref that
+// lands in IconPath when the item is picked.
 void AddBundledBank(std::vector<PickItem>& out, const BundledIcon* tbl, int cnt,
-                    const char* keyPfx, BundledBucket bucket) {
+                    BundledBucket bucket) {
     out.reserve(out.size() + (size_t)cnt);
     for (int i = 0; i < cnt; ++i)
         out.push_back({ tbl[i].command,
                         ToLower(tbl[i].command),
-                        std::string(keyPfx) + tbl[i].command,
+                        MakeBundledResolved(tbl, cnt, tbl[i].command),
                         MakeBundledIconRef(bucket, tbl[i].command) });
 }
 
-// Load every bundled icon (all three tables) into the EMOT3_PICK_ namespace
-// once per session. Idempotent at the Nexus layer, but the guard avoids the
-// per-open re-walk. Primes all tables regardless of UseAIIconFallback so a
-// later toggle-on shows art without reopening; the setting gates DISPLAY only.
-void PrimeEmbeddedTextures() {
-    if (s_embeddedPrimed || !APIDefs) return;
-    s_embeddedPrimed = true;
-    struct { const BundledIcon* tbl; int cnt; const char* pfx; } banks[] = {
-        { kOfficialIcons, kOfficialIconsCount, "EMOT3_PICK_off_"  },
-        { kAIIcons,       kAIIconsCount,       "EMOT3_PICK_ai_"   },
-        { kMeMoteAIIcons, kMeMoteAIIconsCount, "EMOT3_PICK_mmai_" },
-    };
-    for (const auto& b : banks) {
-        for (int i = 0; i < b.cnt; ++i) {
-            const void* data = nullptr; size_t size = 0;
-            if (TryLoadBundledIconBytes(b.tbl, b.cnt, b.tbl[i].command, data, size))
-                APIDefs->Textures.GetOrCreateFromMemory(
-                    (std::string(b.pfx) + b.tbl[i].command).c_str(),
-                    const_cast<void*>(data), size);
-        }
-    }
-}
-
-// (Re)scan addons/emot3/icons recursively for *.png and prime each into the
-// PICK namespace. Run on every open so a freshly dropped-in PNG appears
-// without a restart. Capped at g_IconCache.maxFolderIcons so an enormous tree
-// can't prime unbounded textures.
+// (Re)scan addons/emot3/icons recursively for images and LIST each (filenames
+// only; textures load lazily per visible grid cell). Run on every open so a
+// freshly dropped-in icon appears without a restart. Capped at
+// g_IconCache.maxFolderIcons so an enormous tree can't enumerate unbounded
+// entries; each file is header-validated here, and over-cap / unreadable ones
+// are logged + skipped so the grid only lists loadable icons.
 //
 // Recursion uses an explicit work stack instead of true recursion so a
 // deeply-nested folder tree can't blow the render thread's stack. Each entry
@@ -233,8 +196,8 @@ void ScanFolderTextures() {
                 capped = true;
                 break;   // out of the FindNext loop; outer while exits next check
             }
-            APIDefs->Textures.GetOrCreateFromFile(
-                FolderCacheKeyFor(relPath).c_str(), fullPath.c_str());
+            // Lazy: just list it; the thumbnail loads on first show in the grid
+            // (RenderBucket -> EnsureResolved), into the shared cell content pool.
             s_folderFiles.push_back(relPath);
         } while (FindNextFileA(h, &fd) && !capped);
         FindClose(h);
@@ -252,27 +215,24 @@ void ScanFolderTextures() {
 // current AI-fallback setting. Called once per open.
 void RebuildItems() {
     s_official.clear(); s_ai.clear(); s_mmai.clear(); s_folder.clear();
-    AddBundledBank(s_official, kOfficialIcons, kOfficialIconsCount,
-                   "EMOT3_PICK_off_", BundledBucket::Official);
+    AddBundledBank(s_official, kOfficialIcons, kOfficialIconsCount, BundledBucket::Official);
     if (g_Settings.UseAIIconFallback) {
-        AddBundledBank(s_ai,   kAIIcons,       kAIIconsCount,
-                       "EMOT3_PICK_ai_",   BundledBucket::AI);
-        AddBundledBank(s_mmai, kMeMoteAIIcons, kMeMoteAIIconsCount,
-                       "EMOT3_PICK_mmai_", BundledBucket::MeMoteAI);
+        AddBundledBank(s_ai,   kAIIcons,       kAIIconsCount,       BundledBucket::AI);
+        AddBundledBank(s_mmai, kMeMoteAIIcons, kMeMoteAIIconsCount, BundledBucket::MeMoteAI);
     }
     s_folder.reserve(s_folderFiles.size());
     for (const std::string& relPath : s_folderFiles) {
-        // Display label = the relative path minus its image extension. A
-        // subfolder pick reads as "themes\\cool" so the user sees where the
-        // file actually lives; a top-level pick reads as just "cool". Search
-        // matches against the lowered label so "cool" finds both.
-        std::string stem = StripImageExt(relPath);
-        std::string lower = ToLower(stem);
-        // writePath is the relPath verbatim — the IconPath value we'll
-        // commit when this entry gets picked. SanitizeIconPath accepts it
-        // as-is (relative under g_IconsDir, not in top-level ui/), and
-        // ResolveIconPath joins it back to g_IconsDir when loading.
-        s_folder.push_back({ stem, lower, FolderCacheKeyFor(relPath), relPath });
+        // Display label = the relative path minus its image extension (subfolder
+        // picks read as "themes\\cool"; search matches the lowered label).
+        // writePath = relPath verbatim (SanitizeIconPath accepts it; the resolver
+        // joins it to g_IconsDir). The thumbnail shares the cell content pool via
+        // the key MakeFileResolved builds from the absolute path.
+        PickItem it;
+        it.name      = StripImageExt(relPath);
+        it.nameLower = ToLower(it.name);
+        it.icon      = MakeFileResolved(g_IconsDir + "\\" + relPath);
+        it.writePath = relPath;
+        s_folder.push_back(std::move(it));
     }
 }
 
@@ -295,8 +255,14 @@ int RenderBucket(const char* headerKey, const std::vector<PickItem>& items,
     const float stride = thumb + st.FramePadding.x * 2.f + st.ItemSpacing.x;
     for (size_t i = 0; i < vis.size(); ++i) {
         const PickItem& it = *vis[i];
-        ImGui::PushID(it.cacheKey.c_str());
-        Texture* tex = APIDefs->Textures.Get(it.cacheKey.c_str());
+        ImGui::PushID(it.icon.key.empty() ? it.name.c_str() : it.icon.key.c_str());
+        // Lazy: load this thumbnail only if its cell is actually on-screen; an
+        // off-screen item just looks up (null -> name-button placeholder). Shared
+        // with the cell pool, so an already-shown icon is instant here.
+        Texture* tex = ImGui::IsRectVisible(ImVec2(kThumb, kThumb))
+                           ? EnsureResolved(it.icon)
+                           : (it.icon.key.empty() ? nullptr
+                                                  : APIDefs->Textures.Get(it.icon.key.c_str()));
         const bool isCurrent = !it.writePath.empty() && it.writePath == s_currentPath;
         if (isCurrent)
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.85f, 1.f));
@@ -332,27 +298,9 @@ void OpenIconPicker(EIconTargetKind kind, const std::string& targetId,
     s_search[0]   = '\0';
 }
 
-// Texture-memory accounting for the dev MemoryMonitor: count + estimated bytes
-// of the EMOT3_PICK_* thumbnails currently resident in Nexus' cache (zero until
-// the picker is first opened). Mirrors the catalog rows' Width*Height*4 estimate
-// so the picker's one-time texture cost is visible, not an unexplained gap.
-void IconPickerTextureStats(size_t& outCount, size_t& outBytes) {
-    outCount = 0; outBytes = 0;
-    if (!APIDefs) return;
-    auto add = [&](const std::string& key) {
-        if (Texture* t = APIDefs->Textures.Get(key.c_str()))
-            if (t->Resource) { outBytes += (size_t)t->Width * (size_t)t->Height * 4u; ++outCount; }
-    };
-    for (int i = 0; i < kOfficialIconsCount; ++i) add(std::string("EMOT3_PICK_off_")  + kOfficialIcons[i].command);
-    for (int i = 0; i < kAIIconsCount;       ++i) add(std::string("EMOT3_PICK_ai_")   + kAIIcons[i].command);
-    for (int i = 0; i < kMeMoteAIIconsCount; ++i) add(std::string("EMOT3_PICK_mmai_") + kMeMoteAIIcons[i].command);
-    for (const std::string& f : s_folderFiles) {
-        std::string stem = f;
-        size_t dot = stem.find_last_of('.');
-        if (dot != std::string::npos) stem.erase(dot);
-        add("EMOT3_PICK_dir_" + ToLower(stem));
-    }
-}
+// Picker thumbnails now share the cell content pool (EMOT3IC_*), so they're
+// counted by the memory monitor's unified icon-pool rows (Icons.cpp
+// IconPoolStats) - no separate picker-texture accounting here anymore.
 
 void RenderIconPicker() {
     // Idle fast-path: when no open is pending and the modal isn't showing, do
@@ -366,8 +314,7 @@ void RenderIconPicker() {
     if (s_pendingOpen) {
         s_pendingOpen = false;
         s_keepOpen    = true;
-        PrimeEmbeddedTextures();
-        ScanFolderTextures();
+        ScanFolderTextures();   // lists files (validated); thumbnails load lazily
         RebuildItems();
         ImGui::OpenPopup(kPopupId);
     }
@@ -468,16 +415,13 @@ void RenderIconPicker() {
 
 #ifdef EMOT3_DEVTOOLS
 // Self-registering Runtime State Inspector section (Layer-2 dev-tools standard,
-// like the catalog sections). Surfaces picker state so a dev can confirm
-// priming + folder scan + the resident thumbnail count.
+// like the catalog sections). Surfaces picker state (folder scan + target);
+// thumbnail textures appear in the shared icon-pool rows ("Textures / resources").
 static DevStateRegistrar s_pickerState("Icon picker", [] {
-    DevStateRow("embedded primed", "%s", s_embeddedPrimed ? "yes" : "no");
     DevStateRow("folder icons",    "%zu", s_folderFiles.size());
     DevStateRow("target",          "%s",
                 s_targetId.empty() ? "(none)" : s_targetId.c_str());
     DevStateRow("target kind",     "%s",
                 s_kind == EIconTargetKind::Emote ? "emote" : "me-mote");
-    size_t c = 0, b = 0; IconPickerTextureStats(c, b);
-    DevStateRow("primed textures", "%zu", c);
 });
 #endif

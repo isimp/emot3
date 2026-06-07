@@ -184,6 +184,10 @@
 
   "opt.pick.button": "Aus Bibliothek...",
   "opt.pick.button_tooltip": "Wähle ein Symbol aus der mitgelieferten Bibliothek oder deinem icons-Ordner in einem visuellen Raster. (Für eigene: lege ein PNG in den Ordner addons/emot3/icons - es erscheint dann hier.)",
+  "opt.icon.refresh": "Aktualisieren",
+  "opt.icon.refresh_tooltip": "Dieses Symbol von der Festplatte neu laden - nutze dies, nachdem du die Datei direkt ersetzt hast (gleicher Name). Eine unveränderte Datei wird nicht neu geladen.",
+  "opt.icon.rescan": "Symbole neu einlesen",
+  "opt.icon.rescan_tooltip": "Den Ordner addons/emot3/icons erneut auf hinzugefügte, geänderte oder entfernte Symboldateien prüfen und alle Zeilen aktualisieren. Nutze dies, nachdem du eine neue PNG (Name <id>.png) für einen Eintrag abgelegt hast, der aktuell einen Buchstaben zeigt.",
   "opt.pick.title": "Symbol wählen",
   "opt.pick.search_hint": "Symbole suchen...",
   "opt.pick.clear_search": "Suche löschen",
@@ -378,7 +382,7 @@
   "opt.gen.show_me_mote_indicator.off": "keine Markierung - die Zellen funktionieren weiter, sehen aber wie normale Emote-Zellen aus.",
   "opt.gen.ai_fallback": "KI-generierte Ersatzsymbole verwenden",
   "opt.gen.ai_fallback.on": "Emotes ohne offizielles ArenaNet-Symbol und /me-motes ohne eigenes Symbol zeigen ein mitgeliefertes KI-generiertes Bild (falls für diesen Eintrag vorhanden). KI-Grafik ist mit goldenem Rahmen markiert.",
-  "opt.gen.ai_fallback.off": "Einträge ohne offizielles oder eigenes Symbol zeigen einen Buchstaben-Ersatz. Deaktivieren wirkt erst nach einem Spielneustart - bereits geladene KI-Symbole bleiben bis dahin im Cache.",
+  "opt.gen.ai_fallback.off": "Einträge ohne offizielles oder eigenes Symbol zeigen einen Buchstaben-Ersatz. Deaktivieren wirkt sofort - das Symbol löst zur nächsten Quelle in der Kette auf.",
   "opt.gen.qb_cat_favorites": "Favoritenkategorien in der Quickbar anzeigen",
   "opt.gen.qb_cat_favorites.on": "die Kategorieleiste der Quickbar listet deine Favoritenkategorien auf.",
   "opt.gen.qb_cat_favorites.off": "sie werden aus der Leiste ausgeblendet - nützlich, wenn du nur die eingebauten Kategorien unten möchtest.",
@@ -428,7 +432,7 @@
   "send.skip.keys_held": "Senden nicht möglich, während du dich bewegst oder eine Taste hältst.",
 
   "opt.em.intro": "Dein vollständiger Emote-Katalog - das, was emot3 in der Library und in der Quickbar anzeigt.\nFüge Einträge hinzu, bearbeite oder entferne sie; bewege den Mauszeiger über die Bedienelemente einer Zeile, um zu sehen, was sie tun.",
-  "opt.em.restart_note": "Ersetzte Symbole wirken erst nach einem Spielneustart.",
+  "opt.em.restart_note": "Symboländerungen wirken sofort. Wenn du eine Symboldatei direkt ersetzt, nutze die Schaltfläche 'Aktualisieren' der Zeile, um sie neu zu laden.",
   "opt.em.icon_header": "Woher das Symbol jedes Emotes stammt",
   "opt.em.icon_explainer": "emot3 wählt das erste gefundene Symbol in dieser Reihenfolge:\n\n  1. Mitgeliefertes Symbol über Bibliothek... zugewiesen.\n  2. icons/<id>.png in deinem addons/emot3/icons-Ordner (Unterordner sind erlaubt).\n  3. Mitgelieferte offizielle ArenaNet-Grafik. Greift bei Emotes, deren Id einem mitgelieferten Stamm entspricht (wave, dance, sit, ...) - mitgelieferte Emotes tun das von Haus aus; ein eigenes Emote kann mitziehen, indem es die passende Id übernimmt.\n  4. Mitgelieferter KI-Ersatz (nur wenn unter Allgemein > Symbole aktiviert). Gleiche Id-Regel wie Schritt 3, gegen den mitgelieferten KI-Satz.\n  5. Buchstaben-Ersatz.\n\nDer icons-Ordner ist der einzige Ort, aus dem emot3 eigene Bilddateien liest - PNG und JPEG werden beide unterstützt (der automatische Ordner-Override unter Schritt 2 ist nur PNG, da der Dateiname aus der Id abgeleitet wird). Der Unterordner icons/ui ist für die UI-Overrides reserviert (Stern, Büroklammer usw.) und wird übersprungen. Jede Zeile zeigt, aus welchem Schritt das Symbol stammt.",
   "opt.em.bundled_explainer": "Fügt mitgelieferte Emotes zurück, die in deinem Katalog fehlen - nützlich nach dem Leeren oder Löschen einzelner.\nMitgelieferte Emotes haben eine feste Id; \"Wiederherstellen\" fügt nur hinzu, was du noch nicht hast. Vorhandene Emotes und Änderungen werden nie überschrieben.",

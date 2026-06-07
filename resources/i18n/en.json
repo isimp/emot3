@@ -187,6 +187,10 @@
 
   "opt.pick.button": "From library...",
   "opt.pick.button_tooltip": "Choose an icon from the built-in library or your icons folder, in a visual grid. (To use your own, drop a PNG into the addons/emot3/icons folder - it shows up here.)",
+  "opt.icon.refresh": "Refresh",
+  "opt.icon.refresh_tooltip": "Reload this icon from disk - use it after you replace the file in place (same name). An unchanged file isn't reloaded.",
+  "opt.icon.rescan": "Rescan icons",
+  "opt.icon.rescan_tooltip": "Re-check the addons/emot3/icons folder for icon files added, changed, or removed since this tab opened, and refresh every row. Use it after you drop a new PNG (named <id>.png) for an entry that currently shows a letter.",
   "opt.pick.title": "Choose an icon",
   "opt.pick.search_hint": "Search icons...",
   "opt.pick.clear_search": "Clear search",
@@ -379,7 +383,7 @@
   "opt.gen.show_me_mote_indicator.off": "no accent - the cells still work, they just look like regular emote cells.",
   "opt.gen.ai_fallback": "Use AI-generated fallback icons",
   "opt.gen.ai_fallback.on": "emotes without an ArenaNet official icon, and /me-motes without a custom icon, show a bundled AI-generated image (when one exists for that entry). AI artwork is marked by a gold frame.",
-  "opt.gen.ai_fallback.off": "items without an official or custom icon show a letter fallback. Disabling only takes effect after a game restart - already-loaded AI icons stay cached until then.",
+  "opt.gen.ai_fallback.off": "items without an official or custom icon show a letter fallback. Disabling applies immediately - the icon re-resolves to the next source in the chain.",
   "opt.gen.qb_cat_favorites": "Show favorites categories in the Quickbar",
   "opt.gen.qb_cat_favorites.on": "the Quickbar's category bar lists your favorites categories.",
   "opt.gen.qb_cat_favorites.off": "they're hidden from the bar - useful if you only want the built-in categories below.",
@@ -429,7 +433,7 @@
   "send.skip.keys_held": "Can't send while moving or holding a key.",
 
   "opt.em.intro": "Your full emote catalog - what emot3 shows in the Library and Quickbar.\nAdd, edit, or remove any entry; hover a row's controls for what they do.",
-  "opt.em.restart_note": "Replaced icons only take effect after a game restart.",
+  "opt.em.restart_note": "Icon changes apply immediately. If you replace an icon file in place, use that row's Refresh button to reload it.",
   "opt.em.icon_header": "Where each emote's icon comes from",
   "opt.em.icon_explainer": "emot3 picks the first icon it finds, in this order:\n\n  1. Bundled icon assigned via Library...\n  2. icons/<id>.png in your addons/emot3/icons folder (subfolders welcome).\n  3. Bundled ArenaNet official art. Matches emotes whose Id matches a bundled stem (wave, dance, sit, ...) - built-in emotes always do; a custom emote can opt in by reusing the matching Id.\n  4. Bundled AI fallback (only when enabled in General > Icons). Same Id-match rule as step 3, against the bundled AI set.\n  5. Letter fallback.\n\nThe icons folder is the only place emot3 reads custom image files from - PNG and JPEG are both supported (the auto folder-override at step 2 is PNG-only since it derives its filename from the id). The icons/ui subfolder is reserved for the UI overrides (star, paperclip, etc.) and is skipped. Each row shows which step its icon came from.",
   "opt.em.bundled_explainer": "Adds back any built-in emotes missing from your catalog - useful after clearing or deleting some.\nBuilt-in emotes have a fixed id, so Restore only adds what you don't already have. Your existing emotes and edits are never overwritten.",

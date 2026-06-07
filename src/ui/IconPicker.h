@@ -27,8 +27,3 @@ void OpenIconPicker(EIconTargetKind kind, const std::string& targetId,
 // Render the picker modal. Call ONCE per frame from AddonOptions, inside the
 // Options window. Renders nothing until opened.
 void RenderIconPicker();
-
-// Dev/MemoryMonitor introspection: count + estimated bytes (Width*Height*4) of
-// the picker's EMOT3_PICK_* thumbnail textures currently resident in Nexus'
-// cache. Zero until the picker is first opened (textures are primed lazily).
-void IconPickerTextureStats(std::size_t& outCount, std::size_t& outBytes);

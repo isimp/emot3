@@ -17,9 +17,9 @@
 //
 // Invalidation (lazy, checked on every lookup):
 //   - Catalog mutation (rename / add / delete) bumps g_EmoteCatalogVersion;
-//     a counter mismatch clears the cache. g_EmotesDirty alone would not work
-//     because LoadEmoteTextures consumes it at the top of every frame, well
-//     before RenderEmoteCell reads it.
+//     a counter mismatch clears the cache. A monotonic counter (not a one-frame
+//     flag) is required because RenderEmoteCell reads it mid-frame, after other
+//     consumers in the same frame.
 //   - Font scale change: when Nexus rebuilds the font atlas at a different
 //     size, ImGui::GetFontSize() differs between frames and the cache clears.
 //     This covers the Nexus UI-scaling control without any explicit hook.

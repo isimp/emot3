@@ -32,7 +32,7 @@
 //  Editor for the /me-mote catalog (see data/MeMotes.h). Structurally and
 //  visually mirrors OptionsEmotes — section + add input + toolbar + bordered
 //  320 px scrollable child + collapsible rows with the same two-column form,
-//  same auto-commit-on-focus-loss pattern, same Browse/Clear icon controls,
+//  same auto-commit-on-focus-loss pattern, same Library/Clear icon controls,
 //  same destructive-styled Delete. The two editors should read as siblings.
 //
 //  Key differences vs OptionsEmotes:
@@ -93,6 +93,7 @@ struct MmIconStatus {
     std::string iconPath;
     bool        aiFallback = false;
     bool        valid      = false;
+    bool        isDiskFile = false;  // Custom / FolderOverride -> offer Refresh
     std::string text;
 };
 std::unordered_map<std::string, MmIconStatus> s_mmIconStatus;
@@ -424,14 +425,27 @@ void RenderMeMotesTab() {
         ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled(L("opt.mm.count"), (int)ids.size());
 
+        // Rescan / Expand all / Collapse all, right-aligned together (same as the
+        // Emote tab). Rescan re-stats every row so a PNG dropped at icons/<id>.png
+        // for a letter entry (which has no per-row Refresh) is picked up without a
+        // tab reopen.
         const ImGuiStyle& st = ImGui::GetStyle();
+        float wRescan   = ImGui::CalcTextSize(L("opt.icon.rescan")).x     + st.FramePadding.x * 2.f;
         float wExpand   = ImGui::CalcTextSize(L("opt.em.expand_all")).x   + st.FramePadding.x * 2.f;
         float wCollapse = ImGui::CalcTextSize(L("opt.em.collapse_all")).x + st.FramePadding.x * 2.f;
-        float total     = wExpand + wCollapse + st.ItemSpacing.x;
+        float total     = wRescan + wExpand + wCollapse + st.ItemSpacing.x * 2.f;
         ImGui::SameLine();
         float avail = ImGui::GetContentRegionAvail().x;
         if (avail > total)
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
+        if (ImGui::SmallButton(L("opt.icon.rescan"))) {
+            s_mmIconStatus.clear();   // every row re-stats its icon status next render
+            MarkMeMotesDirty();       // every visible cell re-resolves (memo drops on the epoch)
+            LOG_INFO("Rescan icons (/me-motes): cleared the icon-status cache + bumped the epoch");
+        }
+        if (ImGui::IsItemHovered())
+            TooltipText("opt.icon.rescan_tooltip");
+        ImGui::SameLine();
         if (ImGui::SmallButton(L("opt.em.expand_all")))   s_setAllOpen =  1;
         ImGui::SameLine();
         if (ImGui::SmallButton(L("opt.em.collapse_all"))) s_setAllOpen = -1;
@@ -550,9 +564,9 @@ void RenderMeMotesTab() {
                 }
             }
 
-            // ---- Icon (Browse + Clear; no editable text field) ----
+            // ---- Icon (Library + Clear; no editable text field) ----
             // Matches OptionsEmotes' icon row: a disabled-text status
-            // describing the resolved path, then Browse + Clear on a
+            // describing the resolved path, then Library + Clear on a
             // SameLine row. No InputText — the path is set exclusively by
             // the file picker or cleared to fall back to the icon chain.
             ImGui::TableNextRow();
@@ -564,7 +578,7 @@ void RenderMeMotesTab() {
                 // Status line — describes where the icon currently resolves
                 // from. Order must match ResolveMeMoteIconSource (Icons.cpp);
                 // if they drift, the label lies about what actually loads.
-                // Ellipsized so a long path can't push Browse/Clear off the
+                // Ellipsized so a long path can't push the buttons off the
                 // row.
                 //
                 // Cached per row (s_mmIconStatus) — ResolveMeMoteIconSource
@@ -606,7 +620,7 @@ void RenderMeMotesTab() {
                         case MeMoteIconSource::FolderOverride:
                             // No IconPath, but icons/<id>.png exists on disk —
                             // the user dropped a PNG matching the stable Id
-                            // and it auto-picks up without a Browse roundtrip.
+                            // and it auto-picks up without opening the picker.
                             ics.text = std::string(L("opt.mm.icon_folder_override_prefix")) +
                                        id + ".png";
                             break;
@@ -629,6 +643,8 @@ void RenderMeMotesTab() {
                                          : std::string(L("opt.mm.icon_none"));
                             break;
                     }
+                    ics.isDiskFile = (src == MeMoteIconSource::Custom ||
+                                      src == MeMoteIconSource::FolderOverride);
                     ics.valid = true;
                 }
                 float availW = ImGui::GetContentRegionAvail().x;
@@ -648,6 +664,23 @@ void RenderMeMotesTab() {
                     OpenIconPicker(EIconTargetKind::MeMote, id, iconPathSnapshot);
                 if (ImGui::IsItemHovered())
                     TooltipText("opt.pick.button_tooltip");
+                // Refresh: only for a disk-file icon (bundled/letter can't change
+                // on disk). Forces a full re-stat of this row - clears the icon
+                // memo (cell reloads) AND this row's status cache (so the status
+                // line + this button's own isDiskFile visibility re-resolve; both
+                // are otherwise cached until IconPath/AI changes, which a bare file
+                // edit/delete does NOT do). Replaced in place -> reloads (mtime/size
+                // keyed, no churn when unchanged); DELETED -> cell resets to the
+                // fallback, status flips to the resolved fallback, button hides.
+                if (ics.isDiskFile) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton((std::string(L("opt.icon.refresh")) + "##mmiconrefresh").c_str())) {
+                        InvalidateMeMoteIcon(id);    // cell re-resolves next render
+                        ics.valid = false;           // status line + isDiskFile recompute next frame
+                    }
+                    if (ImGui::IsItemHovered())
+                        TooltipText("opt.icon.refresh_tooltip");
+                }
                 ImGui::SameLine();
                 bool hasOverride = !iconPathSnapshot.empty();
                 if (!hasOverride) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,

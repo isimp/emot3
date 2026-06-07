@@ -94,8 +94,9 @@ static std::string TitleCaseStem(const std::string& command) {
 // they're looking at is custom, a folder override, bundled official,
 // bundled AI fallback, or a letter-button fallback.
 //
-// Resolution order mirrors LoadEmoteTextures in MainPanel.cpp; if the
-// two ever drift, this label will lie and so will the actual icon.
+// Resolution order mirrors ResolveIconSource (ui/Icons.cpp), the same chain the
+// lazy loader uses; if the two ever drift, this label will lie and so will the
+// actual icon.
 static std::string DescribeIconSource(const Emote& e) {
     // 0. Icon picker: a "bundled:<bucket>:<name>" ref names a specific bundled
     //    icon (resolves regardless of UseAIIconFallback). Show the chosen name.
@@ -171,8 +172,8 @@ void RenderEmotesTab() {
 
     // Collapsible explainer for the icon resolution chain (where each
     // row's icon comes from). Closed by default; opens cheaply when
-    // curiosity strikes. Its order must match LoadEmoteTextures
-    // (MainPanel.cpp) and DescribeIconSource - if they drift, the user
+    // curiosity strikes. Its order must match ResolveIconSource
+    // (ui/Icons.cpp) and DescribeIconSource - if they drift, the user
     // sees the lie before we do.
     if (ImGui::CollapsingHeader(L("opt.em.icon_header"))) {
         ImGui::Indent();
@@ -292,6 +293,7 @@ void RenderEmotesTab() {
         std::string iconPath;
         bool        aiFallback = false;
         bool        valid      = false;
+        bool        isDiskFile = false;  // Custom / FolderOverride -> offer Refresh
         std::string text;
     };
     static std::map<std::string, IconStatusCache> s_iconStatus;
@@ -323,14 +325,28 @@ void RenderEmotesTab() {
         ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled(L("opt.em.count"), emoteCount);
 
+        // Rescan / Expand all / Collapse all, right-aligned together. Rescan
+        // re-checks addons/emot3/icons for added/changed/removed files for EVERY
+        // row at once (the per-row Refresh only shows for already-disk-backed rows,
+        // so a PNG newly dropped at icons/<id>.png for a letter/bundled entry has
+        // no per-row button - this is its path).
         const ImGuiStyle& st = ImGui::GetStyle();
+        float wRescan   = ImGui::CalcTextSize(L("opt.icon.rescan")).x     + st.FramePadding.x * 2.f;
         float wExpand   = ImGui::CalcTextSize(L("opt.em.expand_all")).x   + st.FramePadding.x * 2.f;
         float wCollapse = ImGui::CalcTextSize(L("opt.em.collapse_all")).x + st.FramePadding.x * 2.f;
-        float total     = wExpand + wCollapse + st.ItemSpacing.x;
+        float total     = wRescan + wExpand + wCollapse + st.ItemSpacing.x * 2.f;
         ImGui::SameLine();
         float avail = ImGui::GetContentRegionAvail().x;
         if (avail > total)
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
+        if (ImGui::SmallButton(L("opt.icon.rescan"))) {
+            s_iconStatus.clear();   // every row re-stats its icon status next render
+            MarkEmotesDirty();      // every visible cell re-resolves (memo drops on the epoch)
+            LOG_INFO("Rescan icons: cleared the icon-status cache + bumped the catalog epoch");
+        }
+        if (ImGui::IsItemHovered())
+            TooltipText("opt.icon.rescan_tooltip");
+        ImGui::SameLine();
         if (ImGui::SmallButton(L("opt.em.expand_all")))   s_setAllOpen =  1;
         ImGui::SameLine();
         if (ImGui::SmallButton(L("opt.em.collapse_all"))) s_setAllOpen = -1;
@@ -662,7 +678,7 @@ void RenderEmotesTab() {
                 // Read-only status describing where the icon currently resolves
                 // from. Cached per row (s_iconStatus) — DescribeIconSource stats
                 // the disk, so recompute only when IconPath or the AI-fallback
-                // toggle changed. Browse/Clear set or remove a custom path.
+                // toggle changed. Library/Refresh/Clear pick, reload, or remove it.
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::AlignTextToFramePadding();
@@ -674,12 +690,15 @@ void RenderEmotesTab() {
                     ics.iconPath   = e.IconPath;
                     ics.aiFallback = g_Settings.UseAIIconFallback;
                     ics.text       = DescribeIconSource(e);
+                    IconSource src = ResolveIconSource(e);   // disk tiers -> offer Refresh
+                    ics.isDiskFile = (src == IconSource::Custom ||
+                                      src == IconSource::FolderOverride);
                     ics.valid      = true;
                 }
                 // The label column already says "Icon", so the status drops the
                 // old "Icon: " prefix. Ellipsized to the field width; full text
-                // on hover. Browse/Clear sit on their own line below so a long
-                // path can't push them past the row's edge.
+                // on hover. The Library/Refresh/Clear buttons sit on their own
+                // line below so a long path can't push them past the row's edge.
                 {
                     float availW = ImGui::GetContentRegionAvail().x;
                     if (availW < 40.f) availW = 40.f;
@@ -698,6 +717,24 @@ void RenderEmotesTab() {
                     OpenIconPicker(EIconTargetKind::Emote, e.Id, e.IconPath);  // under g_EmotesMutex; pass path (picker must not re-lock)
                 if (ImGui::IsItemHovered())
                     TooltipText("opt.pick.button_tooltip");
+                // Refresh: only for a disk-file icon (bundled/letter can't change
+                // on disk). Forces a full re-stat of this row - clears the icon
+                // memo (so the cell reloads) AND this row's status cache (so the
+                // status line + this button's own isDiskFile visibility re-resolve;
+                // both are otherwise cached until IconPath/AI changes, which a bare
+                // file edit/delete does NOT do). A file replaced in place reloads
+                // (mtime/size keyed, no churn when unchanged); a file DELETED resets
+                // the cell to the fallback, flips the status to "missing", and hides
+                // this button.
+                if (ics.isDiskFile) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton((std::string(L("opt.icon.refresh")) + "##iconrefresh").c_str())) {
+                        InvalidateEmoteIcon(e.Id);   // cell re-resolves next render
+                        ics.valid = false;           // status line + isDiskFile recompute next frame
+                    }
+                    if (ImGui::IsItemHovered())
+                        TooltipText("opt.icon.refresh_tooltip");
+                }
                 ImGui::SameLine();
                 {
                     bool hasOverride = !e.IconPath.empty();

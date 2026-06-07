@@ -16,11 +16,9 @@ void AddonRender();
 // emot3.md "Bundled-emote notifier".
 void DetectNewBundledEmotes();
 
-// Texture priming. Both are idempotent: re-running just hits Nexus'
-// texture cache (cheap). LoadEmoteTextures re-runs whenever the
-// catalog changes (g_EmotesDirty), so AddonRender still calls it for
-// reload cases; we also call it from AddonLoad so the Quickbar has
-// textures the moment it renders, instead of waiting for the main
-// window to be opened at least once.
-void LoadEmoteTextures();
+// Prime the UI artwork (section glyphs + Nexus shortcut icons) into the
+// texture cache. Idempotent: re-running just hits Nexus' cache (cheap).
+// Called once at AddonLoad and again whenever a UI-icon override setting
+// changes. Per-emote / per-/me-mote icons are NOT primed here — they load
+// lazily on first show via EnsureEmoteTexture / EnsureMeMoteTexture (Icons.h).
 void LoadUiIconOverrides();

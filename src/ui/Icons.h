@@ -7,6 +7,7 @@
 #include "imgui/imgui.h"
 
 struct Emote;
+struct MeMote;
 struct Texture;
 struct BundledIcon;   // Resources.h — ParseBundledIconRef returns a table pointer
 
@@ -25,8 +26,8 @@ std::string ResolveIconPath(const Emote& e);
 std::string ResolveMeMoteIconPath(const struct MeMote& m);
 
 // Where a /me-mote's icon resolves from, in priority order. Single source
-// of truth for that order, shared by LoadEmoteTextures (which picks what
-// to load) and the /me-motes Options tab's status line (which labels it)
+// of truth for that order, shared by the lazy texture loader
+// (EnsureMeMoteTexture) and the /me-motes Options tab's status line (which labels it)
 // so the two can never disagree. Shorter than the Emote chain by ONE tier:
 // there's no BundledOfficial (the catalog is user-content, ArenaNet doesn't
 // ship art for it). The remaining four tiers parallel the Emote chain so
@@ -49,8 +50,8 @@ enum class MeMoteIconSource {
 MeMoteIconSource ResolveMeMoteIconSource(const struct MeMote& m);
 
 // Where an emote's icon resolves from, in priority order. Single source of
-// truth for that order, shared by the texture loader (LoadEmoteTextures, which
-// picks what to load) and the Catalog tab's status line (DescribeIconSource,
+// truth for that order, shared by the lazy texture loader (EnsureEmoteTexture,
+// which loads on demand) and the Catalog tab's status line (DescribeIconSource,
 // which labels it) so the two can never disagree. Custom and FolderOverride
 // both mean "a PNG on disk at ResolveIconPath" - the loader treats them
 // identically; only the status line distinguishes them (an explicit IconPath vs
@@ -113,18 +114,54 @@ bool IsBundledIconRef(const std::string& iconPath);
 // from `raw` — drives the loader's heal-on-load WARNING + re-save.
 std::string SanitizeIconPath(const std::string& raw, bool* outChanged = nullptr);
 
-// `bow` → `EMOT3_bow`. Lowercased + slash-stripped. Pass the emote's
-// stable Id so the cache key is language-independent.
-std::string EmoteCacheKey(const std::string& id);
+// --- content-addressed texture cache --------------------------------------
+// A resolved icon: its content cache key + how to load it. Two entries that
+// resolve to the SAME image share a key -> one Nexus texture (dedup); a disk
+// icon's key folds in mtime+size so an in-place edit reloads. key == "" means no
+// texture (the cell draws a styled letter). Tag scheme (key = "EMOT3IC_" + tag):
+// o:/ea:/ma: + name for bundled official/emote-AI/me-mote-AI; f:<lowerpath>:mtime:size
+// for a disk file.
+struct ResolvedIcon {
+    std::string key;                       // content key, or "" for none
+    enum class From { None, BundledMem, DiskFile } from = From::None;
+    const BundledIcon* table = nullptr;    // BundledMem: table + name for TryLoadBundledIconBytes
+    int                count = 0;
+    std::string        name;
+    std::string        path;               // DiskFile: absolute path for GetOrCreateFromFile
+};
 
-// Lookup-only - returns nullptr if the texture isn't loaded yet. Pass Id.
-Texture* GetEmoteTexture(const std::string& id);
+// Resolve an entry to its content key + load descriptor, switching on the shared
+// ResolveIconSource / ResolveMeMoteIconSource order. Does the cold-path disk stat
+// (cap-probe + mtime/size) for the file tiers. Also used by the picker to key its
+// thumbnails into the SAME shared pool.
+ResolvedIcon ResolveEmoteIcon(const Emote& e);
+ResolvedIcon ResolveMeMoteIcon(const MeMote& m);
 
-// /me-mote texture lookup. Cache key uses a different prefix than Emotes
-// (EMOT3_MM_<id> vs EMOT3_<id>) so an Emote and a /me-mote that happen
-// to share an Id don't collide in the Nexus texture cache.
-std::string MeMoteCacheKey(const std::string& id);
-Texture*    GetMeMoteTexture(const std::string& id);
+// Build a ResolvedIcon directly from a bundled (table + name) or disk (full
+// path) source, so the icon picker keys its thumbnails into the SAME content
+// pool as cells. MakeFileResolved cap-probes the header (key "" if over-cap or
+// unreadable). ResolveEmoteIcon / ResolveMeMoteIcon route through these.
+ResolvedIcon MakeBundledResolved(const BundledIcon* table, int count, const std::string& name);
+ResolvedIcon MakeFileResolved(const std::string& fullPath);
+
+// Load (once, dedup-aware) a resolved icon into the Nexus cache + return it
+// (null if None / over-cap / still loading). Used by the lazy picker grid; the
+// cell path goes through Ensure*Texture below.
+Texture* EnsureResolved(const ResolvedIcon& r);
+
+// Lazy on-demand load + lookup for the render path: returns the entry's texture
+// (loading it on first show), memoized by Id per catalog epoch so the hot path
+// is a map lookup + Textures.Get with no per-frame disk I/O. The off-screen cull
+// keeps these to visible cells. An edit (MarkEmotesDirty / MarkMeMotesDirty)
+// clears the memo so changed/added entries re-resolve. No locking: pass the
+// entity by reference; safe from a cell/row loop holding the catalog mutex.
+Texture* EnsureEmoteTexture(const Emote& e);
+Texture* EnsureMeMoteTexture(const MeMote& m);
+
+// Drop one entry's memo so the next render re-resolves it (the Refresh button):
+// re-stats the file -> a changed mtime/size reloads, an unchanged file is a no-op.
+void InvalidateEmoteIcon(const std::string& id);
+void InvalidateMeMoteIcon(const std::string& id);
 
 // --- user-icon dimension cap (icon_cache.json: max_icon_dim) --------------
 // Header-only image probe for USER-supplied icon files (bundled icons are
@@ -142,6 +179,23 @@ enum class IconProbe {
 IconProbe ProbeIconFile(const std::string& path, int& outW, int& outH);
 // Convenience: true iff ProbeIconFile(path) == Ok (within the cap).
 bool IconFileWithinCap(const std::string& path);
+
+// --- dev: deduped icon-pool accounting (memory monitor) -------------------
+// The full content pool we've loaded, split by current use. Each distinct
+// texture counts ONCE (shared icons aren't double-counted), and orphaned/churn
+// slots are visible (the old per-catalog count couldn't see them).
+struct IconPoolUsage {
+    size_t totalCount = 0, totalBytes = 0;   // every distinct loaded content texture
+    size_t inUseCount = 0, inUseBytes = 0;   // drawn this / last frame
+    size_t idleCount  = 0, idleBytes  = 0;   // loaded but off-screen or orphaned
+};
+#ifdef EMOT3_DEVTOOLS
+void IconPoolStats(IconPoolUsage& out);
+// One-shot pool reconcile: probe each catalog entry's content key and record the
+// ones already resident in Nexus (e.g. textures that survived an addon hot-reload
+// while their cells are off-screen). Probe-only - never loads. Call once per load.
+void ReconcileResidentPool();
+#endif
 
 // Section-header glyphs. Each one prefers the corresponding PNG under
 // addons/emot3/icons/ui/ when present; otherwise falls back to the

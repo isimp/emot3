@@ -251,9 +251,9 @@ static void RenderSendVariants(const Emote& e) {
 // can dispatch without knowing the kind. Significantly shorter than the Emote
 // path because /me-motes carry no IsCore / IsTargetable / lock state — no
 // targetable dot, no lock overlay, no unlock toggle in the right-click menu.
-// Icons are the user's explicit PNG (GetMeMoteTexture) or the styled letter
-// fallback — no <id>.png folder convention, no bundled art, no AI fallback
-// (the chain is simpler than the Emote one). Drag-drop is wired: a drag source
+// The icon comes from EnsureMeMoteTexture (the shared content cache: a custom
+// PNG, an icons/<id>.png drop-in, or bundled AI - see ResolveMeMoteIconSource),
+// else the styled letter fallback. Drag-drop is wired: a drag source
 // in the Library + favorites sections (never the Quickbar) emits a FAV_DRAG
 // payload tagged EFavoriteRefType::MeMote, which ApplyEmoteDrop routes into the
 // /me-mote namespace. Click + right-click variants + Quickbar click-rect
@@ -318,7 +318,7 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
         // Custom icon if loaded, else styled letter button. /me-motes don't
         // have bundled art or AI-fallback layers — it's the user's PNG (set
         // via Options > /me-motes > Browse) or nothing.
-        Texture* tex = GetMeMoteTexture(m.Id);
+        Texture* tex = EnsureMeMoteTexture(m);  // lazy: loads on first show
         if (tex && tex->Resource) {
             clicked = ImGui::ImageButton((ImTextureID)tex->Resource,
                 ImVec2(iconSz, iconSz), ImVec2(0, 0), ImVec2(1, 1), pad);
@@ -601,7 +601,7 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
         float btnX     = cellX + (cellW - btnTotal) * 0.5f;
         ImGui::SetCursorPos(ImVec2(btnX, cellY));
 
-        Texture* tex = GetEmoteTexture(e.Id);
+        Texture* tex = EnsureEmoteTexture(e);  // lazy: loads on first show
         if (tex && tex->Resource) {
             clicked = ImGui::ImageButton((ImTextureID)tex->Resource,
                 ImVec2(iconSz, iconSz), ImVec2(0, 0), ImVec2(1, 1), pad);
