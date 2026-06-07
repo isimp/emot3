@@ -6,7 +6,7 @@
 #include "I18n.h"
 #include "Settings.h"
 #include "EmoteData.h"      // SaveEmotesJson
-#include "IconBrowse.h"     // DrainIconBrowse
+#include "IconPicker.h"     // RenderIconPicker (in-app icon grid)
 #include "UnlockScan.h"     // DrainUnlockSync (GW2-API unlock sync)
 #include "UpdateCheck.h"    // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Profiling.h"      // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
@@ -33,15 +33,14 @@ void ApplyQbCloseOnEsc() {
 
 void AddonOptions() {
     PROFILE_SCOPE("opt.frame");  // dev perf overlay
-    // Pick up any completed file-browse result from the worker thread
-    // before drawing this frame. DrainIconBrowse persists + marks dirty
-    // internally based on the target's catalog (Emote vs /me-mote), so the
-    // caller doesn't need to know which one was touched.
-    DrainIconBrowse();
     // Apply any completed GW2-API unlock sync + drive H&S retries (render-side).
     DrainUnlockSync();
     // Plus-only: tick the "newer release available" check (no-op stub otherwise).
     DrainUpdateCheck();
+    // Render the in-app icon picker modal (no-op until opened by a "Library..."
+    // button in an editor). Done here at the AddonOptions root so its open +
+    // render ID context is stable regardless of which tab opened it.
+    RenderIconPicker();
 
     // Developer section - the dev-tool overlay toggles ("[debug] ..."), grouped
     // under one collapsed header (a "dropdown") at the top of the addon options,

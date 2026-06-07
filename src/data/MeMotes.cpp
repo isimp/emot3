@@ -1,5 +1,6 @@
 #include "MeMotes.h"
 #include "Globals.h"     // g_MeMotesVersion (DevStateRegistrar reads it)
+#include "Icons.h"       // SanitizeIconPath (IconPath ingress heal)
 #include "JsonUtil.h"
 #include "Logging.h"
 #include "Resources.h"   // kMeMoteData bundled seed table
@@ -373,7 +374,21 @@ bool LoadMeMotesJson(const std::string& path) {
         MeMote m;
         m.Id          = jsonutil::GetString(item, "id",       std::string());
         m.Name        = jsonutil::GetString(item, "name",     std::string());
-        m.IconPath    = jsonutil::GetString(item, "icon",     std::string());
+        // Sanitize IconPath at ingress: locks the value to addons/emot3/icons
+        // (subfolders allowed; ui/ subfolder excluded) and passes bundled refs
+        // through untouched. A hand-edit pointing outside the icons folder
+        // heals to empty + logs the original so the user sees what we dropped.
+        {
+            std::string rawIcon = jsonutil::GetString(item, "icon", std::string());
+            bool iconChanged = false;
+            m.IconPath = SanitizeIconPath(rawIcon, &iconChanged);
+            if (iconChanged) {
+                LOG_WARNING("me_motes[%s].icon: rejected '%s' (must live under "
+                            "addons/emot3/icons; bundled: refs OK)",
+                            m.Id.c_str(), rawIcon.c_str());
+                changed = true;
+            }
+        }
         m.TextDefault = jsonutil::GetString(item, "text",     std::string());
         m.TextYou     = jsonutil::GetString(item, "text_you", std::string());
         m.TextAll     = jsonutil::GetString(item, "text_all", std::string());

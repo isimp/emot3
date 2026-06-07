@@ -11,6 +11,7 @@
 #include "Icons.h"          // ResolveIconPath for icon-source status
 #include "Layout.h"         // ToggleButton, PushHighContrastButtonStyles
 #include "IconBrowse.h"
+#include "IconPicker.h"     // OpenIconPicker ("Library..." button)
 #include "NexusShortcut.h"  // ApplyNexusShortcut on settings changes
 #include "Resources.h"      // kOfficialIcons / kAIIcons for icon-source status
 #include "Profiling.h"      // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
@@ -96,6 +97,15 @@ static std::string TitleCaseStem(const std::string& command) {
 // Resolution order mirrors LoadEmoteTextures in MainPanel.cpp; if the
 // two ever drift, this label will lie and so will the actual icon.
 static std::string DescribeIconSource(const Emote& e) {
+    // 0. Icon picker: a "bundled:<bucket>:<name>" ref names a specific bundled
+    //    icon (resolves regardless of UseAIIconFallback). Show the chosen name.
+    //    Checked before the path branch below, which would otherwise mislabel
+    //    the ref as a "Custom" file path.
+    {
+        const BundledIcon* tbl = nullptr; int cnt = 0; std::string nm;
+        if (ParseBundledIconRef(e.IconPath, tbl, cnt, nm))
+            return "Built-in: " + nm;
+    }
     // 1. Explicit custom path always wins - surface what the user set
     //    even if it doesn't currently exist on disk (so they can spot a
     //    typo). Distinguish the two storage forms so the user can tell
@@ -678,21 +688,16 @@ void RenderEmotesTab() {
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("%s", ics.text.c_str());
                 }
-                bool busy = g_IconBrowse.active.load() || g_IconBrowse.ready.load();
-                if (busy) {
-                    ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
-                                         ImGui::GetStyle().Alpha * 0.5f);
-                }
-                if (ImGui::SmallButton((std::string(L("opt.em.browse")) + "##icon").c_str()) && !busy) {
-                    StartIconBrowse(e.Id, e.IconPath);
-                }
-                if (busy) {
-                    ImGui::PopStyleVar();
-                    ImGui::PopItemFlag();
-                }
-                if (ImGui::IsItemHovered() && !busy)
-                    TooltipText("opt.em.browse_tooltip");
+                // In-app icon picker (visual grid). The OS "From file..." dialog
+                // was removed once the picker landed: it pulls from every bundled
+                // bucket AND the user's icons/ folder, so a drop-in PNG is the
+                // disk-side self-service path and the Library button covers the
+                // in-app side. Hand-edit `emotes.json` "icon" for an arbitrary
+                // absolute path.
+                if (ImGui::SmallButton((std::string(L("opt.pick.button")) + "##iconlib").c_str()))
+                    OpenIconPicker(EIconTargetKind::Emote, e.Id, e.IconPath);  // under g_EmotesMutex; pass path (picker must not re-lock)
+                if (ImGui::IsItemHovered())
+                    TooltipText("opt.pick.button_tooltip");
                 ImGui::SameLine();
                 {
                     bool hasOverride = !e.IconPath.empty();

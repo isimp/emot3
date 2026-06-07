@@ -9,6 +9,7 @@
 #include "UpdateCheckDebug.h"   // updchkdbg::Enabled / RenderUpdateCheckDebug
 #include "MemoryMonitor.h"      // memmon::Enabled / RenderMemoryMonitor
 #include "AirborneTuner.h"      // airtuner::Enabled / RenderAirborneTuner
+#include "IconCacheTuner.h"     // iconcachetuner::Enabled / RenderIconCacheTuner
 
 #include "imgui/imgui.h"
 
@@ -48,6 +49,8 @@ void RegisterBuiltinDevTools() {
                       &memmon::Enabled(),    RenderMemoryMonitor });
     RegisterDevTool({ "airborne", "Airborne tuner",
                       &airtuner::Enabled(),  RenderAirborneTuner });
+    RegisterDevTool({ "iconcache", "Icon cache tuner",
+                      &iconcachetuner::Enabled(), RenderIconCacheTuner });
 }
 
 void RenderDevToolOverlays() {

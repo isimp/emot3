@@ -6,9 +6,13 @@
 #include "Resources.h"    // LookupBundledResource + kOfficialIcons / kAIIcons / kMeMoteAIIcons
 
 #include "imgui/imgui.h"
+#include "IconCacheConfig.h"   // g_IconCache.maxIconDim (user-icon dimension cap)
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <fstream>
+#include <vector>
 
 std::string ResolveIconPath(const Emote& e) {
     std::string p = e.IconPath;
@@ -30,7 +34,122 @@ std::string ResolveIconPath(const Emote& e) {
     return g_IconsDir + "\\" + p;
 }
 
+// --- "bundled:" scheme helpers (see Icons.h) -----------------------------
+std::string MakeBundledIconRef(BundledBucket bucket, const std::string& name) {
+    const char* b = bucket == BundledBucket::Official ? "official"
+                  : bucket == BundledBucket::AI       ? "ai"
+                                                      : "memote_ai";
+    return std::string("bundled:") + b + ":" + name;
+}
+
+bool ParseBundledIconRef(const std::string& iconPath,
+                         const BundledIcon*& outTable, int& outCount,
+                         std::string& outName) {
+    static const std::string kPfx = "bundled:";
+    if (iconPath.size() <= kPfx.size() ||
+        iconPath.compare(0, kPfx.size(), kPfx) != 0)
+        return false;
+    const size_t bstart = kPfx.size();
+    const size_t colon  = iconPath.find(':', bstart);
+    if (colon == std::string::npos) return false;
+    const std::string bucket = iconPath.substr(bstart, colon - bstart);
+    std::string name = iconPath.substr(colon + 1);
+    if (name.empty()) return false;
+
+    const BundledIcon* tbl = nullptr; int cnt = 0;
+    if      (bucket == "official")  { tbl = kOfficialIcons; cnt = kOfficialIconsCount; }
+    else if (bucket == "ai")        { tbl = kAIIcons;       cnt = kAIIconsCount; }
+    else if (bucket == "memote_ai") { tbl = kMeMoteAIIcons; cnt = kMeMoteAIIconsCount; }
+    else return false;
+
+    // Only a ref whose name actually exists is "resolvable"; a stale/typo'd ref
+    // returns false so the caller falls back to the normal resolution chain.
+    if (LookupBundledResource(tbl, cnt, name) == 0) return false;
+    outTable = tbl; outCount = cnt; outName = std::move(name);
+    return true;
+}
+
+bool IsBundledIconRef(const std::string& iconPath) {
+    const BundledIcon* t = nullptr; int c = 0; std::string n;
+    return ParseBundledIconRef(iconPath, t, c, n);
+}
+
+std::string SanitizeIconPath(const std::string& raw, bool* outChanged) {
+    auto mark = [&](const std::string& v) {
+        if (outChanged) *outChanged = (v != raw);
+        return v;
+    };
+
+    // 1. Empty -> empty.
+    if (raw.empty()) return mark(std::string());
+
+    // 2. Bundled refs pass through untouched. Their validity is checked
+    //    later by ParseBundledIconRef (stale bucket/name falls through to
+    //    the regular resolution chain). The prefix check at byte 0 makes
+    //    them distinguishable from disk paths (drive-letter colons live
+    //    at byte 1).
+    static const std::string kBundledPfx = "bundled:";
+    if (raw.size() >= kBundledPfx.size() &&
+        raw.compare(0, kBundledPfx.size(), kBundledPfx) == 0)
+        return mark(raw);
+
+    // 3. Trim ASCII whitespace, normalize '/' -> '\\', strip leading
+    //    separators. After this, the value is either an absolute path
+    //    (rejected below) or a relative path under g_IconsDir.
+    std::string s = raw;
+    auto isws = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
+    while (!s.empty() && isws(s.front())) s.erase(s.begin());
+    while (!s.empty() && isws(s.back()))  s.pop_back();
+    if (s.empty()) return mark(std::string());
+    for (auto& ch : s) if (ch == '/') ch = '\\';
+
+    // 4. Absolute paths -> rejected. Drive-letter "X:\..." and UNC
+    //    "\\server\share\..." both. After this rule + the leading-strip
+    //    below, anything that survives is a path RELATIVE to g_IconsDir.
+    bool isAbs = (s.size() >= 3 && s[1] == ':' &&
+                  (s[2] == '\\' || s[2] == '/')) ||
+                 (s.size() >= 2 && s[0] == '\\' && s[1] == '\\');
+    if (isAbs) return mark(std::string());
+
+    while (!s.empty() && s.front() == '\\') s.erase(s.begin());
+    if (s.empty()) return mark(std::string());
+
+    // 5. Reject '..' segments anywhere in the path (no folder-escape).
+    //    Conservative — treats both literal ".." between separators and a
+    //    bare ".." filename the same way.
+    {
+        size_t pos = 0;
+        while (pos < s.size()) {
+            size_t sep = s.find('\\', pos);
+            std::string seg = (sep == std::string::npos)
+                                ? s.substr(pos)
+                                : s.substr(pos, sep - pos);
+            if (seg == "..") return mark(std::string());
+            if (sep == std::string::npos) break;
+            pos = sep + 1;
+        }
+    }
+
+    // 6. Reject the top-level "ui\" subfolder — that's where UI overrides
+    //    live (star/paperclip/lock/target_dot/me_mote_dot), not emote icons.
+    //    Case-insensitive on the literal "ui" prefix. A deeper "ui" folder
+    //    (e.g. "themes\\ui\\cool.png") is allowed — only the top-level
+    //    boundary is policed.
+    if (s.size() >= 3) {
+        char a = (char)std::tolower((unsigned char)s[0]);
+        char b = (char)std::tolower((unsigned char)s[1]);
+        if (a == 'u' && b == 'i' && s[2] == '\\')
+            return mark(std::string());
+    }
+
+    return mark(s);
+}
+
 IconSource ResolveIconSource(const Emote& e) {
+    // 0. Icon picker: an explicit "bundled:<bucket>:<name>" ref wins over the
+    //    whole chain and ignores UseAIIconFallback (an explicit pick, not the
+    //    auto fallback). Loaded by LoadEmoteTextures' BundledChosen case.
+    if (IsBundledIconRef(e.IconPath)) return IconSource::BundledChosen;
     // 1/2. A PNG on disk at the resolved path - either an explicit IconPath or
     //      the icons/<id>.png folder drop-in (ResolveIconPath returns the latter
     //      when IconPath is empty). The loader treats both the same; we only
@@ -89,6 +208,10 @@ std::string ResolveMeMoteIconPath(const MeMote& m) {
 }
 
 MeMoteIconSource ResolveMeMoteIconSource(const MeMote& m) {
+    // 0. Icon picker: a "bundled:<bucket>:<name>" ref wins over the whole chain
+    //    and ignores UseAIIconFallback (explicit pick). Checked before
+    //    ResolveMeMoteIconPath so the ref is never mangled into a disk path.
+    if (IsBundledIconRef(m.IconPath)) return MeMoteIconSource::BundledChosen;
     // 1/2. A PNG on disk at the resolved path — either an explicit IconPath
     //      (Custom) or the icons/<id>.png drop-in (FolderOverride). The
     //      loader treats both the same; we only split them so the status
@@ -123,6 +246,72 @@ std::string MeMoteCacheKey(const std::string& id) {
 Texture* GetMeMoteTexture(const std::string& id) {
     if (!APIDefs) return nullptr;
     return APIDefs->Textures.Get(MeMoteCacheKey(id).c_str());
+}
+
+// --- user-icon dimension cap (header-only, no decode) --------------------
+IconProbe ProbeIconFile(const std::string& path, int& outW, int& outH) {
+    outW = 0; outH = 0;
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) return IconProbe::Unreadable;
+    // A JPEG's SOF can sit behind a large EXIF/APPn block, so read a bounded
+    // header window (PNG dims live in the first 24 bytes; this covers the vast
+    // majority of JPEGs). If SOF isn't within the window we report Unreadable.
+    constexpr size_t kMaxHeader = 64 * 1024;
+    std::vector<unsigned char> b(kMaxHeader);
+    f.read(reinterpret_cast<char*>(b.data()), (std::streamsize)kMaxHeader);
+    const size_t n = (size_t)f.gcount();
+    b.resize(n);
+
+    auto be16 = [&](size_t i) -> int { return (b[i] << 8) | b[i + 1]; };
+    auto be32 = [&](size_t i) -> uint32_t {
+        return ((uint32_t)b[i] << 24) | ((uint32_t)b[i + 1] << 16) |
+               ((uint32_t)b[i + 2] << 8) | (uint32_t)b[i + 3];
+    };
+    auto classify = [&](long long w, long long h) -> IconProbe {
+        if (w <= 0 || h <= 0) return IconProbe::Unreadable;   // bogus dims
+        outW = (int)w; outH = (int)h;
+        const long long cap = g_IconCache.maxIconDim;
+        return (w > cap || h > cap) ? IconProbe::TooLarge : IconProbe::Ok;
+    };
+
+    // PNG: 8-byte signature, then the IHDR chunk (length+"IHDR") with width@16,
+    // height@20 (big-endian).
+    static const unsigned char kPng[8] = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+    if (n >= 24 && std::equal(kPng, kPng + 8, b.begin()) &&
+        b[12] == 'I' && b[13] == 'H' && b[14] == 'D' && b[15] == 'R') {
+        return classify((long long)be32(16), (long long)be32(20));
+    }
+
+    // JPEG: SOI (FFD8), then walk segments to the first SOF (FFC0..FFCF except
+    // C4=DHT, C8=JPG, CC=DAC). SOF body: [len:2][prec:1][height:2][width:2].
+    if (n >= 4 && b[0] == 0xFF && b[1] == 0xD8) {
+        size_t i = 2;
+        while (i + 3 < n) {
+            if (b[i] != 0xFF)   { ++i; continue; }              // resync to next marker
+            unsigned char marker = b[i + 1];
+            if (marker == 0xFF) { ++i; continue; }              // run of 0xFF padding
+            // Standalone markers carry no length: RSTn (D0-D7), SOI (D8),
+            // EOI (D9), TEM (01).
+            if ((marker >= 0xD0 && marker <= 0xD9) || marker == 0x01) { i += 2; continue; }
+            int seg = be16(i + 2);                              // length incl. these 2 bytes
+            if (seg < 2) break;                                  // malformed
+            const bool isSOF = (marker >= 0xC0 && marker <= 0xCF) &&
+                               marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
+            if (isSOF) {
+                if (i + 8 >= n) break;                           // SOF body not fully buffered
+                return classify(be16(i + 7), be16(i + 5));       // width, height
+            }
+            i += 2 + (size_t)seg;                                // skip this segment
+        }
+        return IconProbe::Unreadable;                            // no SOF in the window
+    }
+
+    return IconProbe::Unreadable;                                // unrecognized format
+}
+
+bool IconFileWithinCap(const std::string& path) {
+    int w = 0, h = 0;
+    return ProbeIconFile(path, w, h) == IconProbe::Ok;
 }
 
 // All UI icons (star / paperclip / lock / target_dot) are now sourced

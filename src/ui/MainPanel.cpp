@@ -217,6 +217,20 @@ void LoadEmoteTextures() {
             // RT_RCDATA lookup, because Nexus' GetOrCreateFromResource looks them
             // up by string type "RCDATA" and silently misses our entries.
             switch (ResolveIconSource(e)) {
+                case IconSource::BundledChosen: {
+                    // Icon picker: IconPath is "bundled:<bucket>:<name>". Load the
+                    // referenced bundled PNG into THIS emote's cache slot (the
+                    // bytes come from whichever bundled table the ref names).
+                    const BundledIcon* tbl = nullptr; int cnt = 0; std::string nm;
+                    const void* data = nullptr; size_t size = 0;
+                    if (ParseBundledIconRef(e.IconPath, tbl, cnt, nm) &&
+                        TryLoadBundledIconBytes(tbl, cnt, nm, data, size)) {
+                        APIDefs->Textures.GetOrCreateFromMemory(
+                            key.c_str(), const_cast<void*>(data), size);
+                        ++loaded;
+                    } else ++missing;  // unresolvable ref -> styled letter
+                    break;
+                }
                 case IconSource::Custom:
                 case IconSource::FolderOverride:
                     // A PNG on disk (explicit IconPath or icons/<id>.png drop-in).
@@ -279,6 +293,19 @@ void LoadEmoteTextures() {
         for (const auto& m : g_MeMotes) {
             std::string key = MeMoteCacheKey(m.Id);
             switch (ResolveMeMoteIconSource(m)) {
+                case MeMoteIconSource::BundledChosen: {
+                    // Icon picker: a "bundled:<bucket>:<name>" ref (any of the
+                    // three bundled tables) loaded into this /me-mote's slot.
+                    const BundledIcon* tbl = nullptr; int cnt = 0; std::string nm;
+                    const void* data = nullptr; size_t size = 0;
+                    if (ParseBundledIconRef(m.IconPath, tbl, cnt, nm) &&
+                        TryLoadBundledIconBytes(tbl, cnt, nm, data, size)) {
+                        APIDefs->Textures.GetOrCreateFromMemory(
+                            key.c_str(), const_cast<void*>(data), size);
+                        ++meLoaded;
+                    } else ++meMissing;  // unresolvable ref -> styled letter
+                    break;
+                }
                 case MeMoteIconSource::Custom:
                 case MeMoteIconSource::FolderOverride:
                     // A PNG on disk (explicit IconPath or icons/<id>.png drop-in).

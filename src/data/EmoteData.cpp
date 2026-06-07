@@ -1,4 +1,5 @@
 #include "EmoteData.h"
+#include "Icons.h"       // SanitizeIconPath (IconPath ingress heal)
 #include "JsonUtil.h"
 #include "Logging.h"
 #include "Resources.h"   // kEmoteData bundled localization table
@@ -369,7 +370,21 @@ bool LoadEmotesJson(const std::string& path) {
         e.Id           = jsonutil::GetString(item, "id",         std::string());
         e.Command      = jsonutil::GetString(item, "command",    std::string());
         e.Name         = jsonutil::GetString(item, "name",       std::string());
-        e.IconPath     = jsonutil::GetString(item, "icon",       std::string());
+        // Sanitize IconPath at ingress: locks the value to addons/emot3/icons
+        // (subfolders allowed; ui/ subfolder excluded) and passes bundled refs
+        // through untouched. A hand-edit pointing outside the icons folder
+        // heals to empty + logs the original so the user sees what we dropped.
+        {
+            std::string rawIcon = jsonutil::GetString(item, "icon", std::string());
+            bool iconChanged = false;
+            e.IconPath = SanitizeIconPath(rawIcon, &iconChanged);
+            if (iconChanged) {
+                LOG_WARNING("emotes[%s].icon: rejected '%s' (must live under "
+                            "addons/emot3/icons; bundled: refs OK)",
+                            e.Id.c_str(), rawIcon.c_str());
+                changed = true;
+            }
+        }
         e.IsTargetable = jsonutil::GetBool  (item, "targetable", false);
         e.IsCore       = jsonutil::GetBool  (item, "is_core",    false);
         e.IsMadKing    = jsonutil::GetBool  (item, "mad_king",   false);

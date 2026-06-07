@@ -22,6 +22,7 @@
 #include "I18n.h"
 #include "Settings.h"
 #include "QuickbarPresets.h"
+#include "IconCacheConfig.h"  // optional icon-cache tuning (icon_cache.json)
 #include "EmoteData.h"
 #include "MeMotes.h"     // /me-motes domain (load/save lifecycle, see data/MeMotes.h)
 #include "Favorites.h"
@@ -251,6 +252,12 @@ void AddonLoad(AddonAPI* aApi) {
                 }
             }
         }
+
+        // Optional icon-cache tuning (icon_cache.json). Absent -> coded defaults.
+        // The file is created only when the user changes a value via the dev
+        // tuner (SaveIconCacheConfig), so it isn't seeded here.
+        g_IconCacheConfigPath = std::string(addonDir) + "\\icon_cache.json";
+        LoadIconCacheConfig(g_IconCacheConfigPath);
 
         LOG_INFO("Addon directory: %s", addonDir);
         // LoadSettings returns true when its sanitize pass corrected an
