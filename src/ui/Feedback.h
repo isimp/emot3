@@ -14,11 +14,16 @@
 //  A short, self-fading reason line that pops up AT THE CLICK - anchored to
 //  the cursor position captured when the refusal fired - so your eye is
 //  already there (a bottom-docked line was easy to miss when you clicked an
-//  emote at the top of a big grid). It's painted on the FOREGROUND draw list
-//  (GetForegroundDrawList = rendered last) so it sits on top of the emote
-//  grid; the grid lives in a child window that composites above the parent,
-//  so a plain window-draw-list overlay would land BEHIND the cells. It
-//  reserves no layout (pure draw-list), so nothing perturbs the Quickbar
+//  emote at the top of a big grid). It's painted into the origin window's
+//  GRID-CHILD draw list (passed to DrawFeedbackOverlay): the grid lives in a
+//  child window that composites above the parent, so appending to that child's
+//  list puts the line on top of the cells while keeping it in the bar's window
+//  z-order - so windows/popups stacked above the bar correctly cover it. (It
+//  used the FOREGROUND list before, which renders last GLOBALLY and so shone
+//  through every window above the bar.) A viewport-sized clip rect is pushed so
+//  the pill can still overhang a tiny (2-icon) bar - the child's own clip would
+//  otherwise cut it off. It reserves no layout (pure draw-list), so nothing
+//  perturbs the Quickbar
 //  fit-to-grid snap math. Single slot: the newest message wins immediately;
 //  an identical repeat (mashing a blocked cell) just refreshes the fade timer
 //  - it never stacks. Position is clamped to the viewport so it's never
@@ -55,6 +60,8 @@
 
 #include <string>
 
+struct ImDrawList;  // fwd-decl: the overlay draws into a caller-supplied list
+
 // Which of our windows is currently rendering. Set by SetActiveFeedbackSurface
 // so ShowFeedback can tag a message's origin, and passed to DrawFeedbackOverlay
 // so each window only draws messages that originated in it.
@@ -67,7 +74,10 @@ void SetActiveFeedbackSurface(FeedbackSurface surface);
 // resolved, localized text (e.g. L("cells.blocked_mounted")).
 void ShowFeedback(const std::string& message);
 
-// Draw the fading line inside the CURRENT ImGui window (call after EndChild,
-// before End). Draws only when a live message's origin == thisSurface. No-op
-// otherwise. highContrast strengthens the backing slightly for HUD legibility.
-void DrawFeedbackOverlay(FeedbackSurface thisSurface, bool highContrast);
+// Draw the fading line over the CURRENT window's grid. Call after EndChild,
+// before End, passing the grid CHILD's draw list (childWin->DrawList) so the
+// line lands on top of the cells yet stays in the window's z-order. Draws only
+// when a live message's origin == thisSurface. No-op otherwise. highContrast
+// strengthens the backing slightly for HUD legibility. `dl` null (no child on
+// some path) falls back to the foreground list.
+void DrawFeedbackOverlay(FeedbackSurface thisSurface, bool highContrast, ImDrawList* dl);

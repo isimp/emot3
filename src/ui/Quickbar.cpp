@@ -1468,10 +1468,12 @@ void QuickbarRender() {
     }
 #endif
 
-    // Refusal line (replaces Nexus toasts): pops up at the click on the
-    // foreground draw list (on top of the grid), reserves no layout. Gated to
-    // Quickbar-origin messages; high-contrast follows the Quickbar setting.
-    DrawFeedbackOverlay(FeedbackSurface::Quickbar, g_Settings.QuickbarHighContrast);
+    // Refusal line (replaces Nexus toasts): pops up at the click, drawn into the
+    // grid child's draw list (on top of the cells, but in the bar's window
+    // z-order), reserves no layout. Gated to Quickbar-origin messages;
+    // high-contrast follows the Quickbar setting.
+    DrawFeedbackOverlay(FeedbackSurface::Quickbar, g_Settings.QuickbarHighContrast,
+                        childWin ? childWin->DrawList : nullptr);
 
     ImGui::End();
     if (flattenChrome) ImGui::PopStyleColor(7);

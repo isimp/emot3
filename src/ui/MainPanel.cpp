@@ -562,6 +562,12 @@ void AddonRender() {
     ImGui::SetNextWindowSize(ImVec2(560, 440), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("emot3 Library##wnd", &g_Settings.ShowWindow)) { ImGui::End(); return; }
 
+    // Captured after the scrollable grid child begins (below): the refusal-line
+    // overlay draws into THIS list so it lands on top of the cells while staying
+    // in the panel's window z-order. nullptr if no child this frame (early
+    // dialogs) -> DrawFeedbackOverlay falls back to the foreground list.
+    ImDrawList* mpContentDrawList = nullptr;
+
     // Empty catalog (fresh install or after "Clear catalog") -> first-run
     // dialog instead of the normal toolbar/sections. Checked under the
     // lock; the dialog's seed button repopulates g_Emotes.
@@ -1031,6 +1037,7 @@ void AddonRender() {
         // ---- Scrollable content begins here ----
         { PROFILE_SCOPE("mp.draw");  // dev perf overlay (cell-draw, separate from mp.build)
         ImGui::BeginChild("##content");
+        mpContentDrawList = ImGui::GetCurrentWindow()->DrawList;  // for the refusal overlay (see below)
 
         // The empty-state lambdas below pull searchActive from the
         // outer scope (defined alongside `search`) so the threshold
@@ -1175,10 +1182,11 @@ void AddonRender() {
         }  // end mp.draw scope
     }
 
-    // Refusal line (replaces Nexus toasts): pops up at the click on the
-    // foreground draw list. Gated to main-panel-origin messages. The panel
-    // always has a background, so no high-contrast strengthening needed.
-    DrawFeedbackOverlay(FeedbackSurface::MainPanel, /*highContrast=*/false);
+    // Refusal line (replaces Nexus toasts): pops up at the click, drawn into the
+    // content child's draw list (on top of the cells, but in the panel's window
+    // z-order). Gated to main-panel-origin messages. The panel always has a
+    // background, so no high-contrast strengthening needed.
+    DrawFeedbackOverlay(FeedbackSurface::MainPanel, /*highContrast=*/false, mpContentDrawList);
 
     // Bottom-anchored "drop to remove from favorites" zone — only while a favorite
     // is being dragged. Drawn on the foreground list with a custom drop rect, so

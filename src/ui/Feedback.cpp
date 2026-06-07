@@ -41,7 +41,7 @@ void ShowFeedback(const std::string& message) {
     s_state.anchor = ImGui::GetMousePos();
 }
 
-void DrawFeedbackOverlay(FeedbackSurface thisSurface, bool highContrast) {
+void DrawFeedbackOverlay(FeedbackSurface thisSurface, bool highContrast, ImDrawList* dl) {
     PROFILE_SCOPE("feedback");  // dev perf overlay - summed across both surfaces
     if (s_state.start < 0.0)            return;   // nothing showing
     if (s_state.origin != thisSurface) return;   // belongs to the other window
@@ -55,10 +55,12 @@ void DrawFeedbackOverlay(FeedbackSurface thisSurface, bool highContrast) {
 
     const ImGuiStyle& style = ImGui::GetStyle();
     const ImGuiIO&    io    = ImGui::GetIO();
-    // Foreground list = drawn last, so it sits ON TOP of the emote grid (which
-    // lives in a child window that composites above the parent's draw list - a
-    // window-draw-list overlay would land behind it).
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    // Draw into the origin window's grid-child draw list (passed in), appended
+    // after the cells so it sits ON TOP of them while staying in that window's
+    // z-order - so windows/popups above the bar cover it correctly. (The old
+    // foreground list rendered last GLOBALLY and shone through everything.)
+    // Null only on an unexpected path with no child - fall back to foreground.
+    if (!dl) dl = ImGui::GetForegroundDrawList();
 
     // Roomier than a button and a touch larger than body text, so it reads as a
     // deliberate message rather than a faint hint. Metrics still theme-derived.
@@ -97,6 +99,11 @@ void DrawFeedbackOverlay(FeedbackSurface thisSurface, bool highContrast) {
     bd.w *= fade;
     tx.w *= fade;
 
+    // The child's clip rect is its content rect; the pill is anchored to the
+    // click and clamped only to the viewport, so on a small bar it overhangs the
+    // child. Pin the clip to the full viewport so it isn't cut off, then restore.
+    dl->PushClipRect(ImVec2(0.f, 0.f), io.DisplaySize, false);
+
     const float rounding = style.FrameRounding;
     dl->AddRectFilled(pMin, pMax, ImGui::GetColorU32(bg), rounding);
     // ImDrawCornerFlags_All (1.80) so the border rounds to match the fill - the
@@ -108,4 +115,6 @@ void DrawFeedbackOverlay(FeedbackSurface thisSurface, bool highContrast) {
                       pMin.y + (pillH - textSz.y) * 0.5f);
     dl->AddText(ImGui::GetFont(), fontSz, tpos, ImGui::GetColorU32(tx),
                 text, nullptr, wrapW);
+
+    dl->PopClipRect();
 }
