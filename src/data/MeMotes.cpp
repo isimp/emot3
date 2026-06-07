@@ -142,6 +142,12 @@ void LoadBundledMeMotesTable() {
         LOG_WARNING("me_motes_i18n has no \"me_motes\" array");
         return;
     }
+    // Bundle is author-controlled (lives in resources/me_mote_data/), so
+    // dup detection here is belt-and-braces — but a future edit slipping
+    // a duplicate id past review would silently double-seed otherwise.
+    // Mirrors the user-loader's droppedDup pattern; first-wins keeps the
+    // accepted entry deterministic.
+    std::unordered_set<std::string> seenIds;
     for (const auto& item : j["me_motes"]) {
         if (!item.is_object()) continue;
         SeedEntry e;
@@ -151,6 +157,11 @@ void LoadBundledMeMotesTable() {
         // catalog's id format.
         e.id = NormalizeMeMoteId(e.id);
         if (e.id.empty()) continue;
+        if (!seenIds.insert(e.id).second) {
+            LOG_WARNING("me_motes_i18n: duplicate id '%s' skipped (first-wins)",
+                        e.id.c_str());
+            continue;
+        }
         if (!item.contains("by_lang") || !item["by_lang"].is_object()) continue;
         const json& byLang = item["by_lang"];
         for (auto it = byLang.begin(); it != byLang.end(); ++it) {
@@ -200,6 +211,43 @@ std::string ClampMeMoteLanguage(const std::string& lang) {
     LoadBundledMeMotesTable();
     for (const auto& l : s_seedLangs) if (l == lang) return lang;
     return std::string("en");
+}
+
+size_t MeMotesBundledSeedCount() {
+    LoadBundledMeMotesTable();
+    return s_seed.size();
+}
+
+size_t MeMotesBundledSeedBytes() {
+    // Approximate heap bytes the bundled seed table holds: per SeedEntry,
+    // the id string + every per-language { name, aliases, text_default,
+    // text_you, text_all } string. Matches the string_heap() shape
+    // MemoryMonitor uses for the g_MeMotes catalog row — caller-side this
+    // is "out-of-line bytes the field owns", SSO-sized strings count as 0.
+    LoadBundledMeMotesTable();
+    auto heap = [](const std::string& s) -> size_t {
+        // 23-byte libc++ / 16-byte MSVC short-string boundary varies, but
+        // counting .capacity() when it exceeds 16 is the same heuristic
+        // MemoryMonitor's string_heap uses; consistency matters more than
+        // a perfectly tight estimate.
+        return s.capacity() > 16 ? s.capacity() : 0;
+    };
+    size_t bytes = 0;
+    for (const auto& e : s_seed) {
+        bytes += heap(e.id);
+        bytes += e.byLang.size() * sizeof(std::pair<const std::string, SeedLangEntry>);
+        for (const auto& kv : e.byLang) {
+            bytes += heap(kv.first);
+            bytes += heap(kv.second.name);
+            bytes += heap(kv.second.aliases);
+            bytes += heap(kv.second.textDefault);
+            bytes += heap(kv.second.textYou);
+            bytes += heap(kv.second.textAll);
+        }
+    }
+    bytes += s_seedLangs.capacity() * sizeof(std::string);
+    for (const auto& l : s_seedLangs) bytes += heap(l);
+    return bytes;
 }
 
 int SeedBundledMeMotes(const std::string& lang) {
@@ -299,17 +347,22 @@ bool LoadMeMotesJson(const std::string& path) {
     // re-save.
     bool changed = false;
 
-    // Language field — clamp to AvailableMeMoteLanguages() so a stale value
-    // (e.g. user hand-edited a code the bundle doesn't carry) heals to a
-    // working choice. Parallels emotes.json's "emote_language" field.
+    // Language field — trim whitespace first (so a hand-edited " de " or
+    // "de\n" doesn't fall through the exact-match Clamp and silently heal
+    // to "en"), then clamp to AvailableMeMoteLanguages() so any value the
+    // bundle doesn't carry still heals to a working choice. Parallels
+    // emotes.json's "emote_language" field. One WARNING covers both
+    // corrections (trim + clamp) so the heal log surfaces exactly what
+    // happened.
     {
-        std::string lang = jsonutil::GetString(j, "language", std::string());
-        std::string normLang = ClampMeMoteLanguage(lang);
-        if (!lang.empty() && normLang != lang) {
-            LOG_WARNING("me_motes.json: language '%s' not in bundle, falling back to '%s'",
-                        lang.c_str(), normLang.c_str());
+        std::string rawLang = jsonutil::GetString(j, "language", std::string());
+        std::string trimmedLang = Trim(rawLang);
+        std::string normLang = ClampMeMoteLanguage(trimmedLang);
+        if (!rawLang.empty() && normLang != rawLang) {
+            LOG_WARNING("me_motes.json: language '%s' normalized to '%s' (trim + bundle clamp)",
+                        rawLang.c_str(), normLang.c_str());
         }
-        if (normLang != lang) changed = true;
+        if (normLang != rawLang) changed = true;
         g_MeMoteLanguage = normLang;
     }
 
@@ -485,11 +538,31 @@ const MeMote* FindMeMote(const std::string& id) {
 // section so a dev can spot when the file failed to load (count stays 0) or
 // when edits aren't propagating (version doesn't change). Layer-2 standard;
 // no-op in non-devtools builds. See DevStateInspector.h.
+//
+// Also surfaces the bundled-seed side: the seed table parses lazily, so the
+// LoadBundledMeMotesTable() call here forces it once if it hasn't loaded
+// (cheap on subsequent registrations since s_seedLoaded short-circuits).
 static DevStateRegistrar s_meMotesState("/me-motes catalog", [] {
     DevStateRow("count",   "%zu", g_MeMotes.size());
     DevStateRow("version", "%llu",
                 (unsigned long long)g_MeMotesVersion.load(std::memory_order_relaxed));
     DevStateRow("path",    "%s",  g_MeMotesJsonPath.empty()
                                   ? "(unset)" : g_MeMotesJsonPath.c_str());
+    DevStateRow("language","%s",  g_MeMoteLanguage.empty()
+                                  ? "(unset)" : g_MeMoteLanguage.c_str());
+    LoadBundledMeMotesTable();
+    DevStateRow("bundled samples", "%zu", s_seed.size());
+    {
+        // Comma-join s_seedLangs for a one-line read. Bundle ships en + de
+        // today; keeping this dynamic so a future translation drop shows up
+        // without a code edit here.
+        std::string langs;
+        for (size_t i = 0; i < s_seedLangs.size(); ++i) {
+            if (i) langs += ", ";
+            langs += s_seedLangs[i];
+        }
+        DevStateRow("bundle languages", "%s",
+                    langs.empty() ? "(none)" : langs.c_str());
+    }
 });
 #endif

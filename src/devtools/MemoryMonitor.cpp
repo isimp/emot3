@@ -33,6 +33,7 @@
 #include "TextCache.h"
 #include "I18n.h"
 #include "Icons.h"         // GetEmoteTexture / GetMeMoteTexture - to size Nexus-owned icon textures
+#include "Resources.h"     // kMeMoteAIIcons / kMeMoteAIIconsCount + BundledIcon (bundled-AI manifest row)
 #include "Profiling.h"     // prof::Ring, prof::kHistLen, prof::displayMap
 
 #pragma comment(lib, "psapi.lib")
@@ -235,6 +236,31 @@ void Sample(std::vector<Snapshot>& out) {
         }
         out.push_back({ "catalog (g_MeMotes)",            g_MeMotes.size(), bytes });
         out.push_back({ "/me-mote textures (Nexus, est)", mmTexCount,       mmTexBytes });
+    }
+
+    // /me-mote bundled-seed table. Lazily parsed file-static behind
+    // MeMotesBundledSeedCount/Bytes accessors so we don't reach into the
+    // anonymous-namespace globals (same accessor pattern TextCache +
+    // I18n use). Count is the SeedEntry-count, bytes are out-of-line
+    // string heap across the bundle's by-language entries.
+    out.push_back({ "/me-mote bundled (s_seed)",
+                    MeMotesBundledSeedCount(),
+                    MeMotesBundledSeedBytes() });
+
+    // Bundled AI-icon manifest overhead. The RCDATA bytes themselves live
+    // in the DLL's .rdata section and don't move on the heap (so they're
+    // not "DLL-attributable" in the alloc-counter sense MemoryMonitor's
+    // global row tracks), but the manifest array exists in process memory
+    // and is worth surfacing so the row is visible alongside its sibling
+    // texture row above.
+    {
+        size_t bytes = (size_t)kMeMoteAIIconsCount * sizeof(BundledIcon);
+        for (int i = 0; i < kMeMoteAIIconsCount; ++i) {
+            if (kMeMoteAIIcons[i].command)
+                bytes += std::strlen(kMeMoteAIIcons[i].command) + 1;
+        }
+        out.push_back({ "/me-mote bundled AI icons (manifest)",
+                        (size_t)kMeMoteAIIconsCount, bytes });
     }
 
     // Notifier pending list.

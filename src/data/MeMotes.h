@@ -159,3 +159,11 @@ std::string ClampMeMoteLanguage(const std::string& lang);
 // — long bodies still save and send, but the editor surfaces the truncation
 // risk to the author rather than letting it bite in-game.
 constexpr int kMeMoteBodyCharBudget = 195;
+
+// Accessors over the file-static bundled seed table for the MemoryMonitor
+// subsystem row. Mirror the shape of TextCache::ApproxBytes() /
+// TranslationCacheApproxBytes() so MemoryMonitor can reach the data without
+// touching the anonymous-namespace statics directly. Both force the lazy
+// LoadBundledMeMotesTable() call on first read.
+size_t MeMotesBundledSeedCount();
+size_t MeMotesBundledSeedBytes();
