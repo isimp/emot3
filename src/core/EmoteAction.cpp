@@ -190,6 +190,10 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
         // briefly for us to drain. Drop on every early return via RAII.
         InflightWorkerScope scope;
 
+        // g_GameHwnd is captured by our WndProc on the first message (entry.cpp),
+        // which always fires before any send is possible, so the FindWindowA
+        // fallback effectively never runs. It's Wine-safe regardless: GW2 keeps
+        // the "ArenaNet_Dx_Window_Class" window class under Proton/Wine.
         HWND hGame = g_GameHwnd
             ? g_GameHwnd
             : FindWindowA("ArenaNet_Dx_Window_Class", nullptr);
