@@ -8,11 +8,84 @@
 #include "imgui/imgui.h"
 #include "IconCacheConfig.h"   // g_IconCache.maxIconDim (user-icon dimension cap)
 
+#include "Logging.h"      // LOG_DEBUG / LOG_WARNING (size cap + pool budget)
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+#include "Profiling.h"   // PROFILE_SCOPE on the cold texture-load branch
+
+namespace {
+// Lowercase a copy (ASCII).
+std::string ToLowerStr(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c){ return (char)std::tolower(c); });
+    return s;
+}
+// Tag prefix per bundled table - disambiguates official vs emote-AI vs
+// me-mote-AI, which can share a name with DIFFERENT art (must not collide).
+const char* BundledTagPrefix(const BundledIcon* tbl) {
+    if (tbl == kOfficialIcons) return "o:";
+    if (tbl == kAIIcons)       return "ea:";
+    if (tbl == kMeMoteAIIcons) return "ma:";
+    return "x:";
+}
+// Build the DiskFile ResolvedIcon for a user PNG/JPEG: cap-probe the header
+// (over-cap / unreadable -> key "" so the cell shows a letter + a logged note),
+// and fold mtime+size into the content key so an in-place edit reloads on the
+// next re-resolve (Refresh button) while an unchanged file keeps its key (no
+// churn). Key example: EMOT3IC_f:c:\...\bow.png:1d9f...:4a2.
+ResolvedIcon MakeDiskIcon(const std::string& path) {
+    ResolvedIcon r;
+    int w = 0, h = 0;
+    IconProbe pv = ProbeIconFile(path, w, h);
+    if (pv != IconProbe::Ok) {
+        LOG_DEBUG("icon skipped (%s): %s",
+                  pv == IconProbe::TooLarge ? "over the size cap" : "unreadable",
+                  path.c_str());
+        return r;   // key "" -> letter fallback
+    }
+    unsigned long long mtime = 0, size = 0;
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    if (GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &fad)) {
+        mtime = ((unsigned long long)fad.ftLastWriteTime.dwHighDateTime << 32) |
+                 (unsigned long long)fad.ftLastWriteTime.dwLowDateTime;
+        size  = ((unsigned long long)fad.nFileSizeHigh << 32) |
+                 (unsigned long long)fad.nFileSizeLow;
+    }
+    char suf[48];
+    std::snprintf(suf, sizeof suf, ":%llx:%llx", mtime, size);
+    r.from = ResolvedIcon::From::DiskFile;
+    r.path = path;
+    r.key  = std::string("EMOT3IC_f:") + ToLowerStr(path) + suf;
+    return r;
+}
+}  // namespace
+
+// Public builders, so the icon picker keys its thumbnails into the SAME content
+// pool as cells (a folder icon used by an emote and shown in the picker is ONE
+// texture). ResolveEmoteIcon/ResolveMeMoteIcon route through these too, so the
+// tags can never drift between the picker and the cell path.
+ResolvedIcon MakeBundledResolved(const BundledIcon* tbl, int count, const std::string& name) {
+    ResolvedIcon r;
+    if (!tbl || name.empty()) return r;
+    r.from  = ResolvedIcon::From::BundledMem;
+    r.table = tbl; r.count = count; r.name = name;   // raw name; the loader slash-strips
+    // Key on a normalized stem (leading slash stripped, lowercased) so a
+    // hand-authored Id like "/wave" dedups with "wave" and with a
+    // bundled:official:wave ref - matching LookupBundledResource's normalization.
+    std::string stem = name;
+    if (!stem.empty() && stem.front() == '/') stem.erase(0, 1);
+    r.key   = std::string("EMOT3IC_") + BundledTagPrefix(tbl) + ToLowerStr(stem);
+    return r;
+}
+ResolvedIcon MakeFileResolved(const std::string& fullPath) { return MakeDiskIcon(fullPath); }
 
 std::string ResolveIconPath(const Emote& e) {
     std::string p = e.IconPath;
@@ -148,7 +221,7 @@ std::string SanitizeIconPath(const std::string& raw, bool* outChanged) {
 IconSource ResolveIconSource(const Emote& e) {
     // 0. Icon picker: an explicit "bundled:<bucket>:<name>" ref wins over the
     //    whole chain and ignores UseAIIconFallback (an explicit pick, not the
-    //    auto fallback). Loaded by LoadEmoteTextures' BundledChosen case.
+    //    auto fallback). Loaded via MakeBundledResolved -> EnsureResolved.
     if (IsBundledIconRef(e.IconPath)) return IconSource::BundledChosen;
     // 1/2. A PNG on disk at the resolved path - either an explicit IconPath or
     //      the icons/<id>.png folder drop-in (ResolveIconPath returns the latter
@@ -169,16 +242,30 @@ IconSource ResolveIconSource(const Emote& e) {
     return IconSource::TextFallback;
 }
 
-std::string EmoteCacheKey(const std::string& command) {
-    std::string s = command;
-    while (!s.empty() && s.front() == '/') s.erase(s.begin());
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return (char)std::tolower(c); });
-    return std::string("EMOT3_") + s;
-}
-
-Texture* GetEmoteTexture(const std::string& command) {
-    return APIDefs->Textures.Get(EmoteCacheKey(command).c_str());
+// Resolve an emote to its content key + how to load it. Switches on the SAME
+// ResolveIconSource chain the status line uses (single source of resolution
+// order), then tags by tier so identical images share a key (dedup) and
+// different-art tiers never collide. Does the cold-path disk stat (via
+// MakeDiskIcon) for the file tiers.
+ResolvedIcon ResolveEmoteIcon(const Emote& e) {
+    switch (ResolveIconSource(e)) {
+        case IconSource::BundledChosen: {
+            const BundledIcon* tbl = nullptr; int cnt = 0; std::string nm;
+            if (ParseBundledIconRef(e.IconPath, tbl, cnt, nm))
+                return MakeBundledResolved(tbl, cnt, nm);
+            return ResolvedIcon{};
+        }
+        case IconSource::Custom:
+        case IconSource::FolderOverride:
+            return MakeFileResolved(ResolveIconPath(e));   // cap-probed; key "" if over-cap/unreadable
+        case IconSource::BundledOfficial:
+            return MakeBundledResolved(kOfficialIcons, kOfficialIconsCount, e.Id);
+        case IconSource::BundledAI:
+            return MakeBundledResolved(kAIIcons, kAIIconsCount, e.Id);
+        case IconSource::TextFallback:
+        default:
+            return ResolvedIcon{};  // key "" -> styled letter
+    }
 }
 
 std::string ResolveMeMoteIconPath(const MeMote& m) {
@@ -234,19 +321,223 @@ MeMoteIconSource ResolveMeMoteIconSource(const MeMote& m) {
     return MeMoteIconSource::TextFallback;
 }
 
-std::string MeMoteCacheKey(const std::string& id) {
-    // Separate namespace from Emotes (EMOT3_<id>) so an Emote "wave" and a
-    // /me-mote "wave" don't fight over the same Nexus texture cache slot.
-    std::string s = id;
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return (char)std::tolower(c); });
-    return std::string("EMOT3_MM_") + s;
+// Resolve a /me-mote to its content key + load descriptor (mirrors
+// ResolveEmoteIcon; shorter chain - no BundledOfficial tier). A disk icon
+// shared with an emote (same file) dedups to one texture: the `f:` tag is
+// path-based, not catalog-prefixed.
+ResolvedIcon ResolveMeMoteIcon(const MeMote& m) {
+    switch (ResolveMeMoteIconSource(m)) {
+        case MeMoteIconSource::BundledChosen: {
+            const BundledIcon* tbl = nullptr; int cnt = 0; std::string nm;
+            if (ParseBundledIconRef(m.IconPath, tbl, cnt, nm))
+                return MakeBundledResolved(tbl, cnt, nm);
+            return ResolvedIcon{};
+        }
+        case MeMoteIconSource::Custom:
+        case MeMoteIconSource::FolderOverride:
+            return MakeFileResolved(ResolveMeMoteIconPath(m));
+        case MeMoteIconSource::BundledAI:
+            return MakeBundledResolved(kMeMoteAIIcons, kMeMoteAIIconsCount, m.Id);
+        case MeMoteIconSource::TextFallback:
+        default:
+            return ResolvedIcon{};
+    }
 }
 
-Texture* GetMeMoteTexture(const std::string& id) {
-    if (!APIDefs) return nullptr;
-    return APIDefs->Textures.Get(MeMoteCacheKey(id).c_str());
+// --- content-addressed lazy texture cache --------------------------------
+// Every distinct image loads at most once, under a CONTENT key (ResolveEmoteIcon
+// / ResolveMeMoteIcon), so two entries with the same icon share one Nexus
+// texture (dedup) and re-selecting a prior image is free. Nexus never evicts, so
+// a content key, once loaded, stays for the process - we lean into that. Disk
+// icons fold mtime+size into the key, so an in-place edit yields a new key (the
+// Refresh button re-resolves to pick it up) while an unchanged file keeps its
+// key (nothing reloads, nothing churns). Main-thread-only state, so no mutex:
+// callers pass the entity by reference and own its lifetime; we never lock the
+// catalog mutex (safe from a cell/row loop that already holds it).
+namespace {
+// Per-id memo: the resolved content key + a latched Texture* (cached once the
+// async load finishes, so the steady-state hot path skips the per-frame
+// Textures.Get on the long content key). Epoch-scoped: MaintainTexEpoch clears
+// these on a catalog bump; InvalidateEmoteIcon/MeMoteIcon drop one entry.
+struct MemoEntry { std::string key; Texture* tex = nullptr; };
+std::unordered_map<std::string, MemoEntry> s_emoteKey;   // emote Id    -> {key, tex} (epoch-scoped)
+std::unordered_map<std::string, MemoEntry> s_memoteKey;  // /me-mote Id -> {key, tex} (epoch-scoped)
+std::unordered_set<std::string> s_attemptedKeys;           // content keys load-issued (permanent: key == content)
+uint64_t s_lastEmoteTexV   = 0;
+uint64_t s_lastMeMoteTexV  = 0;
+bool     s_poolBudgetLogged = false;
+
+#ifdef EMOT3_DEVTOOLS
+// content key -> last frame requested, for the memmon in-use vs idle split.
+std::unordered_map<std::string, uint32_t> s_keyLastFrame;
+void TouchKey(const std::string& key) {
+    if (!key.empty()) s_keyLastFrame[key] = (uint32_t)ImGui::GetFrameCount();
 }
+#else
+inline void TouchKey(const std::string&) {}
+#endif
+
+// Clear the id->key memos when a catalog version moves (an edit re-resolves
+// entries, possibly to new content keys). s_attemptedKeys is NOT cleared - a
+// content key is permanent (it already encodes the content + mtime).
+void MaintainTexEpoch() {
+    const uint64_t ev = g_EmoteCatalogVersion.load(std::memory_order_relaxed);
+    const uint64_t mv = g_MeMotesVersion.load(std::memory_order_relaxed);
+    if (ev != s_lastEmoteTexV)  { s_emoteKey.clear();  s_lastEmoteTexV  = ev; }
+    if (mv != s_lastMeMoteTexV) { s_memoteKey.clear(); s_lastMeMoteTexV = mv; }
+}
+
+// Accurate CURRENT pool size, maintained INCREMENTALLY: each distinct loaded
+// content texture (deduped) is summed exactly once, the first frame we observe it
+// ready, into s_poolBytes (tracked in s_countedKeys). Keys are immutable and Nexus
+// never evicts, so a counted texture's bytes never change - the total can't drift.
+// The per-frame guard runs the reconcile at most once a frame, over only the
+// not-yet-counted keys, so it's O(newly-loaded)/frame and O(1) once all loads
+// settle. The budget enforces against this; the dev "used" readout (IconPoolStats)
+// sums the same loaded keys, so the two agree once loads settle. (A key whose load
+// never completes stays re-checked each frame; that set is tiny in practice.)
+size_t IconPoolUsedBytes() {
+    if (!APIDefs) return 0;
+    static int    s_poolFrame = -1;
+    static size_t s_poolBytes = 0;
+    static std::unordered_set<std::string> s_countedKeys;
+    const int now = ImGui::GetFrameCount();
+    if (now == s_poolFrame) return s_poolBytes;
+    s_poolFrame = now;
+    for (const std::string& key : s_attemptedKeys) {
+        if (s_countedKeys.count(key)) continue;        // already summed (immutable bytes)
+        Texture* t = APIDefs->Textures.Get(key.c_str());
+        if (t && t->Resource) {
+            s_poolBytes += (size_t)t->Width * (size_t)t->Height * 4u;
+            s_countedKeys.insert(key);
+        }
+    }
+    return s_poolBytes;
+}
+
+// Optional ceiling (icon_cache.json pool_budget_mb; 0 = off). SOFT per frame:
+// it checks the accurate current pool size (memoized per frame), so a burst of
+// cold loads in one frame can overshoot a little before it trips - fine for a
+// backstop, and it agrees with the memmon "used" readout.
+bool PoolBudgetReached() {
+    if (g_IconCache.poolBudgetMB <= 0) return false;
+    return IconPoolUsedBytes() >= (size_t)g_IconCache.poolBudgetMB * 1024u * 1024u;
+}
+}  // namespace
+
+// Load (once, dedup-aware) a resolved icon into the Nexus cache + return it.
+// Shared by the cell render path (via Ensure*Texture) and the lazy picker grid,
+// so picker thumbnails and cell icons reuse the same content textures. The disk
+// path is already cap-validated by MakeDiskIcon (its key is "" otherwise).
+Texture* EnsureResolved(const ResolvedIcon& r) {
+    if (!APIDefs || r.from == ResolvedIcon::From::None || r.key.empty()) return nullptr;
+    TouchKey(r.key);
+    Texture* t = APIDefs->Textures.Get(r.key.c_str());
+    if (t && t->Resource) {                      // ready: fresh load, a dedup hit, OR a texture that
+        s_attemptedKeys.insert(r.key);           // survived an addon hot-reload - Nexus keeps textures
+        return t;                                // until game restart, but our statics reset, so record
+    }                                            // it here too or the pool stats + budget miss every
+                                                 // icon already resident when this instance started.
+    if (s_attemptedKeys.count(r.key)) return t;  // already issued (loading); don't re-load
+    if (PoolBudgetReached()) {                   // optional opt-in soft cap
+        if (!s_poolBudgetLogged) {
+            s_poolBudgetLogged = true;
+            LOG_WARNING("icon pool hit the %d MB budget; new icons use the letter "
+                        "fallback until restart (icon_cache.json pool_budget_mb)",
+                        g_IconCache.poolBudgetMB);
+        }
+        return t;
+    }
+    PROFILE_SCOPE("tex.load");                    // cold path only
+    if (r.from == ResolvedIcon::From::BundledMem) {
+        const void* data = nullptr; size_t size = 0;
+        if (TryLoadBundledIconBytes(r.table, r.count, r.name, data, size))
+            APIDefs->Textures.GetOrCreateFromMemory(r.key.c_str(), const_cast<void*>(data), size);
+    } else {  // DiskFile
+        APIDefs->Textures.GetOrCreateFromFile(r.key.c_str(), r.path.c_str());
+    }
+    s_attemptedKeys.insert(r.key);
+    return APIDefs->Textures.Get(r.key.c_str());  // may be null this frame if async
+}
+
+Texture* EnsureEmoteTexture(const Emote& e) {
+    if (!APIDefs) return nullptr;
+    MaintainTexEpoch();
+    auto it = s_emoteKey.find(e.Id);
+    if (it == s_emoteKey.end()) {                 // cold: resolve once per epoch (the one stat)
+        ResolvedIcon r = ResolveEmoteIcon(e);
+        Texture* t = EnsureResolved(r);           // loads + returns it (null this frame if still async)
+        it = s_emoteKey.emplace(e.Id, MemoEntry{ r.key, t }).first;
+    }
+    MemoEntry& m = it->second;
+    TouchKey(m.key);                               // mark in-use even on the memo-hit path
+    if (m.tex) return m.tex;                        // latched: hot path, no Textures.Get
+    if (m.key.empty()) return nullptr;             // text fallback (no texture)
+    return (m.tex = APIDefs->Textures.Get(m.key.c_str()));  // still loading: re-check, latch when ready
+}
+
+Texture* EnsureMeMoteTexture(const MeMote& m) {
+    if (!APIDefs) return nullptr;
+    MaintainTexEpoch();
+    auto it = s_memoteKey.find(m.Id);
+    if (it == s_memoteKey.end()) {
+        ResolvedIcon r = ResolveMeMoteIcon(m);
+        Texture* t = EnsureResolved(r);
+        it = s_memoteKey.emplace(m.Id, MemoEntry{ r.key, t }).first;
+    }
+    MemoEntry& me = it->second;
+    TouchKey(me.key);
+    if (me.tex) return me.tex;                      // latched: hot path, no Textures.Get
+    if (me.key.empty()) return nullptr;             // text fallback (no texture)
+    return (me.tex = APIDefs->Textures.Get(me.key.c_str()));  // still loading: re-check, latch when ready
+}
+
+// Refresh button (Options editors): drop one entry's memo so the next render
+// re-resolves it - re-stats the file, so a changed mtime/size yields a new key
+// and reloads; an unchanged file keeps its key (no reload, no churn).
+void InvalidateEmoteIcon(const std::string& id)  { s_emoteKey.erase(id); }
+void InvalidateMeMoteIcon(const std::string& id) { s_memoteKey.erase(id); }
+
+#ifdef EMOT3_DEVTOOLS
+// Deduped pool accounting for the memory monitor: every distinct content texture
+// we've loaded, split into in-use (drawn this/last frame) vs idle (off-screen or
+// orphaned by an edit). Each key counts ONCE (shared textures aren't double
+// counted), and iterating s_attemptedKeys surfaces orphaned/churn slots the old
+// per-catalog count couldn't see.
+void IconPoolStats(IconPoolUsage& out) {
+    out = IconPoolUsage{};
+    if (!APIDefs) return;
+    const uint32_t now = (uint32_t)ImGui::GetFrameCount();
+    for (const std::string& key : s_attemptedKeys) {
+        Texture* t = APIDefs->Textures.Get(key.c_str());
+        if (!t || !t->Resource) continue;          // never-loaded / failed / async-pending key
+        const size_t bytes = (size_t)t->Width * (size_t)t->Height * 4u;
+        out.totalCount++; out.totalBytes += bytes;
+        auto it = s_keyLastFrame.find(key);
+        const bool inUse = (it != s_keyLastFrame.end()) && (now - it->second <= 1u);
+        if (inUse) { out.inUseCount++; out.inUseBytes += bytes; }
+        else       { out.idleCount++;  out.idleBytes  += bytes; }
+    }
+}
+// One-shot (per addon load) sweep that records content textures ALREADY resident
+// in Nexus but not yet in our lazy set. Per-cell recording only sees on-screen
+// cells, so after a hot-reload (Nexus keeps textures until game restart while our
+// statics reset) the off-screen icons that survived go uncounted until scrolled
+// into view. This derives every catalog entry's key and records the resident
+// ones. PROBE-ONLY (Textures.Get, never GetOrCreate): on a cold start nothing is
+// resident, so it records nothing and never eager-loads - the lazy cell path
+// stays the only loader.
+void ReconcileResidentPool() {
+    if (!APIDefs) return;
+    auto probe = [](const std::string& key) {
+        if (key.empty()) return;
+        Texture* t = APIDefs->Textures.Get(key.c_str());
+        if (t && t->Resource) s_attemptedKeys.insert(key);
+    };
+    { std::lock_guard<std::mutex> lk(g_EmotesMutex);  for (const Emote&  e : g_Emotes)  probe(ResolveEmoteIcon(e).key);  }
+    { std::lock_guard<std::mutex> lk(g_MeMotesMutex); for (const MeMote& m : g_MeMotes) probe(ResolveMeMoteIcon(m).key); }
+}
+#endif
 
 // --- user-icon dimension cap (header-only, no decode) --------------------
 IconProbe ProbeIconFile(const std::string& path, int& outW, int& outH) {

@@ -176,12 +176,12 @@ void RenderGeneralOptionsTab() {
     OptionsSection(L("opt.sec.icons"));
 
     if (CheckboxWithSaveAndTooltip("opt.gen.ai_fallback", &g_Settings.UseAIIconFallback, /*defaultIsOn=*/false)) {
-        // Re-run the texture loader so newly-eligible emotes pick up
-        // their AI artwork immediately. Note: Nexus' texture cache has
-        // no eviction API, so emotes whose AI image is already loaded
-        // keep showing it until the game restarts. The tooltip says as
-        // much.
+        // Bump both catalog epochs so newly-eligible entries re-resolve to their
+        // AI artwork on next show (the fallback gates BOTH emote and /me-mote
+        // tiers). With content-addressed keys this applies immediately - the
+        // changed tier yields a new content key that loads fresh; no restart.
         MarkEmotesDirty();
+        MarkMeMotesDirty();
     }
 
     CheckboxWithSaveAndTooltip("opt.gen.show_target_dot", &g_Settings.ShowTargetDot, /*defaultIsOn=*/true);

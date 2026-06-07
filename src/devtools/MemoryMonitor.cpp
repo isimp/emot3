@@ -32,8 +32,7 @@
 #include "Settings.h"
 #include "TextCache.h"
 #include "I18n.h"
-#include "Icons.h"         // GetEmoteTexture / GetMeMoteTexture - to size Nexus-owned icon textures
-#include "IconPicker.h"    // IconPickerTextureStats (EMOT3_PICK_* thumbnail row)
+#include "Icons.h"         // IconPoolStats / IconPoolUsage - deduped icon-texture pool sizing
 #include "Resources.h"     // kMeMoteAIIcons / kMeMoteAIIconsCount + BundledIcon (bundled-AI manifest row)
 #include "Profiling.h"     // prof::Ring, prof::kHistLen, prof::displayMap
 
@@ -178,18 +177,14 @@ void Sample(std::vector<Snapshot>& out) {
     out.clear();
     out.reserve(10);
 
-    // Catalog (mutex-guarded - workers can mutate g_Emotes via UnlockScan).
-    // While we hold the lock, also tally the Nexus-owned icon textures: each
-    // emote has a Texture in Nexus' cache once its icon has loaded. They live
-    // in NEXUS's heap (not ours) so they don't appear in the DLL-heap counter
-    // above - but the user thinks of them as "addon memory" because our addon
-    // is what made them exist, so the second row puts them back on screen.
-    // Decoded RGBA bytes = Width * Height * 4 (a best-effort heap-side
-    // estimate; the GPU resource may carry mipmaps or a different format).
+    // Catalog (mutex-guarded - workers can mutate g_Emotes via UnlockScan). Sums
+    // the struct + every owned std::string heap allocation. Icon textures are NOT
+    // tallied per-entry here: they're a deduped pool shared with /me-motes and
+    // the picker, counted once in the "icon textures (content pool)" row below
+    // (Nexus-owned heap, est. Width*Height*4 per distinct texture).
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
         size_t bytes = g_Emotes.capacity() * sizeof(Emote);
-        size_t texBytes = 0, texCount = 0;
         for (const auto& e : g_Emotes) {
             bytes += string_heap(e.Id);
             bytes += string_heap(e.Command);
@@ -197,27 +192,18 @@ void Sample(std::vector<Snapshot>& out) {
             bytes += string_heap(e.IconPath);
             bytes += e.Aliases.capacity() * sizeof(std::string);
             for (const auto& a : e.Aliases) bytes += string_heap(a);
-
-            if (Texture* t = GetEmoteTexture(e.Id)) {
-                if (t->Resource) {  // skip placeholder / pending entries
-                    texBytes += (size_t)t->Width * (size_t)t->Height * 4u;
-                    ++texCount;
-                }
-            }
         }
-        out.push_back({ "catalog (g_Emotes)",          g_Emotes.size(), bytes });
-        out.push_back({ "icon textures (Nexus, est)",  texCount,        texBytes });
+        out.push_back({ "catalog (g_Emotes)", g_Emotes.size(), bytes });
     }
 
     // /me-mote catalog. Symmetric to the g_Emotes row above — sums struct +
-    // every owned std::string heap allocation + /me-mote textures (a
-    // separate Nexus cache namespace; see GetMeMoteTexture). /me-motes carry
-    // three text bodies plus the standard Id/Name/Icon/Aliases, so the
-    // per-entry byte count runs higher than an Emote on average.
+    // every owned std::string heap allocation (textures are in the shared
+    // content-pool row below, not per catalog). /me-motes carry three text
+    // bodies plus the standard Id/Name/Icon/Aliases, so the per-entry byte
+    // count runs higher than an Emote on average.
     {
         std::lock_guard<std::mutex> lk(g_MeMotesMutex);
         size_t bytes = g_MeMotes.capacity() * sizeof(MeMote);
-        size_t mmTexBytes = 0, mmTexCount = 0;
         for (const auto& m : g_MeMotes) {
             bytes += string_heap(m.Id);
             bytes += string_heap(m.Name);
@@ -227,16 +213,8 @@ void Sample(std::vector<Snapshot>& out) {
             bytes += string_heap(m.TextAll);
             bytes += m.Aliases.capacity() * sizeof(std::string);
             for (const auto& a : m.Aliases) bytes += string_heap(a);
-
-            if (Texture* t = GetMeMoteTexture(m.Id)) {
-                if (t->Resource) {
-                    mmTexBytes += (size_t)t->Width * (size_t)t->Height * 4u;
-                    ++mmTexCount;
-                }
-            }
         }
-        out.push_back({ "catalog (g_MeMotes)",            g_MeMotes.size(), bytes });
-        out.push_back({ "/me-mote textures (Nexus, est)", mmTexCount,       mmTexBytes });
+        out.push_back({ "catalog (g_MeMotes)", g_MeMotes.size(), bytes });
     }
 
     // /me-mote bundled-seed table. Lazily parsed file-static behind
@@ -264,15 +242,13 @@ void Sample(std::vector<Snapshot>& out) {
                         (size_t)kMeMoteAIIconsCount, bytes });
     }
 
-    // Icon-picker thumbnails (EMOT3_PICK_* Nexus cache namespace). Zero until
-    // the picker is first opened, then ~one texture per bundled icon + folder
-    // PNG (primed once, no evict). Surfaced so the picker's one-time texture
-    // cost is visible alongside the catalog texture rows rather than looking
-    // like an unexplained gap vs. the process working set.
+    // Icon textures: ONE deduped content pool shared by cells AND the picker
+    // (each distinct image loads once; W*H*4 per distinct key). The dev-state
+    // inspector splits this into in-use vs idle; here we surface the reserved
+    // total so it's visible against the process working set.
     {
-        size_t pickCount = 0, pickBytes = 0;
-        IconPickerTextureStats(pickCount, pickBytes);
-        out.push_back({ "picker textures (Nexus, est)", pickCount, pickBytes });
+        IconPoolUsage u; IconPoolStats(u);
+        out.push_back({ "icon textures (content pool, est)", u.totalCount, u.totalBytes });
     }
 
     // Notifier pending list.

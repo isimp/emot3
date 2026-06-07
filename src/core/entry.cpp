@@ -336,11 +336,10 @@ void AddonLoad(AddonAPI* aApi) {
               g_Settings.UnlockAutoSync, g_Settings.UnlockApiKeySource,
               g_Settings.UiLanguage.c_str());
 
-    // Prime the texture cache up-front so the Quickbar has icons the
-    // moment it draws — without this it would render blank until the
-    // main window was opened at least once, since the loader used to
-    // live inside AddonRender. Both calls are idempotent.
-    LoadEmoteTextures();
+    // Prime the UI artwork up-front (section glyphs + the Nexus shortcut
+    // icon). Emote/me-mote icons are NOT primed here — they load lazily the
+    // first time each cell is shown (EnsureEmoteTexture / EnsureMeMoteTexture),
+    // so a large custom catalog only ever loads the icons actually viewed.
     LoadUiIconOverrides();
 
     // Nexus quick-access icon — only registers if the user has it

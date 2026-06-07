@@ -11,7 +11,6 @@ std::string g_MeMotesJsonPath;
 std::string g_IconsDir;
 std::string g_PresetsDir;
 
-bool                  g_EmotesDirty         = false;
 std::atomic<uint64_t> g_EmoteCatalogVersion { 0 };
 std::atomic<uint64_t> g_MeMotesVersion      { 0 };
 
