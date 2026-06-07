@@ -28,10 +28,12 @@
 
 #include "Globals.h"
 #include "EmoteData.h"
+#include "MeMotes.h"
 #include "Settings.h"
 #include "TextCache.h"
 #include "I18n.h"
-#include "Icons.h"         // GetEmoteTexture - to size Nexus-owned icon textures
+#include "Icons.h"         // GetEmoteTexture / GetMeMoteTexture - to size Nexus-owned icon textures
+#include "Resources.h"     // kMeMoteAIIcons / kMeMoteAIIconsCount + BundledIcon (bundled-AI manifest row)
 #include "Profiling.h"     // prof::Ring, prof::kHistLen, prof::displayMap
 
 #pragma comment(lib, "psapi.lib")
@@ -206,6 +208,61 @@ void Sample(std::vector<Snapshot>& out) {
         out.push_back({ "icon textures (Nexus, est)",  texCount,        texBytes });
     }
 
+    // /me-mote catalog. Symmetric to the g_Emotes row above — sums struct +
+    // every owned std::string heap allocation + /me-mote textures (a
+    // separate Nexus cache namespace; see GetMeMoteTexture). /me-motes carry
+    // three text bodies plus the standard Id/Name/Icon/Aliases, so the
+    // per-entry byte count runs higher than an Emote on average.
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        size_t bytes = g_MeMotes.capacity() * sizeof(MeMote);
+        size_t mmTexBytes = 0, mmTexCount = 0;
+        for (const auto& m : g_MeMotes) {
+            bytes += string_heap(m.Id);
+            bytes += string_heap(m.Name);
+            bytes += string_heap(m.IconPath);
+            bytes += string_heap(m.TextDefault);
+            bytes += string_heap(m.TextYou);
+            bytes += string_heap(m.TextAll);
+            bytes += m.Aliases.capacity() * sizeof(std::string);
+            for (const auto& a : m.Aliases) bytes += string_heap(a);
+
+            if (Texture* t = GetMeMoteTexture(m.Id)) {
+                if (t->Resource) {
+                    mmTexBytes += (size_t)t->Width * (size_t)t->Height * 4u;
+                    ++mmTexCount;
+                }
+            }
+        }
+        out.push_back({ "catalog (g_MeMotes)",            g_MeMotes.size(), bytes });
+        out.push_back({ "/me-mote textures (Nexus, est)", mmTexCount,       mmTexBytes });
+    }
+
+    // /me-mote bundled-seed table. Lazily parsed file-static behind
+    // MeMotesBundledSeedCount/Bytes accessors so we don't reach into the
+    // anonymous-namespace globals (same accessor pattern TextCache +
+    // I18n use). Count is the SeedEntry-count, bytes are out-of-line
+    // string heap across the bundle's by-language entries.
+    out.push_back({ "/me-mote bundled (s_seed)",
+                    MeMotesBundledSeedCount(),
+                    MeMotesBundledSeedBytes() });
+
+    // Bundled AI-icon manifest overhead. The RCDATA bytes themselves live
+    // in the DLL's .rdata section and don't move on the heap (so they're
+    // not "DLL-attributable" in the alloc-counter sense MemoryMonitor's
+    // global row tracks), but the manifest array exists in process memory
+    // and is worth surfacing so the row is visible alongside its sibling
+    // texture row above.
+    {
+        size_t bytes = (size_t)kMeMoteAIIconsCount * sizeof(BundledIcon);
+        for (int i = 0; i < kMeMoteAIIconsCount; ++i) {
+            if (kMeMoteAIIcons[i].command)
+                bytes += std::strlen(kMeMoteAIIcons[i].command) + 1;
+        }
+        out.push_back({ "/me-mote bundled AI icons (manifest)",
+                        (size_t)kMeMoteAIIconsCount, bytes });
+    }
+
     // Notifier pending list.
     {
         size_t bytes = g_NewBundledEmoteIds.capacity() * sizeof(std::string);
@@ -241,12 +298,12 @@ void Sample(std::vector<Snapshot>& out) {
         size_t total = 0;
         size_t bytes = g_Settings.FavoriteCategories.capacity() * sizeof(FavoriteCategory);
         for (const auto& c : g_Settings.FavoriteCategories) {
-            total += c.Emotes.size();
+            total += c.Refs.size();
             bytes += string_heap(c.Name);
-            bytes += c.Emotes.capacity() * sizeof(std::string);
-            for (const auto& id : c.Emotes) bytes += string_heap(id);
+            bytes += c.Refs.capacity() * sizeof(FavoriteRef);
+            for (const auto& r : c.Refs) bytes += string_heap(r.Id);
         }
-        out.push_back({ "favorites (total ids)", total, bytes });
+        out.push_back({ "favorites (total refs)", total, bytes });
     }
 
     // ManuallyUnlocked - one row per non-core unlocked emote.

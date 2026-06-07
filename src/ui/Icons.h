@@ -16,6 +16,36 @@ struct Texture;
 // resolves regardless of the catalog's emote language.
 std::string ResolveIconPath(const Emote& e);
 
+// /me-mote icon path resolution — always returns a disk path: the explicit
+// `m.IconPath` if set, otherwise the derived `icons/<id>.png` under
+// g_IconsDir (matches the Emote pattern; the file may or may not exist —
+// ResolveMeMoteIconSource stats it to decide which tier fires). Relative
+// paths resolve against g_IconsDir; absolute paths pass through.
+std::string ResolveMeMoteIconPath(const struct MeMote& m);
+
+// Where a /me-mote's icon resolves from, in priority order. Single source
+// of truth for that order, shared by LoadEmoteTextures (which picks what
+// to load) and the /me-motes Options tab's status line (which labels it)
+// so the two can never disagree. Shorter than the Emote chain by ONE tier:
+// there's no BundledOfficial (the catalog is user-content, ArenaNet doesn't
+// ship art for it). The remaining four tiers parallel the Emote chain so
+// users get consistent affordances across both catalogs — including the
+// `icons/<id>.png` drop-in convention and the opt-in BundledAI fallback.
+enum class MeMoteIconSource {
+    Custom,           // explicit IconPath on disk
+    FolderOverride,   // no IconPath, but icons/<id>.png exists on disk
+    BundledAI,        // bundled AI fallback (only when UseAIIconFallback is on)
+    TextFallback      // no icon — styled letter button
+};
+
+// Resolve which source actually supplies m's icon, in the same order the
+// loader loads. Does a disk stat, so it's for load / settings-screen use,
+// not a per-frame render path. A missing explicit IconPath falls through
+// to the next tier (Custom is returned only when the file exists on disk);
+// the Options status line surfaces the missing-path case separately, same
+// as DescribeIconSource does for Emotes.
+MeMoteIconSource ResolveMeMoteIconSource(const struct MeMote& m);
+
 // Where an emote's icon resolves from, in priority order. Single source of
 // truth for that order, shared by the texture loader (LoadEmoteTextures, which
 // picks what to load) and the Catalog tab's status line (DescribeIconSource,
@@ -45,6 +75,12 @@ std::string EmoteCacheKey(const std::string& id);
 // Lookup-only - returns nullptr if the texture isn't loaded yet. Pass Id.
 Texture* GetEmoteTexture(const std::string& id);
 
+// /me-mote texture lookup. Cache key uses a different prefix than Emotes
+// (EMOT3_MM_<id> vs EMOT3_<id>) so an Emote and a /me-mote that happen
+// to share an Id don't collide in the Nexus texture cache.
+std::string MeMoteCacheKey(const std::string& id);
+Texture*    GetMeMoteTexture(const std::string& id);
+
 // Section-header glyphs. Each one prefers the corresponding PNG under
 // addons/emot3/icons/ui/ when present; otherwise falls back to the
 // hand-drawn version unchanged. Caller-supplied alpha (via `col`) is
@@ -69,5 +105,12 @@ void DrawTrashIcon(ImVec2 c, float r, ImU32 col, ImDrawList* dl = nullptr);
 //   DrawTargetableDot: small upper-right corner indicator. dotSz is the
 //     caller-computed diameter (kept consistent across view modes); alpha is
 //     caller-supplied so the dot dims with the cell.
+//   DrawMeMoteIndicator: small upper-right corner accent marking a /me-mote
+//     cell. Sources the bundled (or icons/ui/-overridden) "me_mote_dot.png"
+//     UI texture. Shares the same anchor as DrawTargetableDot — they never
+//     co-occur (/me-mote cells are never IsTargetable). indSz is the
+//     diameter in pixels (sized like the target dot so it tracks the
+//     icon-scale slider).
 void DrawLockOverlay();
 void DrawTargetableDot(float dotSz, float alphaMul);
+void DrawMeMoteIndicator(float indSz, float alphaMul);

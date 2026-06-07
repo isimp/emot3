@@ -3,6 +3,7 @@
 #include "I18n.h"
 #include "Settings.h"
 #include "EmoteData.h"
+#include "MeMotes.h"          // /me-motes Quickbar category + favorites mixing
 #include "CharacterState.h" // CurrentEmoteBlock / InCombatNow / g_QbBlockReason / g_QbUnusableKey
 #include "EmoteAction.h" // CurrentSendBusy / EmoteSendSwallowActive (grey-while-busy)
 #include "Feedback.h"    // SetActiveFeedbackSurface / DrawFeedbackOverlay
@@ -783,19 +784,21 @@ void QuickbarRender() {
     // The bar, the wheel-cycle count, the active-index clamp and the cell-
     // list build below all walk this one list, so favorites and built-ins
     // are handled uniformly. Rebuilt every frame (cheap; nothing cached).
-    enum class QbCatKind { Favorite, Core, MadKing, Unlocked, UnlockedAll };
+    enum class QbCatKind { Favorite, Core, MadKing, Unlocked, UnlockedAll, MeMotes };
     struct QbCat { QbCatKind kind; int favIdx; std::string name; };
     std::vector<QbCat> cats;
-    cats.reserve(g_Settings.FavoriteCategories.size() + 4);
+    cats.reserve(g_Settings.FavoriteCategories.size() + 5);
     if (g_Settings.QuickbarShowFavoriteCategories)
         for (int i = 0; i < (int)g_Settings.FavoriteCategories.size(); ++i)
             cats.push_back({ QbCatKind::Favorite, i, g_Settings.FavoriteCategories[i].Name });
     // Synthetic built-ins, alphabetical by display name (Core, Mad King,
-    // Unlocked, Unlocked (all)).
+    // Unlocked, Unlocked (all), /me-motes).
     if (g_Settings.QuickbarShowCoreCategory)
         cats.push_back({ QbCatKind::Core, -1, L("qb.cat_core") });
     if (g_Settings.QuickbarShowMadKingCategory)
         cats.push_back({ QbCatKind::MadKing, -1, L("qb.cat_mad_king") });
+    if (g_Settings.QuickbarShowMeMotesCategory)
+        cats.push_back({ QbCatKind::MeMotes, -1, L("qb.cat_me_motes") });
     if (g_Settings.QuickbarShowUnlockedCategory)
         cats.push_back({ QbCatKind::Unlocked, -1, L("qb.cat_unlocked") });
     if (g_Settings.QuickbarShowUnlockedAllCategory)
@@ -1045,18 +1048,58 @@ void QuickbarRender() {
         CatalogIndex idx;
         BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
 
+        // /me-motes snapshot for favorites mixing + the dedicated category.
+        // Built under g_MeMotesMutex once so the cell loop can dereference
+        // freely without nesting locks. Only the Favorite and dedicated
+        // /me-motes categories consume it; the built-in Emote categories
+        // (Core/Unlocked/Mad King) never read it, and the QB only shows one
+        // category per frame — so skip the lock + populate for those.
+        std::unordered_map<std::string, const MeMote*> meMotesById;
+        if (activeCat.kind == QbCatKind::MeMotes ||
+            activeCat.kind == QbCatKind::Favorite) {
+            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+            meMotesById.reserve(g_MeMotes.size());
+            for (const auto& mm : g_MeMotes) meMotesById[mm.Id] = &mm;
+        }
+
         if (activeCat.kind == QbCatKind::Favorite) {
-            // Favorites: resolve the stored ids in the user's order.
+            // Favorites: resolve the stored refs in the user's order. Each
+            // ref is routed to its catalog by Type (Emote via idx.byId,
+            // /me-mote via meMotesById); CellInfo carries the right pointer
+            // and RenderEmoteCell dispatches accordingly.
             const auto& cat = g_Settings.FavoriteCategories[activeCat.favIdx];
-            for (size_t i = 0; i < cat.Emotes.size(); ++i) {
-                auto it = idx.byId.find(cat.Emotes[i]);
-                if (it == idx.byId.end()) continue;
-                const Emote* e = it->second;
-                bool unlk = idx.unlocked(*e);
-                items.push_back({ e, (int)i, unlk });
+            for (size_t i = 0; i < cat.Refs.size(); ++i) {
+                const auto& ref = cat.Refs[i];
+                if (ref.Type == EFavoriteRefType::Emote) {
+                    auto it = idx.byId.find(ref.Id);
+                    if (it == idx.byId.end()) continue;
+                    const Emote* e = it->second;
+                    bool unlk = idx.unlocked(*e);
+                    items.push_back({ e, nullptr, (int)i, unlk, std::string() });
+                } else {  // MeMote
+                    auto it = meMotesById.find(ref.Id);
+                    if (it == meMotesById.end()) continue;
+                    // Half-filled /me-mote (empty Name or empty TextDefault):
+                    // invisible until both required fields land. Ref stays in
+                    // storage; completing it pops the cell back into view.
+                    if (!IsMeMoteRenderable(*it->second)) continue;
+                    items.push_back({ nullptr, it->second, (int)i, /*unlocked=*/true, std::string() });
+                }
             }
+        } else if (activeCat.kind == QbCatKind::MeMotes) {
+            // Dedicated /me-motes category: surface every renderable
+            // /me-mote (skip half-filled entries with empty Name or empty
+            // TextDefault), sorted by Name.
+            for (const auto& kv : meMotesById) {
+                if (!IsMeMoteRenderable(*kv.second)) continue;
+                items.push_back({ nullptr, kv.second, -1, /*unlocked=*/true, std::string() });
+            }
+            std::sort(items.begin(), items.end(),
+                [](const CellInfo& a, const CellInfo& b) {
+                    return a.m->Name < b.m->Name;
+                });
         } else {
-            // Built-in category: pull straight from the catalog by class,
+            // Built-in Emote category: pull straight from the catalog by class,
             // read-only (favIdx -1), alphabetical by display name.
             for (const auto& e : g_Emotes) {
                 bool unlk = idx.unlocked(e);
@@ -1068,7 +1111,7 @@ void QuickbarRender() {
                     case QbCatKind::UnlockedAll: take = unlk;               break;
                     default:                                                break;
                 }
-                if (take) items.push_back({ &e, -1, unlk });
+                if (take) items.push_back({ &e, nullptr, -1, unlk, std::string() });
             }
             std::sort(items.begin(), items.end(),
                 [](const CellInfo& a, const CellInfo& b) { return a.e->Name < b.e->Name; });
@@ -1267,9 +1310,13 @@ void QuickbarRender() {
     }
     if (items.empty()) {
         // TextWrapped + a manual disabled color so narrow QB windows don't
-        // overflow horizontally with the hint text.
+        // overflow horizontally with the hint text. The dedicated /me-motes
+        // category auto-fills from the catalog (not via right-click-to-add), so
+        // it points at Options > /me-motes instead of the favorites workflow.
+        const char* emptyKey = (activeCat.kind == QbCatKind::MeMotes)
+                                   ? "qb.empty_me_motes" : "qb.empty_category";
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        ImGui::TextWrapped("%s", L("qb.empty_category"));
+        ImGui::TextWrapped("%s", L(emptyKey));
         ImGui::PopStyleColor();
     } else {
         // Defensive clamps for stored values older than the current

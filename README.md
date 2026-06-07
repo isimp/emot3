@@ -25,6 +25,8 @@ them from the official ArenaNet artwork.
   between them from the addon's icon.
 - **Your own catalog** - the emote list is a file you own, not hard-coded. Add,
   edit, or remove any emote without waiting for an update.
+- **/me-motes** - your own custom `/me` chat emotes with up to three
+  variants per entry; pick which to fire from the right-click menu.
 - **Multilingual** - emote commands in all four GW2 languages; UI in English and
   German, with more easy to add.
 
@@ -32,17 +34,23 @@ them from the official ArenaNet artwork.
 
 <table>
 <tr>
-<td align="center" width="33%">
+<td align="center" width="50%">
   <a href="https://github.com/user-attachments/assets/5db7fd74-770c-429c-af1b-5946f9c24af6"><img src="https://github.com/user-attachments/assets/5db7fd74-770c-429c-af1b-5946f9c24af6" alt="Library" width="280"></a>
   <br><b>Library</b>
 </td>
-<td align="center" width="33%">
+<td align="center" width="50%">
   <a href="https://github.com/user-attachments/assets/8f9d20d1-245b-4191-98f6-29a67ebd7e7e"><img src="https://github.com/user-attachments/assets/8f9d20d1-245b-4191-98f6-29a67ebd7e7e" alt="Quickbar" width="280"></a>
   <br><b>Quickbar</b>
 </td>
-<td align="center" width="33%">
+</tr>
+<tr>
+<td align="center" width="50%">
   <a href="https://github.com/user-attachments/assets/eb13f7ea-e0ad-46a0-93d9-f637211d2329"><img src="https://github.com/user-attachments/assets/eb13f7ea-e0ad-46a0-93d9-f637211d2329" alt="Catalog & Unlocks" width="280"></a>
   <br><b>Catalog & Unlocks</b>
+</td>
+<td align="center" width="50%">
+  <a href="https://github.com/user-attachments/assets/519c7544-b76d-4f54-a5b9-9dddac7e9a1a"><img src="https://github.com/user-attachments/assets/519c7544-b76d-4f54-a5b9-9dddac7e9a1a" alt="/me-motes" width="280"></a>
+  <br><b>/me-motes</b>
 </td>
 </tr>
 </table>
@@ -59,6 +67,17 @@ and seeds it on first run. "Restore built-in emotes" re-adds only what's
 missing; your edits are never overwritten. Icons resolve in order: a custom
 path, a PNG you drop in `addons/emot3/icons/`, the bundled official art, the
 optional AI fallback, then a plain letter - so every emote shows something.
+
+## /me-motes
+
+emot3's /me-motes are user-authored `/me` chat snippets for things no
+animated emote covers ("LFG", "BRB", "Ready to pull"). Each one ships up to
+three pre-written bodies — **Default** on left-click, **You** and **All** on
+right-click — so you pick the context at send time. The catalog lives in
+`addons/emot3/me_motes.json` and is editable under *Options > /me-motes*; a
+small bundled set seeds on first run (English and German today — additional
+translations welcome at
+[`resources/me_mote_data/me_motes_i18n.json`](resources/me_mote_data/me_motes_i18n.json)).
 
 ## Install
 

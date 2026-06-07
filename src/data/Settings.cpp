@@ -253,6 +253,7 @@ bool SanitizeSettings(Settings& s) {
         int n = (s.QuickbarShowFavoriteCategories ? (int)s.FavoriteCategories.size() : 0)
               + (s.QuickbarShowCoreCategory        ? 1 : 0)
               + (s.QuickbarShowMadKingCategory     ? 1 : 0)
+              + (s.QuickbarShowMeMotesCategory     ? 1 : 0)
               + (s.QuickbarShowUnlockedCategory    ? 1 : 0)
               + (s.QuickbarShowUnlockedAllCategory ? 1 : 0);
         int ci = s.QuickbarCategoryIdx;
@@ -279,11 +280,17 @@ bool SanitizeSettings(Settings& s) {
     }
 
     // Favorites: fix empty/duplicate category names and drop empty/duplicate
-    // emote ids. Each emote is meant to live in exactly one category, so a
-    // repeated id (within or across categories, from a hand edit) keeps its
-    // first occurrence only.
+    // refs. Each (type, id) pair lives in exactly one category, so a repeated
+    // pair (within or across categories, from a hand edit) keeps its first
+    // occurrence only. A /me-mote and an Emote with the same Id are distinct
+    // entries — the dedup key is the pair, not just the Id.
     std::unordered_set<std::string> seenNames;
-    std::unordered_set<std::string> seenIds;
+    auto refKey = [](const FavoriteRef& r) {
+        // Type is single-byte; prefix it with a non-alphanumeric separator so
+        // the resulting string is unique vs. any Id form.
+        return std::string(1, (char)('a' + (int)r.Type)) + ':' + r.Id;
+    };
+    std::unordered_set<std::string> seenRefs;
     for (auto& cat : s.FavoriteCategories) {
         std::string nm = TrimName(cat.Name);
         if (nm.empty()) nm = "Favorites";
@@ -300,17 +307,19 @@ bool SanitizeSettings(Settings& s) {
         }
         seenNames.insert(nm);
 
-        std::vector<std::string> kept;
-        kept.reserve(cat.Emotes.size());
-        for (const auto& id : cat.Emotes) {
-            if (id.empty() || seenIds.count(id)) { changed = true; continue; }
-            seenIds.insert(id);
-            kept.push_back(id);
+        std::vector<FavoriteRef> kept;
+        kept.reserve(cat.Refs.size());
+        for (const auto& r : cat.Refs) {
+            if (r.Id.empty()) { changed = true; continue; }
+            std::string key = refKey(r);
+            if (seenRefs.count(key)) { changed = true; continue; }
+            seenRefs.insert(std::move(key));
+            kept.push_back(r);
         }
-        if (kept.size() != cat.Emotes.size()) {
-            LOG_WARNING("settings: favorites \"%s\" dropped %d empty/duplicate id(s)",
-                        cat.Name.c_str(), (int)(cat.Emotes.size() - kept.size()));
-            cat.Emotes = std::move(kept);
+        if (kept.size() != cat.Refs.size()) {
+            LOG_WARNING("settings: favorites \"%s\" dropped %d empty/duplicate ref(s)",
+                        cat.Name.c_str(), (int)(cat.Refs.size() - kept.size()));
+            cat.Refs = std::move(kept);
         }
     }
 
@@ -389,10 +398,12 @@ bool LoadSettings(const std::string& path) {
     s.FilterShowCore     = GetBool (main, "show_core",     s.FilterShowCore);
     s.FilterShowUnlocked = GetBool (main, "show_unlocked", s.FilterShowUnlocked);
     s.FilterShowLocked   = GetBool (main, "show_locked",   s.FilterShowLocked);
+    s.FilterShowMeMotes  = GetBool (main, "show_me_motes", s.FilterShowMeMotes);
     s.ViewMode      = (EViewMode)   GetInt(main, "view_mode", (int)s.ViewMode);
     s.MainIconScale = GetFloat(main, "icon_scale", s.MainIconScale);
     s.MainCoreCollapsed     = GetBool(main, "core_collapsed",     s.MainCoreCollapsed);
     s.MainUnlockedCollapsed = GetBool(main, "unlocked_collapsed", s.MainUnlockedCollapsed);
+    s.MainMeMotesCollapsed  = GetBool(main, "me_motes_collapsed", s.MainMeMotesCollapsed);
 
     const json& qb = GetObj(j, "quickbar");
     s.ShowQuickbar        = GetBool(qb, "show",                  s.ShowQuickbar);
@@ -438,11 +449,13 @@ bool LoadSettings(const std::string& path) {
                                                  (int)s.QuickbarCombatBehavior);
 
     const json& general = GetObj(j, "general");
-    s.SendOnClick       = GetBool(general, "send_on_click",        s.SendOnClick);
-    s.CloseChatOnSend   = GetBool(general, "close_chat_on_send",   s.CloseChatOnSend);
+    s.SendOnClick       = GetBool(general, "send_on_click",         s.SendOnClick);
+    s.MeMoteSendOnClick = GetBool(general, "me_mote_send_on_click", s.MeMoteSendOnClick);
+    s.CloseChatOnSend   = GetBool(general, "close_chat_on_send",    s.CloseChatOnSend);
     s.SendTargetableOnTarget = GetBool(general, "send_targetable_on_target", s.SendTargetableOnTarget);
     s.UseAIIconFallback = GetBool(general, "use_ai_icon_fallback", s.UseAIIconFallback);
     s.ShowTargetDot     = GetBool(general, "show_target_dot",       s.ShowTargetDot);
+    s.ShowMeMoteIndicator = GetBool(general, "show_me_mote_indicator", s.ShowMeMoteIndicator);
     s.QuickbarGreyUnusable = GetBool(general, "quickbar_grey_unusable", s.QuickbarGreyUnusable);
     s.QuickbarPreciseStateDetection = GetBool(general, "quickbar_precise_state",
                                               s.QuickbarPreciseStateDetection);
@@ -457,6 +470,7 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarShowMadKingCategory     = GetBool(qbCats, "mad_king",     s.QuickbarShowMadKingCategory);
     s.QuickbarShowUnlockedCategory    = GetBool(qbCats, "unlocked",     s.QuickbarShowUnlockedCategory);
     s.QuickbarShowUnlockedAllCategory = GetBool(qbCats, "unlocked_all", s.QuickbarShowUnlockedAllCategory);
+    s.QuickbarShowMeMotesCategory     = GetBool(qbCats, "me_motes",     s.QuickbarShowMeMotesCategory);
 
     const json& shortcut = GetObj(general, "nexus_shortcut");
     s.ShowNexusShortcut        = GetBool(shortcut, "show",                      s.ShowNexusShortcut);
@@ -485,8 +499,44 @@ bool LoadSettings(const std::string& path) {
                 if (!catJ.is_object()) continue;
                 FavoriteCategory cat;
                 cat.Name      = GetString(catJ, "name", std::string());
-                cat.Emotes    = readStringArray(GetArray(catJ, "emotes"));
                 cat.Collapsed = GetBool(catJ, "collapsed", false);
+
+                // Refs schema: new "refs" is an object array with {type, id}
+                // per entry. Legacy "emotes" is a string array of Emote-typed
+                // Ids. Accept both — refs wins if both are present. The
+                // "type" field accepts a numeric (0=Emote, 1=MeMote, matches
+                // the enum) OR a string ("emote", "me_mote") for hand-edit
+                // readability. Unknown types are dropped (SanitizeSettings
+                // logs the dropped count).
+                const json& refsJ = GetArray(catJ, "refs");
+                if (!refsJ.empty()) {
+                    cat.Refs.reserve(refsJ.size());
+                    for (const auto& itJ : refsJ) {
+                        if (!itJ.is_object()) continue;
+                        FavoriteRef r;
+                        // Type: prefer the numeric form; fall back to the
+                        // string form for hand-edits.
+                        auto itType = itJ.find("type");
+                        if (itType != itJ.end() && itType->is_number_integer()) {
+                            int v = itType->get<int>();
+                            if (v == (int)EFavoriteRefType::MeMote) r.Type = EFavoriteRefType::MeMote;
+                            else                                    r.Type = EFavoriteRefType::Emote;
+                        } else if (itType != itJ.end() && itType->is_string()) {
+                            const std::string s = itType->get<std::string>();
+                            if (s == "me_mote") r.Type = EFavoriteRefType::MeMote;
+                            else                r.Type = EFavoriteRefType::Emote;
+                        }
+                        r.Id = GetString(itJ, "id", std::string());
+                        if (r.Id.empty()) continue;  // dropped by sanitize-equiv
+                        cat.Refs.push_back(std::move(r));
+                    }
+                } else {
+                    // Legacy "emotes" string array → all Emote-typed.
+                    for (const auto& id : readStringArray(GetArray(catJ, "emotes"))) {
+                        if (id.empty()) continue;
+                        cat.Refs.push_back(FavoriteRef{ EFavoriteRefType::Emote, id });
+                    }
+                }
                 s.FavoriteCategories.push_back(std::move(cat));
             }
         }
@@ -522,10 +572,12 @@ void SaveSettings(const std::string& path) {
     f << "    \"show_core\": "     << B(s.FilterShowCore)      << ",\n";
     f << "    \"show_unlocked\": " << B(s.FilterShowUnlocked)  << ",\n";
     f << "    \"show_locked\": "   << B(s.FilterShowLocked)    << ",\n";
+    f << "    \"show_me_motes\": " << B(s.FilterShowMeMotes)   << ",\n";
     f << "    \"view_mode\": "     << (int)s.ViewMode          << ",\n";
     f << "    \"icon_scale\": "    << s.MainIconScale          << ",\n";
     f << "    \"core_collapsed\": "     << B(s.MainCoreCollapsed)     << ",\n";
-    f << "    \"unlocked_collapsed\": " << B(s.MainUnlockedCollapsed) << "\n";
+    f << "    \"unlocked_collapsed\": " << B(s.MainUnlockedCollapsed) << ",\n";
+    f << "    \"me_motes_collapsed\": " << B(s.MainMeMotesCollapsed)  << "\n";
     f << "  },\n";
 
     // --- quickbar ------------------------------------------------------
@@ -568,11 +620,13 @@ void SaveSettings(const std::string& path) {
 
     // --- general -------------------------------------------------------
     f << "  \"general\": {\n";
-    f << "    \"send_on_click\": "         << B(s.SendOnClick)       << ",\n";
-    f << "    \"close_chat_on_send\": "    << B(s.CloseChatOnSend)   << ",\n";
+    f << "    \"send_on_click\": "         << B(s.SendOnClick)         << ",\n";
+    f << "    \"me_mote_send_on_click\": " << B(s.MeMoteSendOnClick)   << ",\n";
+    f << "    \"close_chat_on_send\": "    << B(s.CloseChatOnSend)     << ",\n";
     f << "    \"send_targetable_on_target\": " << B(s.SendTargetableOnTarget) << ",\n";
     f << "    \"use_ai_icon_fallback\": "  << B(s.UseAIIconFallback) << ",\n";
     f << "    \"show_target_dot\": "        << B(s.ShowTargetDot)     << ",\n";
+    f << "    \"show_me_mote_indicator\": " << B(s.ShowMeMoteIndicator) << ",\n";
     f << "    \"quickbar_grey_unusable\": " << B(s.QuickbarGreyUnusable) << ",\n";
     f << "    \"quickbar_precise_state\": " << B(s.QuickbarPreciseStateDetection) << ",\n";
     f << "    \"quickbar_unusable_behavior\": " << (int)s.QuickbarUnusableBehavior << ",\n";
@@ -582,7 +636,8 @@ void SaveSettings(const std::string& path) {
     f << "      \"core\": "         << B(s.QuickbarShowCoreCategory)        << ",\n";
     f << "      \"mad_king\": "     << B(s.QuickbarShowMadKingCategory)     << ",\n";
     f << "      \"unlocked\": "     << B(s.QuickbarShowUnlockedCategory)    << ",\n";
-    f << "      \"unlocked_all\": " << B(s.QuickbarShowUnlockedAllCategory) << "\n";
+    f << "      \"unlocked_all\": " << B(s.QuickbarShowUnlockedAllCategory) << ",\n";
+    f << "      \"me_motes\": "     << B(s.QuickbarShowMeMotesCategory)     << "\n";
     f << "    },\n";
     f << "    \"nexus_shortcut\": {\n";
     f << "      \"show\": "                      << B(s.ShowNexusShortcut)        << ",\n";
@@ -618,15 +673,21 @@ void SaveSettings(const std::string& path) {
     }
     f << "],\n";
 
-    // --- favorites (one category per line, emotes inline) -------------
+    // --- favorites (one category per line, refs inline) ---------------
+    // Always write the new "refs" object-array form (no legacy "emotes"
+    // string array fallback). Each ref is `{ "type": <int>, "id": "<id>" }`;
+    // type is 0 (Emote) or 1 (MeMote) — the EFavoriteRefType numeric values.
+    // The loader accepts both numeric and the string forms ("emote",
+    // "me_mote") to keep hand-edits forgiving.
     f << "  \"favorites\": [";
     for (size_t c = 0; c < s.FavoriteCategories.size(); ++c) {
         const auto& cat = s.FavoriteCategories[c];
         if (c) f << ",";
-        f << "\n    { \"name\": " << quoted(cat.Name) << ", \"emotes\": [";
-        for (size_t k = 0; k < cat.Emotes.size(); ++k) {
+        f << "\n    { \"name\": " << quoted(cat.Name) << ", \"refs\": [";
+        for (size_t k = 0; k < cat.Refs.size(); ++k) {
             if (k) f << ", ";
-            f << quoted(cat.Emotes[k]);
+            f << "{\"type\": " << (int)cat.Refs[k].Type
+              << ", \"id\": " << quoted(cat.Refs[k].Id) << "}";
         }
         f << "], \"collapsed\": " << B(cat.Collapsed) << " }";
     }

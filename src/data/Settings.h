@@ -50,12 +50,33 @@ enum class EQbScrollIndicator { Off = 0, Hints = 1, Scrollbar = 2 };
 // custom slim scrollbar). Default Cells.
 enum class EQbScrollSnap { Off = 0, Cells = 1, Pages = 2 };
 
+// Which catalog a FavoriteRef points into. Numeric for JSON stability —
+// settings.json stores "type": 0 for an Emote, "type": 1 for a /me-mote
+// (legacy "emote" / "me_mote" strings also accepted on load for forward
+// compat with hand-edits). Adding a third kind later means appending an
+// enum value + extending the load/save table — no migration of stored
+// values.
+enum class EFavoriteRefType { Emote = 0, MeMote = 1 };
+
+// One entry in a favorite category. Type-tagged so the renderer + send
+// pipeline can look the Id up in the right catalog. The Emote-id-only
+// form this replaced couldn't distinguish a /me-mote Id from an Emote Id,
+// so /me-motes couldn't be quick-accessed as favorites at all.
+struct FavoriteRef {
+    EFavoriteRefType Type = EFavoriteRefType::Emote;
+    std::string      Id;
+};
+
 struct FavoriteCategory {
-    std::string              Name;
-    std::vector<std::string> Emotes;  // emote IDs in user order
+    std::string                Name;
+    // Type-tagged refs in user order. Migrated from the legacy
+    // `std::vector<std::string> Emotes` (interpreted as Emote-typed Ids) at
+    // load — see Settings.cpp. Renamed from `Emotes` to `Refs` since the
+    // collection now mixes Emotes and /me-motes.
+    std::vector<FavoriteRef>   Refs;
     // Collapsed in the Library to just its header (the emote grid is hidden).
     // Per-category UI state, persisted in settings.json. Default expanded.
-    bool                     Collapsed = false;
+    bool                       Collapsed = false;
 };
 
 struct Settings {
@@ -72,19 +93,31 @@ struct Settings {
     bool                          FilterShowCore       = true;
     bool                          FilterShowUnlocked   = true;
     bool                          FilterShowLocked     = true;
+    // Class filter for /me-motes — the fourth Library toolbar pill, mirrors
+    // the Core/Unlocked/Locked toggles. Hides /me-motes from both the
+    // built-in /me-motes section and the user-favorite sections. Default on.
+    bool                          FilterShowMeMotes    = true;
     EViewMode                     ViewMode             = EViewMode::Full;
     float                         MainIconScale        = 1.0f;
     // Per-section collapse state for the built-in Library sections (Core /
-    // Unlockable). User favorites categories store their own Collapsed flag in
-    // FavoriteCategory; these two cover the synthetic built-ins. Default
+    // Unlockable / Text). User favorites categories store their own Collapsed
+    // flag in FavoriteCategory; these cover the synthetic built-ins. Default
     // expanded. An active search renders every section expanded regardless.
     bool                          MainCoreCollapsed     = false;
     bool                          MainUnlockedCollapsed = false;
+    // Library /me-motes section — surfaces /me-motes (data/MeMotes.h). See the
+    // /me-motes Quickbar toggle further down.
+    bool                          MainMeMotesCollapsed  = false;
     EViewMode                     QuickbarViewMode     = EViewMode::Icon;
     float                         QuickbarIconScale    = 1.0f;
     bool                          QuickbarUseDropdown  = false;  // tabs (false) or dropdown (true)
     bool                          ShowWindow           = true;
     bool                          SendOnClick          = true;
+    // Independent of SendOnClick — users may want auto-send for one and
+    // chat-fill-only for the other. /me-motes commit free-form text to chat,
+    // which some users prefer to confirm-then-send rather than fire on click.
+    // See SendOrFillMeMote / EmoteAction.cpp.
+    bool                          MeMoteSendOnClick    = true;
     // When on, clicking an emote while a GW2 text box is focused closes it
     // (injects Escape, clearing the half-typed line) and then sends, instead of
     // refusing. Off by default. See SendOrFillEmote / ShouldSkipEmoteSend.
@@ -154,6 +187,11 @@ struct Settings {
     // emotes). Opt-in like Core / Unlocked — a seasonal slice most users
     // only want during the event.
     bool                          QuickbarShowMadKingCategory     = false;
+    // /me-motes (data/MeMotes.h) — user-defined free-form text emotes. Opt-in
+    // (defaults off, matching the other built-in category posture). The
+    // Library always shows the /me-motes section when /me-motes exist; this
+    // toggle only gates the Quickbar's category-cycle inclusion.
+    bool                          QuickbarShowMeMotesCategory     = false;
     // When the mouse wheel cycles the active category (see EWheelCycle).
     // Defaults to OverBar - cycling when hovering the category bar is what
     // most users intuitively expect, while the icon list still scrolls.
@@ -178,6 +216,12 @@ struct Settings {
     // suffix with " @"). On by default. Applies to both the main panel and
     // the Quickbar (drawn in RenderEmoteCell).
     bool                          ShowTargetDot        = true;
+    // Show the small corner accent marking /me-motes (drawn top-right — the
+    // same corner as the target dot, which is safe because /me-motes are never
+    // IsTargetable so the two never co-occur). On by default — makes /me-motes
+    // visually distinguishable from regular Emotes in mixed favourites /
+    // Quickbar categories.
+    bool                          ShowMeMoteIndicator  = true;
     // Block emotes that can't currently be used: refuse the send (toast) + grey
     // or hide the Quickbar. On by default. Always covers mounted (MumbleLink).
     // With QuickbarPreciseStateDetection + the RealTime API addon it also covers

@@ -7,11 +7,13 @@ Mumble::Data*  MumbleLink = nullptr;
 HWND        g_GameHwnd       = nullptr;
 std::string g_SettingsPath;
 std::string g_EmotesJsonPath;
+std::string g_MeMotesJsonPath;
 std::string g_IconsDir;
 std::string g_PresetsDir;
 
 bool                  g_EmotesDirty         = false;
 std::atomic<uint64_t> g_EmoteCatalogVersion { 0 };
+std::atomic<uint64_t> g_MeMotesVersion      { 0 };
 
 bool                     g_PromptNewBundledEmotes = false;
 std::vector<std::string> g_NewBundledEmoteIds;

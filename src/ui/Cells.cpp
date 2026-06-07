@@ -7,6 +7,7 @@
 #include "Favorites.h"
 #include "Icons.h"
 #include "Layout.h"
+#include "MeMotes.h"         // /me-mote struct + lookups (RenderMeMoteCellBody)
 #include "TextCache.h"       // EllipsizeCached / FitNameCached (per-cell label memo)
 #include "CharacterState.h"  // g_QbUnusableKey (reason-aware block UI)
 #include "Feedback.h"        // ShowFeedback - in-window refusal line (replaces SendAlert)
@@ -158,16 +159,25 @@ void ApplyEmoteDrop(const EmoteDragPayload& src, int dstCat, int gap) {
     int N = (int)g_Settings.FavoriteCategories.size();
     if (dstCat < 0 || dstCat >= N) return;
 
+    // The drag payload carries its kind via src.type — Emote drags from the
+    // Core / Unlockable built-in sections or any favorites category, /me-mote
+    // drags from the built-in /me-motes section or any favorites category.
+    // Catalog-source drags construct the FavoriteRef with that type; within-
+    // favorites moves keep the moved ref's existing type intact (the type
+    // doesn't change on reorder).
     if (src.categoryIdx < 0) {
-        // Built-in catalog source: insert the command, nothing to erase.
-        // Locked emotes can't be favorited (already blocked at the source,
-        // guarded again here). Skip if already present in this category.
+        // Built-in catalog source: insert the ref, nothing to erase. Locked
+        // emotes can't be favorited (already blocked at the source, guarded
+        // again here; /me-motes always carry isLocked=false so they pass).
+        // Skip if already present in this category.
         if (src.isLocked) return;
-        auto& d = g_Settings.FavoriteCategories[dstCat].Emotes;
-        std::string id(src.id);
-        if (std::find(d.begin(), d.end(), id) != d.end()) return;
+        auto& d = g_Settings.FavoriteCategories[dstCat].Refs;
+        FavoriteRef ref{ src.type, std::string(src.id) };
+        if (std::find_if(d.begin(), d.end(), [&](const FavoriteRef& r) {
+                return r.Type == ref.Type && r.Id == ref.Id;
+            }) != d.end()) return;
         int ins = std::max(0, std::min(gap, (int)d.size()));
-        d.insert(d.begin() + ins, id);
+        d.insert(d.begin() + ins, std::move(ref));
     } else {
         int srcCat = src.categoryIdx, srcIdx = src.emoteIdx;
         // Locked emotes can reorder within their category but not move across.
@@ -175,24 +185,24 @@ void ApplyEmoteDrop(const EmoteDragPayload& src, int dstCat, int gap) {
         if (blocked || srcCat < 0 || srcCat >= N) return;
 
         if (srcCat == dstCat) {
-            auto& v = g_Settings.FavoriteCategories[srcCat].Emotes;
+            auto& v = g_Settings.FavoriteCategories[srcCat].Refs;
             if (srcIdx < 0 || srcIdx >= (int)v.size()) return;
-            std::string moved = v[srcIdx];
+            FavoriteRef moved = v[srcIdx];
             v.erase(v.begin() + srcIdx);
             // The erase shifts every slot after srcIdx down by one, so a gap
             // past the removed item lands one slot earlier than its index.
             int ins = (gap > srcIdx) ? gap - 1 : gap;
             ins = std::max(0, std::min(ins, (int)v.size()));
-            v.insert(v.begin() + ins, moved);
+            v.insert(v.begin() + ins, std::move(moved));
         } else {
-            auto& s = g_Settings.FavoriteCategories[srcCat].Emotes;
-            auto& d = g_Settings.FavoriteCategories[dstCat].Emotes;
+            auto& s = g_Settings.FavoriteCategories[srcCat].Refs;
+            auto& d = g_Settings.FavoriteCategories[dstCat].Refs;
             if (srcIdx < 0 || srcIdx >= (int)s.size()) return;
-            std::string moved = s[srcIdx];
+            FavoriteRef moved = s[srcIdx];
             s.erase(s.begin() + srcIdx);
             // d is a different vector than s, so the erase doesn't shift gap.
             int ins = std::max(0, std::min(gap, (int)d.size()));
-            d.insert(d.begin() + ins, moved);
+            d.insert(d.begin() + ins, std::move(moved));
         }
     }
     if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
@@ -237,6 +247,274 @@ static void RenderSendVariants(const Emote& e) {
         SendOrFillEmote(e, true, true);
 }
 
+// /me-mote cell renderer. Same signature as RenderEmoteCell so RenderEmoteSection
+// can dispatch without knowing the kind. Significantly shorter than the Emote
+// path because /me-motes carry no IsCore / IsTargetable / lock state — no
+// targetable dot, no lock overlay, no unlock toggle in the right-click menu.
+// Icons are the user's explicit PNG (GetMeMoteTexture) or the styled letter
+// fallback — no <id>.png folder convention, no bundled art, no AI fallback
+// (the chain is simpler than the Emote one). Drag-drop is wired: a drag source
+// in the Library + favorites sections (never the Quickbar) emits a FAV_DRAG
+// payload tagged EFavoriteRefType::MeMote, which ApplyEmoteDrop routes into the
+// /me-mote namespace. Click + right-click variants + Quickbar click-rect
+// tracking are all wired here too.
+static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
+                                 float cellX, float cellY,
+                                 float cellW, float cellH, float iconSz,
+                                 EViewMode mode,
+                                 bool allowReorder,
+                                 int  categoryIdx,
+                                 bool isQuickbar)
+{
+    (void)sectionRow;   // allowReorder IS read below (gates the drag source)
+    const MeMote& m = *ci.m;
+
+    // Quickbar-only "can't send right now" dim, same as the Emote path —
+    // /me-motes use the same chat-injection gates (combat, textbox, held key,
+    // airborne, ...) so the dim semantics apply identically.
+    bool blocked   = isQuickbar && g_QbUnusableKey != nullptr;
+    float alphaMul = blocked ? 0.40f : 1.f;
+    bool dimmed    = blocked;
+
+    // /me-mote indicator (top-right accent). Sized like the target dot so it
+    // tracks the icon-scale slider; same per-mode reference so it reads the
+    // same in every view mode.
+    const bool showIndicator = g_Settings.ShowMeMoteIndicator;
+    float indSz = 0.f;
+    if (showIndicator) {
+        float indRef = (mode == EViewMode::TextOnly) ? cellH : iconSz;
+        indSz = indRef * (mode == EViewMode::TextOnly ? 0.45f : 0.24f);
+    }
+
+    // Namespace the ImGui ID stack BEFORE pushing the Id. An Emote and a
+    // /me-mote can share an Id (independent namespaces), and the Emote path
+    // pushes the bare Id at the same scope — without this extra level the two
+    // cells' buttons AND their "##ctx" context-menu popups hash to the same
+    // ImGui ID, so right-clicking one opens a merged menu rendering BOTH cells'
+    // items. Mirrors the EMOT3_MM_ texture-cache + meMote TextCache split.
+    ImGui::PushID("memote");
+    ImGui::PushID(m.Id.c_str());
+    if (dimmed) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                                     ImGui::GetStyle().Alpha * alphaMul);
+
+    bool clicked = false;
+    if (mode == EViewMode::TextOnly) {
+        // Reserve label space for the indicator the same way the Emote path
+        // reserves it for the target dot.
+        float labelMaxW = cellW - 12.f;
+        if (showIndicator) labelMaxW -= indSz + 6.f;
+        const auto& cached = TextCache::EllipsizeCached(m.Id, m.Name, mode, labelMaxW, /*meMote=*/true);
+        ImGui::SetCursorPos(ImVec2(cellX, cellY));
+        int hiContrastPushes = 0;
+        if (isQuickbar && g_Settings.QuickbarHighContrast)
+            hiContrastPushes = PushHighContrastButtonStyles(/*includeFrameBg=*/false);
+        clicked = ImGui::Button(cached.label.c_str(), ImVec2(cellW, cellH));
+        if (hiContrastPushes > 0) ImGui::PopStyleColor(hiContrastPushes);
+    } else {
+        const int pad = 2;
+        float btnTotal = iconSz + pad * 2;
+        float btnX     = cellX + (cellW - btnTotal) * 0.5f;
+        ImGui::SetCursorPos(ImVec2(btnX, cellY));
+        // Custom icon if loaded, else styled letter button. /me-motes don't
+        // have bundled art or AI-fallback layers — it's the user's PNG (set
+        // via Options > /me-motes > Browse) or nothing.
+        Texture* tex = GetMeMoteTexture(m.Id);
+        if (tex && tex->Resource) {
+            clicked = ImGui::ImageButton((ImTextureID)tex->Resource,
+                ImVec2(iconSz, iconSz), ImVec2(0, 0), ImVec2(1, 1), pad);
+        } else {
+            clicked = RenderStyledFallback("##fb", m.Name.c_str(), btnTotal, alphaMul);
+        }
+
+        // Compact mode strip — same dark band as the Emote path, with the
+        // /me-mote's Name ellipsized inside it.
+        if (mode == EViewMode::Compact) {
+            ImVec2 itemMin = ImGui::GetItemRectMin();
+            ImVec2 itemMax = ImGui::GetItemRectMax();
+            float  fontH   = ImGui::GetFontSize();
+            float  stripPadY = 2.f;
+            float  stripH    = fontH + stripPadY * 2.f;
+            ImVec2 stripMin(itemMin.x, itemMax.y - stripH);
+            ImVec2 stripMax(itemMax.x, itemMax.y);
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            int bgA = (int)(180.f * alphaMul);
+            dl->AddRectFilled(stripMin, stripMax, IM_COL32(0, 0, 0, bgA));
+            float stripPadX = 3.f;
+            float maxTextW  = (stripMax.x - stripMin.x) - stripPadX * 2.f;
+            const auto& cached = TextCache::EllipsizeCached(m.Id, m.Name, mode, maxTextW, /*meMote=*/true);
+            float tx = stripMin.x + (stripMax.x - stripMin.x - cached.size.x) * 0.5f;
+            float ty = stripMin.y + stripPadY;
+            int textA = (int)(245.f * alphaMul);
+            dl->AddText(ImVec2(tx, ty), IM_COL32(245, 245, 245, textA),
+                        cached.label.c_str());
+        }
+    }
+
+    // /me-mote indicator overlay — anchored to the last submitted item (the
+    // button), so it scales with the button automatically.
+    if (showIndicator) DrawMeMoteIndicator(indSz, alphaMul);
+
+    if (isQuickbar) {
+        g_QbIconRects.emplace_back(ImGui::GetItemRectMin(),
+                                   ImGui::GetItemRectMax());
+    }
+
+    // Drag source — mirrors RenderEmoteCell's source block. Enabled from
+    // user-favorites cells (for reorder / cross-category move) AND from the
+    // Library's built-in /me-motes section (for "add to favorites by
+    // dragging"). Quickbar cells are never sources — drag-drop is a main-
+    // panel interaction. /me-motes have no lock concept so isLocked is
+    // always false; payload.type is MeMote so ApplyEmoteDrop constructs the
+    // FavoriteRef in the right namespace.
+    bool dragSourceEnabled = (categoryIdx >= 0) ? allowReorder : (!isQuickbar);
+    if (dragSourceEnabled) {
+        if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+            EmoteDragPayload payload {};
+            payload.categoryIdx = categoryIdx;
+            payload.emoteIdx    = ci.favIdx;
+            payload.isLocked    = false;
+            payload.type        = EFavoriteRefType::MeMote;
+            strncpy_s(payload.id, sizeof(payload.id),
+                      m.Id.c_str(), _TRUNCATE);
+            ImGui::SetDragDropPayload("FAV_DRAG", &payload, sizeof(payload));
+            ImGui::Text(L("cells.moving"), m.Name.c_str());
+            // Source-aware reject hint, same shape as the Emote path: a
+            // favorite dragged off into a non-target tells the user where the
+            // real "Remove from favorites" lives; a catalog drag mis-aimed
+            // gets the "drop onto a category" cue.
+            if (DragRejectFresh()) {
+                const char* why = (categoryIdx >= 0) ? L("cells.no_drop_remove")
+                                                     : L("cells.no_drop_here");
+                ImGui::TextColored(ImVec4(1.f, 0.45f, 0.40f, 1.f), "%s", why);
+            }
+            ImGui::EndDragDropSource();
+        }
+    }
+
+    // Right-click context menu. Quickbar shows execute-variants only;
+    // main panel adds favorites management. (The drag SOURCE is wired above;
+    // drop TARGETING is handled at the section level by RenderEmoteSection's
+    // grid-wide zone, type-agnostically — no per-cell target wiring needed.)
+    if (dimmed) ImGui::PopStyleVar();
+    if (ImGui::BeginPopupContextItem("##ctx")) {
+        // Send variants — You / All are visible always but disabled when
+        // their body is empty (so users see the concept exists), matching the
+        // plan's "discoverable" gray state. Plain Send is omitted (left-click
+        // is the default).
+        auto sendVariantItem = [&](EMeMoteVariant variant, const char* labelKey,
+                                   bool enabled) {
+            if (!enabled) {
+                ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                                    ImGui::GetStyle().Alpha * 0.5f);
+            }
+            if (ImGui::MenuItem(L(labelKey)) && enabled)
+                SendOrFillMeMote(m, variant);
+            if (!enabled) {
+                ImGui::PopStyleVar();
+                ImGui::PopItemFlag();
+            }
+        };
+        if (isQuickbar) {
+            if (blocked) {
+                ImGui::TextDisabled("%s", L(g_QbUnusableKey));
+            } else {
+                sendVariantItem(EMeMoteVariant::You, "cells.send_you", !m.TextYou.empty());
+                sendVariantItem(EMeMoteVariant::All, "cells.send_all", !m.TextAll.empty());
+            }
+        } else {
+            // Favorites management (mirrors the emote path but operates on
+            // MeMote-typed refs via the generic FavoriteRef API).
+            int currentCat = FindCategoryContaining(EFavoriteRefType::MeMote, m.Id);
+            int catCount   = (int)g_Settings.FavoriteCategories.size();
+            if (catCount == 0) {
+                ImGui::TextDisabled("%s", L("cells.no_categories"));
+                ImGui::Separator();
+                if (ImGui::MenuItem(L("cells.create_and_add"))) {
+                    EnsureDefaultCategory();
+                    AddRefToCategory(0, EFavoriteRefType::MeMote, m.Id, false);
+                }
+            } else if (currentCat < 0) {
+                if (catCount == 1) {
+                    char lbl[96];
+                    std::snprintf(lbl, sizeof(lbl), L("cells.add_to"),
+                                  g_Settings.FavoriteCategories[0].Name.c_str());
+                    if (ImGui::MenuItem(lbl))
+                        AddRefToCategory(0, EFavoriteRefType::MeMote, m.Id, false);
+                } else if (catCount > 1) {
+                    if (ImGui::BeginMenu(L("cells.add_to_category"))) {
+                        for (int i = 0; i < catCount; ++i) {
+                            if (ImGui::MenuItem(g_Settings.FavoriteCategories[i].Name.c_str()))
+                                AddRefToCategory(i, EFavoriteRefType::MeMote, m.Id, false);
+                        }
+                        ImGui::EndMenu();
+                    }
+                }
+            } else {
+                if (catCount > 1) {
+                    if (ImGui::BeginMenu(L("cells.move_to_category"))) {
+                        for (int i = 0; i < catCount; ++i) {
+                            if (i == currentCat) continue;
+                            if (ImGui::MenuItem(g_Settings.FavoriteCategories[i].Name.c_str()))
+                                AddRefToCategory(i, EFavoriteRefType::MeMote, m.Id, false);
+                        }
+                        ImGui::EndMenu();
+                    }
+                }
+                if (ImGui::MenuItem(L("cells.remove_from_fav")))
+                    RemoveRefFromCategories(EFavoriteRefType::MeMote, m.Id);
+            }
+            ImGui::Separator();
+            sendVariantItem(EMeMoteVariant::You, "cells.send_you", !m.TextYou.empty());
+            sendVariantItem(EMeMoteVariant::All, "cells.send_all", !m.TextAll.empty());
+        }
+        ImGui::EndPopup();
+    }
+
+    // Tooltip — Name + (optional) search-match note + right-click hint. No
+    // Command (doesn't exist) and no body preview (could be sentence-long).
+    // ci.searchNote explains an alias-only search hit (same shape Emote
+    // cells use). Suppressed by the same Quickbar opt-out emotes use.
+    bool suppressTip = isQuickbar && !g_Settings.ShowQuickbarTooltips;
+    if (!suppressTip &&
+        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        if (!ci.searchNote.empty())
+            ImGui::SetTooltip("%s\n%s\n%s", m.Name.c_str(),
+                              ci.searchNote.c_str(), L("cells.rightclick"));
+        else
+            ImGui::SetTooltip("%s\n%s", m.Name.c_str(), L("cells.rightclick"));
+    }
+
+    if (dimmed) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                                     ImGui::GetStyle().Alpha * alphaMul);
+
+    // Full mode label below the button.
+    if (mode == EViewMode::Full) {
+        const int pad = 2;
+        float btnTotal = iconSz + pad * 2;
+        float labelY   = cellY + btnTotal + 4.f;
+        const auto& cached = TextCache::FitNameCached(m.Id, m.Name, cellW, /*meMote=*/true);
+        ImGui::SetCursorPos(ImVec2(cellX + (cellW - cached.size1.x) * 0.5f, labelY));
+        ImGui::TextUnformatted(cached.line1.c_str());
+        if (!cached.line2.empty()) {
+            float ly2 = labelY + cached.size1.y;
+            ImGui::SetCursorPos(ImVec2(cellX + (cellW - cached.size2.x) * 0.5f, ly2));
+            ImGui::TextUnformatted(cached.line2.c_str());
+        }
+    }
+
+    if (dimmed) ImGui::PopStyleVar();
+    if (clicked) {
+        if (blocked) {
+            ShowFeedback(L(g_QbUnusableKey));
+        } else {
+            SendOrFillMeMote(m, EMeMoteVariant::Default);
+        }
+    }
+    ImGui::PopID();   // m.Id
+    ImGui::PopID();   // "memote" namespace
+}
+
 void RenderEmoteCell(const CellInfo& ci, int sectionRow,
                      float cellX, float cellY,
                      float cellW, float cellH, float iconSz,
@@ -245,6 +523,14 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
                      int  categoryIdx,
                      bool isQuickbar)
 {
+    // Dispatch: /me-mote cells take the simpler path (no lock/target/IsCore
+    // concepts, no drag-drop yet). Emote cells fall through to the existing
+    // renderer below — its behavior is unchanged for the existing Emote path.
+    if (ci.m) {
+        RenderMeMoteCellBody(ci, sectionRow, cellX, cellY, cellW, cellH,
+                             iconSz, mode, allowReorder, categoryIdx, isQuickbar);
+        return;
+    }
     const Emote& e   = *ci.e;
     // Unlocked state is precomputed once per frame at build time (see
     // CellInfo.unlocked) - cores always count as unlocked, non-cores are
@@ -733,10 +1019,12 @@ static void HandleGridDropZone(const std::vector<CellInfo>& items, const GridLay
         // (via StampDragReject) an explanatory line on the drag tooltip. We
         // never accept delivery, so dropping still does nothing.
         //
-        // categoryIdx is -1 for BOTH built-in sections, so key the ImGui id off
-        // the first emote's address (distinct per section, stable per frame) to
-        // avoid an id collision between the two invisible buttons. items is
-        // non-empty here - the function returns early when it is.
+        // categoryIdx is -1 for ALL built-in sections (Core / Unlockable /
+        // /me-motes), so key the ImGui id off the first cell's address (e or m,
+        // distinct per section, stable per frame) to avoid an id collision
+        // between their invisible buttons. The /me-mote section has e == null,
+        // so fall back to m — never PushID(nullptr). items is non-empty here -
+        // the function returns early when it is.
         //
         // Quickbar gate (the `!isQuickbar || GetDragDropPayload()` above): this
         // grid-spanning button sets HoveredId over the whole body, which blocks
@@ -745,7 +1033,8 @@ static void HandleGridDropZone(const std::vector<CellInfo>& items, const GridLay
         // this reject target WHILE a drag is in flight - when idle we skip it so
         // the QB body stays plain window void (movable / click-through). The
         // main panel (!isQuickbar) submits it every frame as before.
-        ImGui::PushID((const void*)items[0].e);
+        ImGui::PushID(items[0].e ? (const void*)items[0].e
+                                 : (const void*)items[0].m);
         ImGui::SetCursorPos(ImVec2(g.baseX, g.baseY));
         ImGui::InvisibleButton("##builtin_noreorder", ImVec2(g.gridW(), g.gridH()));
         ImGui::SetItemAllowOverlap();
@@ -757,14 +1046,28 @@ static void HandleGridDropZone(const std::vector<CellInfo>& items, const GridLay
                 // section the drag STARTED in. Catalog-sourced drags begin with
                 // the cursor over this very section, so stamping on frame 1 read
                 // as an instant "can't drop here" error before the user moved.
-                // The source section is the one still showing the dragged emote
-                // (a drag doesn't remove it until drop), so detect it by id
-                // membership. Once the cursor leaves onto a different no-drop
-                // section, the reject (tooltip + outline) appears as before.
+                // The source section is the one still showing the dragged cell
+                // (a drag doesn't remove it until drop), so detect it by
+                // (type, Id) membership. Type matters: an Emote and a /me-mote
+                // can share an Id, so an Id-only test would mis-identify the
+                // source — suppressing the reject on a built-in section that
+                // should refuse, or (for a /me-mote section, where it.e is null)
+                // failing to recognize the true source so it instantly rejects.
+                // Once the cursor leaves onto a different no-drop section, the
+                // reject (tooltip + outline) appears as before. Each cell is
+                // exactly one kind (it.e XOR it.m).
                 const EmoteDragPayload* src = (const EmoteDragPayload*)pl->Data;
                 bool isSourceSection = false;
-                for (const auto& it : items)
-                    if (it.e && it.e->Id == src->id) { isSourceSection = true; break; }
+                for (const auto& it : items) {
+                    const std::string* itId = it.e ? &it.e->Id
+                                                   : (it.m ? &it.m->Id : nullptr);
+                    EFavoriteRefType itType = it.e ? EFavoriteRefType::Emote
+                                                   : EFavoriteRefType::MeMote;
+                    if (itId && itType == src->type && *itId == src->id) {
+                        isSourceSection = true;
+                        break;
+                    }
+                }
                 if (!isSourceSection) {
                     // Anchor the refusal on the whole section (screen space:
                     // window pos minus scroll, matching the insertion-line math),
@@ -1132,7 +1435,7 @@ bool RenderCategoryHeader(int categoryIdx, const char* name, bool searchActive) 
         // whole-section zone in MainPanel (CategoryReorderZone) is a much bigger,
         // easier target. The header keeps only the CAT_DRAG *source* above.
         if (collapsed && ImGui::BeginDragDropTarget()) {
-            if (AcceptEmoteDropInto(categoryIdx, (int)cats[categoryIdx].Emotes.size())) {
+            if (AcceptEmoteDropInto(categoryIdx, (int)cats[categoryIdx].Refs.size())) {
                 // Highlight the whole header so it reads as "drops into here".
                 ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
                 ImDrawList* dl = ImGui::GetWindowDrawList();

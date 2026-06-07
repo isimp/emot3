@@ -23,6 +23,7 @@
 #include "Settings.h"
 #include "QuickbarPresets.h"
 #include "EmoteData.h"
+#include "MeMotes.h"     // /me-motes domain (load/save lifecycle, see data/MeMotes.h)
 #include "Favorites.h"
 #include "MainPanel.h"
 #include "NexusShortcut.h"
@@ -176,8 +177,9 @@ void AddonLoad(AddonAPI* aApi) {
     const char* addonDir = APIDefs->Paths.GetAddonDirectory("emot3");
     if (addonDir) {
         CreateDirectoryA(addonDir, nullptr);
-        g_SettingsPath   = std::string(addonDir) + "\\settings.json";
-        g_EmotesJsonPath = std::string(addonDir) + "\\emotes.json";
+        g_SettingsPath    = std::string(addonDir) + "\\settings.json";
+        g_EmotesJsonPath  = std::string(addonDir) + "\\emotes.json";
+        g_MeMotesJsonPath = std::string(addonDir) + "\\me_motes.json";
         // Create the icons subfolder (and ui/ inside it) so users can drop
         // their own PNG overrides for both emote icons and UI decorations.
         std::string iconsDir = std::string(addonDir) + "\\icons";
@@ -227,6 +229,9 @@ void AddonLoad(AddonAPI* aApi) {
 "  lock.png        Lock overlay drawn on top of locked emote cells.\n"
 "  target_dot.png  Small marker dot in the top-right corner of\n"
 "                  targetable emote cells.\n"
+"  me_mote_dot.png Small marker dot in the top-right corner of\n"
+"                  /me-mote cells (drawn instead of target_dot, since\n"
+"                  /me-motes can't be sent on a target).\n"
 "\n"
 "Format\n"
 "------\n"
@@ -246,6 +251,7 @@ void AddonLoad(AddonAPI* aApi) {
                 }
             }
         }
+
         LOG_INFO("Addon directory: %s", addonDir);
         // LoadSettings returns true when its sanitize pass corrected an
         // out-of-range / invalid value (e.g. a hand-edited settings.json); heal
@@ -273,6 +279,33 @@ void AddonLoad(AddonAPI* aApi) {
     if (!g_EmotesJsonPath.empty()) {
         LoadEmotesJson(g_EmotesJsonPath);  // missing/empty -> dialog prompts
     }
+
+    // /me-motes are a SEPARATE catalog from emotes (see data/MeMotes.h). Loaded
+    // in parallel; missing file = empty list (first-time users have zero).
+    ClearMeMotes();
+    bool meMotesLoaded = false;
+    if (!g_MeMotesJsonPath.empty()) {
+        meMotesLoaded = LoadMeMotesJson(g_MeMotesJsonPath);
+    }
+    // Upgrade hook: a returning user with seeded emotes (g_EmoteLanguage set)
+    // but no me_motes.json on disk (the feature is newer than their install)
+    // gets the bundled samples seeded automatically. We clamp the emote
+    // language down to the /me-mote bundle's supported set (en + de today;
+    // "fr" / "es" players fall through to "en"), then stamp g_MeMoteLanguage
+    // so the Options > /me-motes language combo opens to the right value.
+    // Truly-fresh installs land here with g_EmoteLanguage empty — skipped,
+    // then seeded later by MainPanel's first-run dialog. A user who manually
+    // emptied me_motes.json (file exists but loads zero entries) is NOT
+    // reseeded — we only seed when the file genuinely didn't exist.
+    if (!meMotesLoaded && !g_EmoteLanguage.empty() && !g_MeMotesJsonPath.empty()) {
+        g_MeMoteLanguage = ClampMeMoteLanguage(g_EmoteLanguage);
+        int added = SeedBundledMeMotes(g_MeMoteLanguage);
+        if (added > 0) {
+            SaveMeMotesJson(g_MeMotesJsonPath);
+            MarkMeMotesDirty();
+        }
+    }
+
     EnsureDefaultCategory();  // always at least one favorites category
     // Now that both settings (favorites/unlocks) and the catalog are loaded,
     // surface any favorite/unlock id that no longer resolves. Log-only — stale

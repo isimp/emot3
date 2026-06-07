@@ -142,6 +142,11 @@ void RenderGeneralOptionsTab() {
 
     CheckboxWithSaveAndTooltip("opt.gen.send_on_click", &g_Settings.SendOnClick, /*defaultIsOn=*/true);
 
+    // Independent of SendOnClick — /me-motes commit free-form text to chat,
+    // which some users prefer to confirm-then-send rather than fire on click.
+    // See SendOrFillMeMote in EmoteAction.cpp.
+    CheckboxWithSaveAndTooltip("opt.gen.send_me_mote_on_click", &g_Settings.MeMoteSendOnClick, /*defaultIsOn=*/true);
+
     // Close an open chat / text box (Escape) and send, instead of refusing.
     CheckboxWithSaveAndTooltip("opt.gen.close_chat_on_send", &g_Settings.CloseChatOnSend, /*defaultIsOn=*/false);
 
@@ -180,6 +185,12 @@ void RenderGeneralOptionsTab() {
     }
 
     CheckboxWithSaveAndTooltip("opt.gen.show_target_dot", &g_Settings.ShowTargetDot, /*defaultIsOn=*/true);
+
+    // /me-mote indicator — small upper-right accent on /me-mote cells, marks
+    // them as distinct from regular Emote cells. Same paragraph as the
+    // target-dot toggle since they're conceptual siblings (and share the
+    // top-right corner — never co-occur, /me-motes are never targetable).
+    CheckboxWithSaveAndTooltip("opt.gen.show_me_mote_indicator", &g_Settings.ShowMeMoteIndicator, /*defaultIsOn=*/true);
 
     // How unusable emotes present on the Quickbar - one dropdown over the two
     // settings: Grey out / Hide / Do nothing. "Do nothing" is the off state
@@ -252,6 +263,11 @@ void RenderGeneralOptionsTab() {
     CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked", &g_Settings.QuickbarShowUnlockedCategory, /*defaultIsOn=*/false);
 
     CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked_all", &g_Settings.QuickbarShowUnlockedAllCategory, /*defaultIsOn=*/true);
+
+    // /me-motes — opt-in like the other built-in categories. Inert until the
+    // Quickbar's category-build code surfaces the /me-mote category (next
+    // checkpoint), but the toggle persists either way.
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_me_motes", &g_Settings.QuickbarShowMeMotesCategory, /*defaultIsOn=*/false);
 
     // Favorite categories are created and managed entirely in the Library now
     // (add via its "+ Category" bar; collapse / drag-reorder / rename / delete

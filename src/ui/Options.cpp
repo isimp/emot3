@@ -1,5 +1,6 @@
 #include "Options.h"
 #include "OptionsCommon.h"  // RenderGeneral/Quickbar/EmotesOptionsTab
+#include "OptionsMeMotes.h" // RenderMeMotesTab — /me-motes editor
 #include "Globals.h"
 #include "Logging.h"
 #include "I18n.h"
@@ -33,11 +34,10 @@ void ApplyQbCloseOnEsc() {
 void AddonOptions() {
     PROFILE_SCOPE("opt.frame");  // dev perf overlay
     // Pick up any completed file-browse result from the worker thread
-    // before drawing this frame.
-    if (DrainIconBrowse()) {
-        if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-        MarkEmotesDirty();
-    }
+    // before drawing this frame. DrainIconBrowse persists + marks dirty
+    // internally based on the target's catalog (Emote vs /me-mote), so the
+    // caller doesn't need to know which one was touched.
+    DrainIconBrowse();
     // Apply any completed GW2-API unlock sync + drive H&S retries (render-side).
     DrainUnlockSync();
     // Plus-only: tick the "newer release available" check (no-op stub otherwise).
@@ -68,6 +68,7 @@ void AddonOptions() {
         std::string tGeneral  = std::string(L("opt.tab.general"))  + "###tab_general";
         std::string tQuickbar = std::string(L("opt.tab.quickbar")) + "###tab_quickbar";
         std::string tEmotes   = std::string(L("opt.tab.emotes"))   + "###tab_emotes";
+        std::string tMeMotes  = std::string(L("opt.tab.me_motes")) + "###tab_me_motes";
         std::string tUnlocks  = std::string(L("opt.tab.unlocks"))  + "###tab_unlocks";
         if (ImGui::BeginTabItem(tGeneral.c_str())) {
             RenderGeneralOptionsTab();
@@ -83,6 +84,12 @@ void AddonOptions() {
         }
         if (ImGui::BeginTabItem(tEmotes.c_str())) {
             RenderEmotesTab();
+            ImGui::EndTabItem();
+        }
+        // /me-motes — separate editor, separate JSON file. See
+        // ui/OptionsMeMotes.cpp + data/MeMotes.h.
+        if (ImGui::BeginTabItem(tMeMotes.c_str())) {
+            RenderMeMotesTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

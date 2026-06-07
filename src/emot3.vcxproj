@@ -322,11 +322,13 @@
     <ClInclude Include="core\Logging.h" />
     <ClInclude Include="data\EmoteData.h" />
     <ClInclude Include="data\Favorites.h" />
+    <ClInclude Include="data\MeMotes.h" />
     <ClInclude Include="data\QuickbarPresets.h" />
     <ClInclude Include="data\Settings.h" />
     <ClInclude Include="resources\Resources.h" />
     <ClInclude Include="ui\Cells.h" />
     <ClInclude Include="ui\IconBrowse.h" />
+    <ClInclude Include="ui\OptionsMeMotes.h" />
     <ClInclude Include="ui\Icons.h" />
     <ClInclude Include="ui\Layout.h" />
     <ClInclude Include="ui\MainPanel.h" />
@@ -370,6 +372,7 @@
     <ClCompile Include="core\Logging.cpp" />
     <ClCompile Include="data\EmoteData.cpp" />
     <ClCompile Include="data\Favorites.cpp" />
+    <ClCompile Include="data\MeMotes.cpp" />
     <ClCompile Include="data\QuickbarPresets.cpp" />
     <ClCompile Include="data\Settings.cpp" />
     <ClCompile Include="generated\ResourcesGenerated.cpp" />
@@ -385,6 +388,7 @@
     <ClCompile Include="ui\OptionsGeneral.cpp" />
     <ClCompile Include="ui\OptionsQuickbar.cpp" />
     <ClCompile Include="ui\OptionsEmotes.cpp" />
+    <ClCompile Include="ui\OptionsMeMotes.cpp" />
     <ClCompile Include="ui\OptionsUnlocks.cpp" />
     <ClCompile Include="ui\Quickbar.cpp" />
     <ClCompile Include="ui\TextCache.cpp" />
@@ -417,7 +421,7 @@
   -->
   <Target Name="GenerateResources"
           BeforeTargets="ClCompile;ResourceCompile"
-          Inputs="$(ProjectDir)..\tools\gen_rc.py;$(ProjectDir)..\resources\emotes_official\*.png;$(ProjectDir)..\resources\emotes_ai\*.png;$(ProjectDir)..\resources\ui\*.png;$(ProjectDir)..\resources\i18n\*.json;$(ProjectDir)..\resources\emote_data\*.json;$(ProjectDir)..\resources\presets\*.json"
+          Inputs="$(ProjectDir)..\tools\gen_rc.py;$(ProjectDir)..\resources\emotes_official\*.png;$(ProjectDir)..\resources\emotes_ai\*.png;$(ProjectDir)..\resources\ui\*.png;$(ProjectDir)..\resources\i18n\*.json;$(ProjectDir)..\resources\emote_data\*.json;$(ProjectDir)..\resources\presets\*.json;$(ProjectDir)..\resources\me_mote_data\*.json;$(ProjectDir)..\resources\me_motes_ai\*.png"
           Outputs="$(ProjectDir)generated\emot3.rc;$(ProjectDir)generated\ResourcesGenerated.cpp">
     <Message Text="Generating generated\emot3.rc and generated\ResourcesGenerated.cpp from resources/" Importance="High" />
     <Exec Command="py -3 &quot;$(ProjectDir)..\tools\gen_rc.py&quot;" />

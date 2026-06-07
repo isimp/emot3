@@ -4,6 +4,7 @@
 #include "I18n.h"
 #include "Settings.h"
 #include "EmoteData.h"
+#include "MeMotes.h"           // /me-motes Library section + favorites mixing
 #include "EmoteAction.h"
 #include "CharacterState.h" // TickCharacterState (per-frame falling check)
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
@@ -35,11 +36,13 @@
 static char g_SearchBuf[64] = {};
 
 // Collapse / expand every Library section at once: each user favorites category
-// plus the two built-in sections (Core / Unlockable). One save covers them all.
+// plus the three built-in sections (Core / Unlockable / /me-motes). One save
+// covers them all.
 static void SetAllSectionsCollapsed(bool c) {
     for (auto& cat : g_Settings.FavoriteCategories) cat.Collapsed = c;
     g_Settings.MainCoreCollapsed     = c;
     g_Settings.MainUnlockedCollapsed = c;
+    g_Settings.MainMeMotesCollapsed  = c;
     if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
 }
 
@@ -86,8 +89,9 @@ static void CategoryReorderZone(int ci, float secTop, float secBot) {
 // of the Library window, shown ONLY while an emote dragged FROM a user favorites
 // category is in flight (payload.categoryIdx >= 0). Catalog-sourced drags (Core /
 // Unlockable, categoryIdx < 0) aren't in favorites, so the zone stays hidden for
-// them. Dropping calls RemoveEmoteFromCategories - exactly the right-click
-// "Remove from favorites" path.
+// them. Dropping calls RemoveRefFromCategories with the payload's type - exactly
+// the right-click "Remove from favorites" path (which is type-aware, so a
+// /me-mote favorite drops correctly instead of routing to the Emote namespace).
 //
 // Drawn on the FOREGROUND draw list (always on top) with a custom drop rect
 // (BeginDragDropTargetCustom) rather than a separate window: a real overlay window
@@ -120,7 +124,7 @@ static void RenderRemoveTrashZone() {
         if (pl) {
             hovering = true;
             const EmoteDragPayload* s = (const EmoteDragPayload*)pl->Data;
-            if (pl->IsDelivery() && s) RemoveEmoteFromCategories(std::string(s->id));
+            if (pl->IsDelivery() && s) RemoveRefFromCategories(s->type, std::string(s->id));
         }
         ImGui::EndDragDropTarget();
     }
@@ -171,6 +175,25 @@ static DevStateRegistrar s_texStateSection("Textures / resources", [] {
     DevStateRow("emotes",                  "%d", total);
     DevStateRow("textures ready",          "%d", ready);
     DevStateRow("pending (loading/none)",  "%d", pending);
+
+    // /me-motes: only entries with an explicit IconPath get a texture
+    // attempt (no `<id>.png` folder convention), so "with icon path" is
+    // the true total for the ready/pending tally — a /me-mote with empty
+    // IconPath would always read "pending" and inflate the count.
+    int mmTotal = 0, mmReady = 0, mmPending = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        for (const auto& m : g_MeMotes) {
+            if (m.IconPath.empty()) continue;
+            ++mmTotal;
+            Texture* t = GetMeMoteTexture(m.Id);
+            if (t && t->Resource) ++mmReady; else ++mmPending;
+        }
+    }
+    DevStateRow("/me-motes (with icon)",    "%d", mmTotal);
+    DevStateRow("/me-mote textures ready",  "%d", mmReady);
+    DevStateRow("/me-motes pending",        "%d", mmPending);
+
     DevStateRow("LoadEmoteTextures calls", "%d", s_texLoadCalls);
     DevStateRow("last load found/missing", "%d / %d", s_texLastLoaded, s_texLastMissing);
     DevStateRow("emotes dirty",            "%s", g_EmotesDirty ? "yes" : "no");
@@ -237,7 +260,52 @@ void LoadEmoteTextures() {
         LOG_DEBUG("Emote icon reload: %d found, %d missing", loaded, missing);
     }
     s_emoteTexturesPrimed = true;
-    g_EmotesDirty         = false;
+
+    // /me-mote textures share the same dirty epoch — MarkMeMotesDirty sets
+    // g_EmotesDirty too, so any /me-mote edit triggers this branch on the
+    // next render frame. The /me-mote chain is shorter than the Emote
+    // chain by ONE tier (no BundledOfficial — the catalog is user-content
+    // so ArenaNet doesn't ship art for it); ResolveMeMoteIconSource picks
+    // between Custom / FolderOverride (disk PNG, either path), BundledAI
+    // (when UseAIIconFallback is on AND the Id has a bundled AI PNG), and
+    // TextFallback (the styled letter, drawn by RenderMeMoteCellBody at
+    // render time, no texture load). Caveat shared with the Emote path:
+    // GetOrCreate*From* keys on the cache name and Nexus exposes no
+    // texture-evict, so changing or clearing an IconPath for an existing
+    // Id only takes visible effect on the next reload/restart.
+    int meLoaded = 0, meMissing = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        for (const auto& m : g_MeMotes) {
+            std::string key = MeMoteCacheKey(m.Id);
+            switch (ResolveMeMoteIconSource(m)) {
+                case MeMoteIconSource::Custom:
+                case MeMoteIconSource::FolderOverride:
+                    // A PNG on disk (explicit IconPath or icons/<id>.png drop-in).
+                    APIDefs->Textures.GetOrCreateFromFile(
+                        key.c_str(), ResolveMeMoteIconPath(m).c_str());
+                    ++meLoaded;
+                    break;
+                case MeMoteIconSource::BundledAI: {
+                    const void* data = nullptr; size_t size = 0;
+                    if (TryLoadBundledIconBytes(kMeMoteAIIcons, kMeMoteAIIconsCount,
+                                                m.Id, data, size)) {
+                        APIDefs->Textures.GetOrCreateFromMemory(
+                            key.c_str(), const_cast<void*>(data), size);
+                        ++meLoaded;
+                    } else ++meMissing;  // unreachable: resolver checked the same table
+                    break;
+                }
+                case MeMoteIconSource::TextFallback:
+                    ++meMissing;  // RenderMeMoteCellBody draws the styled letter
+                    break;
+            }
+        }
+    }
+    if (meLoaded > 0 || meMissing > 0)
+        LOG_DEBUG("/me-mote icon load: %d found, %d letter-fallback", meLoaded, meMissing);
+
+    g_EmotesDirty = false;
 }
 
 void LoadUiIconOverrides() {
@@ -258,12 +326,13 @@ void LoadUiIconOverrides() {
     // icon row regardless of what users drop into icons/ui/. The
     // README.txt we write next to this folder calls out the same rule.
     static const UiBinding kBindings[] = {
-        { "EMOT3_UI_STAR",           "star",       true  },
-        { "EMOT3_UI_PAPERCLIP",      "paperclip",  true  },
-        { "EMOT3_UI_LOCK",           "lock",       true  },
-        { "EMOT3_UI_TARGET",         "target_dot", true  },
-        { "EMOT3_UI_SHORTCUT",       "icon",       false },
-        { "EMOT3_UI_SHORTCUT_HOVER", "icon_hover", false },
+        { "EMOT3_UI_STAR",           "star",        true  },
+        { "EMOT3_UI_PAPERCLIP",      "paperclip",   true  },
+        { "EMOT3_UI_LOCK",           "lock",        true  },
+        { "EMOT3_UI_TARGET",         "target_dot",  true  },
+        { "EMOT3_UI_ME_MOTE",        "me_mote_dot", true  },
+        { "EMOT3_UI_SHORTCUT",       "icon",        false },
+        { "EMOT3_UI_SHORTCUT_HOVER", "icon_hover",  false },
     };
 
     for (const auto& b : kBindings) {
@@ -433,6 +502,18 @@ static void RenderEmptyCatalogDialog() {
         if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
         MarkEmotesDirty();
         LoadEmoteTextures();
+        // First-run: seed bundled /me-motes too so the catalog isn't an empty
+        // "Add some under Options" hint. ClampMeMoteLanguage maps the emote
+        // bundle's choice down to the /me-mote bundle's supported set —
+        // picks like "fr" / "es" land at "en" so g_MeMoteLanguage is always
+        // a value SeedBundledMeMotes can resolve. Idempotent by Id (a
+        // returning user who already hit Restore won't see duplicates).
+        g_MeMoteLanguage = ClampMeMoteLanguage(langs[sel]);
+        int added = SeedBundledMeMotes(g_MeMoteLanguage);
+        if (added > 0 && !g_MeMotesJsonPath.empty()) {
+            SaveMeMotesJson(g_MeMotesJsonPath);
+            MarkMeMotesDirty();
+        }
     }
 
     ImGui::Spacing();
@@ -638,10 +719,13 @@ void AddonRender() {
     ImGui::SameLine();
     filterChanged |= ToggleButton(L("filter.locked"),   &g_Settings.FilterShowLocked);
     if (ImGui::IsItemHovered()) TooltipOnOff("filter.locked.on", "filter.locked.off", /*defaultIsOn=*/true);
+    ImGui::SameLine();
+    filterChanged |= ToggleButton(L("filter.me_motes"), &g_Settings.FilterShowMeMotes);
+    if (ImGui::IsItemHovered()) TooltipOnOff("filter.me_motes.on", "filter.me_motes.off", /*defaultIsOn=*/true);
     if (filterChanged) {
-        LOG_TRACE("setting main.filter core=%d unlocked=%d locked=%d",
+        LOG_TRACE("setting main.filter core=%d unlocked=%d locked=%d me_motes=%d",
                   g_Settings.FilterShowCore, g_Settings.FilterShowUnlocked,
-                  g_Settings.FilterShowLocked);
+                  g_Settings.FilterShowLocked, g_Settings.FilterShowMeMotes);
         if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
     }
 
@@ -778,7 +862,8 @@ void AddonRender() {
     // They're rebuilt every frame (no cross-frame caching, so nothing to
     // invalidate when the catalog mutates).
     CatalogIndex idx;                              // byId + unlockedIds, filled below
-    std::unordered_set<std::string> favoritedIds;  // every Id sitting in any category
+    std::unordered_set<std::string> favoritedIds;        // every Emote Id sitting in any category
+    std::unordered_set<std::string> favoritedMeMoteIds;  // every /me-mote Id sitting in any category
 
     auto isUnlk = [&](const Emote& e) { return idx.unlocked(e); };
 
@@ -826,41 +911,117 @@ void AddonRender() {
         return true;
     };
 
+    // /me-mote search predicate. No class filters here (FilterShowMeMotes
+    // gates the section/favorites build before this is consulted) and no
+    // Command field (doesn't exist). Match shape mirrors passes() above so
+    // an alias-only hit surfaces the same "matched alias: X" tooltip line.
+    auto passesMeMote = [&](const MeMote& m, std::string& note) {
+        note.clear();
+        if (!searchActive) return true;
+        std::string n = m.Name;
+        std::transform(n.begin(), n.end(), n.begin(), ::tolower);
+        bool nameHit = n.find(search) != std::string::npos;
+        const std::string* aliasHit = nullptr;
+        if (!nameHit) {
+            for (const auto& al : m.Aliases) {
+                std::string a = al;
+                std::transform(a.begin(), a.end(), a.begin(), ::tolower);
+                if (a.find(search) != std::string::npos) { aliasHit = &al; break; }
+            }
+        }
+        if (!nameHit && !aliasHit) return false;
+        if (aliasHit) {
+            char buf[160];
+            std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), aliasHit->c_str());
+            note = buf;
+        }
+        return true;
+    };
+
     std::vector<std::vector<CellInfo>> catItems(g_Settings.FavoriteCategories.size());
     // Unfiltered count per category - counts only "real" emotes (skips
     // stale references to deleted emotes). Lets us distinguish "category
     // is truly empty" from "category has emotes but the active
     // filter/search hides them all" when rendering the empty-state line.
     std::vector<int> catTotal(g_Settings.FavoriteCategories.size(), 0);
-    std::vector<CellInfo> coreItems, unlockItems;
-    // Totals of non-favorited emotes ignoring filter/search - lets us tell
+    std::vector<CellInfo> coreItems, unlockItems, meMoteItems;
+    // Totals of non-favorited entries ignoring filter/search - lets us tell
     // "all favorited" apart from "filter/search hides everything".
-    int coreUnfavCount = 0, unlockUnfavCount = 0;
+    int coreUnfavCount = 0, unlockUnfavCount = 0, meMoteUnfavCount = 0;
     // Totals over the whole catalog (favorited or not), so an empty section
     // can say "none of this class exist" vs "they're hidden by the filter".
     int coreTotal = 0, unlockTotal = 0;
+    int meMoteTotal = 0;
+
+    // Snapshot a /me-mote Id -> ptr map under g_MeMotesMutex so we don't have
+    // to nest with g_EmotesMutex below. Pointers stay stable while no one is
+    // mutating g_MeMotes (the editor runs on the same render thread).
+    // meMoteTotal is set later, after the half-filled-entry filter, so it
+    // represents renderable /me-motes (not raw catalog size).
+    std::unordered_map<std::string, const MeMote*> meMotesById;
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        meMotesById.reserve(g_MeMotes.size());
+        for (const auto& m : g_MeMotes) meMotesById[m.Id] = &m;
+    }
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
 
         { PROFILE_SCOPE("mp.build");  // dev perf overlay
         // Populate the per-frame lookup tables (rebuilt each frame, never cached).
         BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
-        for (const auto& c : g_Settings.FavoriteCategories)
-            favoritedIds.insert(c.Emotes.begin(), c.Emotes.end());
+        // favoritedIds tracks which Emote IDs are currently favorited (drives
+        // the "skip favorited" logic for the Core / Unlockable sections so the
+        // same emote doesn't appear in both the favorites section and the
+        // built-in one). favoritedMeMoteIds does the same for the /me-motes
+        // section. The two are NOT merged: an Emote and a /me-mote can share
+        // an Id (the catalogs are namespace-distinct), so the per-type sets
+        // keep the skip-check unambiguous.
+        for (const auto& c : g_Settings.FavoriteCategories) {
+            for (const auto& r : c.Refs) {
+                if (r.Type == EFavoriteRefType::Emote)       favoritedIds.insert(r.Id);
+                else if (r.Type == EFavoriteRefType::MeMote) favoritedMeMoteIds.insert(r.Id);
+            }
+        }
 
         // One filtered list per favorites category, preserving user order.
-        // catTotal counts real-but-hidden entries so the empty-state
-        // message can distinguish "filtered out" from "actually empty."
+        // Each Ref is resolved to its catalog by Type — Emote-typed refs go
+        // through idx.byId (g_Emotes); /me-mote-typed refs go through the
+        // snapshot map above. CellInfo carries the right pointer (e XOR m)
+        // and RenderEmoteCell dispatches accordingly. Both the FilterShowMeMotes
+        // pill and the search predicate apply to /me-mote favorites, mirroring
+        // how passes() gates Emote favorites.
         for (size_t ci = 0; ci < g_Settings.FavoriteCategories.size(); ++ci) {
             const auto& cat = g_Settings.FavoriteCategories[ci];
-            for (size_t i = 0; i < cat.Emotes.size(); ++i) {
-                auto it = idx.byId.find(cat.Emotes[i]);
-                if (it == idx.byId.end()) continue;  // stale reference - not really "in" the category
-                const Emote* e = it->second;
-                ++catTotal[ci];
-                std::string note;
-                if (passes(*e, note))
-                    catItems[ci].push_back({ e, (int)i, isUnlk(*e), std::move(note) });
+            for (size_t i = 0; i < cat.Refs.size(); ++i) {
+                const auto& ref = cat.Refs[i];
+                if (ref.Type == EFavoriteRefType::Emote) {
+                    auto it = idx.byId.find(ref.Id);
+                    if (it == idx.byId.end()) continue;  // stale reference
+                    const Emote* e = it->second;
+                    ++catTotal[ci];
+                    std::string note;
+                    if (passes(*e, note))
+                        catItems[ci].push_back({ e, nullptr, (int)i, isUnlk(*e), std::move(note) });
+                } else {  // MeMote
+                    auto it = meMotesById.find(ref.Id);
+                    if (it == meMotesById.end()) continue;
+                    const MeMote* m = it->second;
+                    // A half-filled /me-mote (empty Name or empty
+                    // TextDefault) is invisible until the user finishes it.
+                    // The ref stays in storage so re-completing it pops back
+                    // into view here.
+                    if (!IsMeMoteRenderable(*m)) continue;
+                    ++catTotal[ci];
+                    // /me-motes filter pill, mirrors how passes() gates Emote
+                    // refs above. Counted into catTotal first so the empty-
+                    // state still distinguishes "no entries" from "filter
+                    // hides them".
+                    if (!g_Settings.FilterShowMeMotes) continue;
+                    std::string note;
+                    if (!passesMeMote(*m, note)) continue;
+                    catItems[ci].push_back({ nullptr, m, (int)i, /*unlocked=*/true, std::move(note) });
+                }
             }
         }
 
@@ -871,12 +1032,43 @@ void AddonRender() {
             if (e.IsCore) ++coreUnfavCount; else ++unlockUnfavCount;
             std::string note;
             if (!passes(e, note)) continue;
-            (e.IsCore ? coreItems : unlockItems).push_back({ &e, -1, isUnlk(e), std::move(note) });
+            (e.IsCore ? coreItems : unlockItems).push_back({ &e, nullptr, -1, isUnlk(e), std::move(note) });
         }
+        // /me-mote built-in section. Surfaces every renderable /me-mote that
+        // ISN'T already favorited — same skip-when-favorited rule the Core /
+        // Unlockable sections follow so an entry never appears in both the
+        // favorites section and the built-in one. meMoteTotal +
+        // meMoteUnfavCount drive the empty-state branching so we can
+        // distinguish "none exist" / "all favorited" / "filter hid them".
+        // Both counts are post-renderable (half-filled entries don't count
+        // toward either) and BEFORE the FilterShowMeMotes pill — meMoteTotal
+        // and meMoteUnfavCount stay accurate when the pill is off so the
+        // empty-state message can name the right reason.
+        for (const auto& kv : meMotesById) {
+            const MeMote* m = kv.second;
+            if (!IsMeMoteRenderable(*m)) continue;
+            ++meMoteTotal;
+            if (favoritedMeMoteIds.count(m->Id)) continue;
+            ++meMoteUnfavCount;
+            if (!g_Settings.FilterShowMeMotes) continue;
+            std::string note;
+            if (!passesMeMote(*m, note)) continue;
+            meMoteItems.push_back({ nullptr, m, -1, /*unlocked=*/true, std::move(note) });
+        }
+
         auto byName = [](const CellInfo& a, const CellInfo& b) {
+            // Both sides are Emote cells in coreItems/unlockItems (built
+            // above); the comparison reads a->e safely.
             return a.e->Name < b.e->Name;
         };
         std::sort(coreItems.begin(), coreItems.end(), byName);
+        // Sort /me-motes by Name as well (or Id when Name empty).
+        std::sort(meMoteItems.begin(), meMoteItems.end(),
+            [](const CellInfo& a, const CellInfo& b) {
+                const std::string& na = !a.m->Name.empty() ? a.m->Name : a.m->Id;
+                const std::string& nb = !b.m->Name.empty() ? b.m->Name : b.m->Id;
+                return na < nb;
+            });
 
         // Unlockable: unlocked first, then locked, alphabetical within each.
         // CellInfo.unlocked was precomputed above (covers cores internally -
@@ -1072,6 +1264,31 @@ void AddonRender() {
                 ImGui::TextDisabled("%s", emptyMsgFor(/*core=*/false, unlockTotal, unlockUnfavCount));
             else
                 RenderEmoteSection(unlockItems, /*allowReorder=*/false, -1, g_Settings.ViewMode, mainScale);
+        }
+        // /me-motes built-in section ("/me-motes"). Header always renders so
+        // users see the section even before they've added any /me-motes
+        // (matches Core/Unlockable behavior). Empty-state branches mirror
+        // the Core/Unlockable triad: no entries → "create some"; all
+        // favorited → "all favorited" so users don't think they vanished.
+        bool meCollapsed = SectionHeader(L("cat.me_motes"), /*isUser=*/false,
+                                         &g_Settings.MainMeMotesCollapsed, searchActive);
+        if (!meMoteItems.empty()) anyShown = true;
+        if (!meCollapsed) {
+            if (meMoteItems.empty()) {
+                // Mirrors the Core/Unlockable empty-state quartet: none
+                // exist → "create some"; everything exists but is favorited
+                // → "all favorited"; search active and nothing matches →
+                // "no /me-motes match the search"; the pill hid them →
+                // "filtered out". Most-specific cause first.
+                const char* msg;
+                if (meMoteTotal == 0)           msg = L("mp.me_motes_none");
+                else if (meMoteUnfavCount == 0) msg = L("mp.me_motes_all_fav");
+                else if (searchActive)          msg = L("mp.me_motes_no_search");
+                else                            msg = L("mp.me_motes_filtered");
+                ImGui::TextDisabled("%s", msg);
+            } else {
+                RenderEmoteSection(meMoteItems, /*allowReorder=*/false, -1, g_Settings.ViewMode, mainScale);
+            }
         }
         if (!anyShown) {
             ImGui::TextDisabled("%s", L("mp.no_match_filter"));

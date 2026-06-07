@@ -62,20 +62,24 @@ struct FitEntry {
     ImVec2      size2;
 };
 
-// Ellipsize `name` to fit within `maxW`. emoteId + mode + quantized maxW key
-// the cache slot; `name` populates the entry on miss. Returned reference stays
-// valid only until the next invalidation event (catalog version bump or font
-// size change) - do not hold it across frames.
+// Ellipsize `name` to fit within `maxW`. emoteId + mode + quantized maxW + the
+// `meMote` namespace flag key the cache slot; `name` populates the entry on
+// miss. `meMote` keeps an Emote and a /me-mote that share an Id in separate
+// slots (their Id namespaces are independent). Returned reference stays valid
+// only until the next invalidation event (catalog version bump or font size
+// change) - do not hold it across frames.
 const EllipsizedEntry& EllipsizeCached(const std::string& emoteId,
                                        const std::string& name,
-                                       EViewMode mode, float maxW);
+                                       EViewMode mode, float maxW,
+                                       bool meMote = false);
 
 // Fit `name` into `maxW` across one or two lines (the Full-mode two-line
-// label). emoteId + quantized maxW key the cache slot; view mode is implicit
-// (Full is the only caller, since the other modes use Ellipsize).
+// label). emoteId + quantized maxW + the `meMote` namespace flag key the cache
+// slot; view mode is implicit (Full is the only caller, since the other modes
+// use Ellipsize).
 const FitEntry& FitNameCached(const std::string& emoteId,
                               const std::string& name,
-                              float maxW);
+                              float maxW, bool meMote = false);
 
 // --- Dev-tool introspection (used by devtools/MemoryMonitor) -----------
 // Ungated (not behind EMOT3_DEVTOOLS) so the Distribution + Plus DLLs

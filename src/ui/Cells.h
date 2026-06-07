@@ -10,39 +10,54 @@
 #include "Settings.h"      // EViewMode
 
 struct Emote;
+struct MeMote;
 
+// One cell to draw. Exactly one of `e` (Emote) or `m` (/me-mote) is non-null;
+// RenderEmoteCell dispatches on which is set. Keeping both pointers in the
+// same struct (rather than forking the vector type) means RenderEmoteSection
+// + its drop-zone + grid-fit code stay type-agnostic and unchanged — adding
+// the second kind only touches the per-cell render path.
 struct CellInfo {
-    const Emote* e;
-    int          favIdx;          // index into FavoriteCategory.Emotes when reorderable, else -1
-    bool         unlocked = false; // precomputed at build time (e->IsCore ||
-                                   // in ManuallyUnlocked) so the render loop and
-                                   // the unlockables sort don't each re-run the
-                                   // O(N) IsEmoteUnlocked/FindEmote per cell.
+    const Emote*  e = nullptr;
+    const MeMote* m = nullptr;
+    int           favIdx;          // index into FavoriteCategory.Refs when reorderable, else -1
+    bool          unlocked = false; // precomputed at build time (e->IsCore ||
+                                    // in ManuallyUnlocked) so the render loop and
+                                    // the unlockables sort don't each re-run the
+                                    // O(N) IsEmoteUnlocked/FindEmote per cell.
+                                    // For /me-mote cells always true (no unlock concept).
     // Why this emote matched the active search, when the reason isn't visible in
     // the cell (an alias hit - aliases show nowhere else). Empty otherwise. Shown
     // as an extra tooltip line. Main-panel only; the Quickbar leaves it empty.
-    std::string  searchNote;
+    std::string   searchNote;
 };
 
-// Drag payload identifies a single emote being dragged. categoryIdx
-// distinguishes the source:
+// Drag payload identifies a single Library cell being dragged — either an
+// Emote or a /me-mote, distinguished by `type`. categoryIdx distinguishes
+// the source:
 //   >= 0 - a favorites category at index categoryIdx; emoteIdx is the
 //          slot within that category (used for in-place reorder and
 //          for the erase-then-insert dance on a cross-category move).
 //   <  0 - one of the built-in catalog sections (Core / Unlockable
-//          in the main panel). emoteIdx isn't meaningful in this
-//          mode; the destination just inserts the command without
+//          / /me-motes in the main panel). emoteIdx isn't meaningful in
+//          this mode; the destination just inserts the ref without
 //          erasing from any source list.
-// id is populated for every drag - it's the stable emote identifier the
-// destination uses when the source isn't a real list it can erase from
+// id is populated for every drag - it's the stable Id (Emote or /me-mote)
+// the destination uses when the source isn't a real list it can erase from
 // (catalog drags). isLocked is captured at drag start so the target can
 // refuse cross-category moves of a locked emote (locked emotes can't sit
-// in a new category but can be reordered within their current one).
+// in a new category but can be reordered within their current one);
+// /me-mote drags always carry isLocked=false (no lock concept exists).
+// type is the EFavoriteRefType the destination uses to construct the
+// FavoriteRef on insert into a favorites category — Emote routes to
+// g_Emotes, MeMote routes to g_MeMotes. Default Emote so any legacy code
+// that initializes the struct with brace-init stays correct.
 struct EmoteDragPayload {
-    int  categoryIdx;
-    int  emoteIdx;
-    bool isLocked;
-    char id[64];
+    int              categoryIdx;
+    int              emoteIdx;
+    bool             isLocked;
+    char             id[64];
+    EFavoriteRefType type = EFavoriteRefType::Emote;
 };
 
 // One cell of the grid — icon button + optional label + overlays + the
@@ -56,7 +71,7 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
                      int  categoryIdx,
                      bool isQuickbar);
 
-// Apply a drag-drop at gap `g` (a slot in FavoriteCategories[dstCat].Emotes,
+// Apply a drag-drop at gap `g` (a slot in FavoriteCategories[dstCat].Refs,
 // 0..size) for the given payload: catalog add, same-category reorder, or
 // cross-category move. All index math is clamped; locked-emote and de-dup
 // rules are enforced inside. Saves settings on a successful change. Shared by
