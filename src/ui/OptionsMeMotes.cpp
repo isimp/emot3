@@ -3,7 +3,8 @@
 #include "Favorites.h"   // RemoveRefFromCategories on delete
 #include "Globals.h"
 #include "I18n.h"        // L(), TooltipText
-#include "IconBrowse.h"  // StartIconBrowse for the Browse... button
+#include "IconBrowse.h"  // ApplyIconPathToTarget (cross-catalog routing) + EIconTargetKind
+#include "IconPicker.h"  // OpenIconPicker ("Library..." button)
 #include "Layout.h"      // PushDestructiveButtonStyles, PushInvalidInputStyle, DrawInvalidInputBorder, Ellipsize
 #include "Logging.h"
 #include "MeMotes.h"
@@ -61,7 +62,8 @@ namespace {
 // Per-row edit buffer. Lives outside the InputText calls so click-away
 // reliably commits without depending on ImGui's IsItemDeactivatedAfterEdit
 // + a stable user buffer. No `icon` field — the icon path is set via the
-// Browse/Clear buttons (StartIconBrowse / direct clear), never typed.
+// in-app picker (Library...) or cleared, never typed; an arbitrary absolute
+// path is a power-user me_motes.json hand-edit.
 struct RowBuffer {
     std::string name;
     std::string aliases;     // edit buffer; whitespace + comma separated
@@ -299,6 +301,28 @@ void RenderMeMotesTab() {
     PROFILE_SCOPE("opt.me_motes");  // dev perf overlay — sibling to opt.emotes / opt.general / etc.
     // ---- Intro --------------------------------------------------------
     ImGui::TextWrapped("%s", L("opt.mm.hlp_top"));
+
+    // Replaced PNGs only load on the next launch (Nexus' texture cache has
+    // no eviction) — flag it so a file swap that doesn't show up isn't a
+    // mystery. Wording + colour mirror the Catalog tab's restart note.
+    ImGui::Spacing();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+    ImGui::TextWrapped("%s", L("opt.mm.restart_note"));
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+
+    // Collapsible explainer for the icon resolution chain (where each row's
+    // icon comes from). Closed by default; mirrors the Catalog tab's
+    // explainer in structure but spells out the /me-mote 4-tier chain (no
+    // BundledOfficial — the catalog is user-content, ArenaNet doesn't ship
+    // art for it). Its order must match ResolveMeMoteIconSource (Icons.cpp)
+    // and the per-row icon-status switch above; if they drift, the user sees
+    // the lie before we do.
+    if (ImGui::CollapsingHeader(L("opt.mm.icon_header"))) {
+        ImGui::Indent();
+        ImGui::TextWrapped("%s", L("opt.mm.icon_explainer"));
+        ImGui::Unindent();
+    }
     ImGui::Spacing();
 
     // ---- "Add to /me-motes" section: inline Id input + Add button -----
@@ -565,6 +589,15 @@ void RenderMeMotesTab() {
                             src = ResolveMeMoteIconSource(*mm);
                     }
                     switch (src) {
+                        case MeMoteIconSource::BundledChosen: {
+                            // Icon picker: a "bundled:<bucket>:<name>" ref names
+                            // a specific bundled icon (resolves regardless of
+                            // UseAIIconFallback). Show the chosen name.
+                            const BundledIcon* tbl = nullptr; int cnt = 0; std::string nm;
+                            ParseBundledIconRef(iconPathSnapshot, tbl, cnt, nm);
+                            ics.text = std::string(L("opt.mm.icon_bundled_chosen_prefix")) + nm;
+                            break;
+                        }
                         case MeMoteIconSource::Custom:
                             // IconPath set AND file exists at the resolved path.
                             ics.text = std::string(L("opt.mm.icon_custom_prefix")) +
@@ -605,22 +638,16 @@ void RenderMeMotesTab() {
                 if (ImGui::IsItemHovered() && !iconPathSnapshot.empty())
                     ImGui::SetTooltip("%s", iconPathSnapshot.c_str());
 
-                bool busy = g_IconBrowse.active.load() || g_IconBrowse.ready.load();
-                if (busy) {
-                    ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
-                                        ImGui::GetStyle().Alpha * 0.5f);
-                }
-                if (ImGui::SmallButton((std::string(L("opt.em.browse")) + "##mmiconbrowse").c_str())
-                    && !busy) {
-                    StartIconBrowse(EIconTargetKind::MeMote, id, iconPathSnapshot);
-                }
-                if (busy) {
-                    ImGui::PopStyleVar();
-                    ImGui::PopItemFlag();
-                }
-                if (ImGui::IsItemHovered() && !busy) TooltipText("opt.em.browse_tooltip");
-
+                // In-app icon picker (visual grid). The OS "From file..." dialog
+                // was removed once the picker landed: it pulls from every bundled
+                // bucket AND the user's icons/ folder, so a drop-in PNG is the
+                // disk-side self-service path and the Library button covers the
+                // in-app side. Hand-edit `me_motes.json` "icon" for an arbitrary
+                // absolute path.
+                if (ImGui::SmallButton((std::string(L("opt.pick.button")) + "##mmiconlib").c_str()))
+                    OpenIconPicker(EIconTargetKind::MeMote, id, iconPathSnapshot);
+                if (ImGui::IsItemHovered())
+                    TooltipText("opt.pick.button_tooltip");
                 ImGui::SameLine();
                 bool hasOverride = !iconPathSnapshot.empty();
                 if (!hasOverride) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,

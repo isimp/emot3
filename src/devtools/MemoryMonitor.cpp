@@ -33,6 +33,7 @@
 #include "TextCache.h"
 #include "I18n.h"
 #include "Icons.h"         // GetEmoteTexture / GetMeMoteTexture - to size Nexus-owned icon textures
+#include "IconPicker.h"    // IconPickerTextureStats (EMOT3_PICK_* thumbnail row)
 #include "Resources.h"     // kMeMoteAIIcons / kMeMoteAIIconsCount + BundledIcon (bundled-AI manifest row)
 #include "Profiling.h"     // prof::Ring, prof::kHistLen, prof::displayMap
 
@@ -261,6 +262,17 @@ void Sample(std::vector<Snapshot>& out) {
         }
         out.push_back({ "/me-mote bundled AI icons (manifest)",
                         (size_t)kMeMoteAIIconsCount, bytes });
+    }
+
+    // Icon-picker thumbnails (EMOT3_PICK_* Nexus cache namespace). Zero until
+    // the picker is first opened, then ~one texture per bundled icon + folder
+    // PNG (primed once, no evict). Surfaced so the picker's one-time texture
+    // cost is visible alongside the catalog texture rows rather than looking
+    // like an unexplained gap vs. the process working set.
+    {
+        size_t pickCount = 0, pickBytes = 0;
+        IconPickerTextureStats(pickCount, pickBytes);
+        out.push_back({ "picker textures (Nexus, est)", pickCount, pickBytes });
     }
 
     // Notifier pending list.
