@@ -296,11 +296,15 @@ void QbCustomScrollbar(ImGuiWindow* child, bool axisY,
 }
 
 // Purely visual scroll-edge hints: a hint at the start/end of the active scroll
-// axis when more content lies that way. Drawn on the FOREGROUND draw list (the
-// grid is a child window that composites ABOVE the parent, so a parent-window
-// overlay lands behind the cells - the same z-order trap the feedback overlay
-// hit; foreground renders last, on top). Clamped to the content rect, with NO
-// layout reservation (the fit-to-grid snap math must stay untouched) and NO input
+// axis when more content lies that way. Drawn into the GRID CHILD's own draw list
+// (`childWin->DrawList`), appended AFTER EndChild so it lands on top of the cells
+// (later in the same list = on top) while staying in the Quickbar's window
+// z-order - so other windows and the category-dropdown popup correctly render
+// ABOVE it. (The earlier foreground-list approach rendered last GLOBALLY, so the
+// hints shone through every window above the bar and over the open dropdown.) A
+// parent-window overlay can't be used: the child composites above the parent, so
+// it would land behind the cells. Clamped to the content rect, with NO layout
+// reservation (the fit-to-grid snap math must stay untouched) and NO input
 // (no g_QbIconRects - not draggable). Per-end gated: start edge (top/left) only
 // when scrolled in, end edge (bottom/right) only when more remains. Hints are
 // mutually exclusive with the scrollbar (the EQbScrollIndicator combo), so the
@@ -312,7 +316,7 @@ void QbCustomScrollbar(ImGuiWindow* child, bool axisY,
 // `bordered` (Text-only mode: cells are full bordered buttons): the hint sits
 // right on the button frames, so the hard line is DROPPED (glow only) and the
 // shadow eased, to avoid doubling up with / darkening the borders.
-void QbScrollEdgeHints(bool axisY, float scroll, float scrollMax,
+void QbScrollEdgeHints(ImDrawList* dl, bool axisY, float scroll, float scrollMax,
                        ImVec2 childPos, ImVec2 childSize,
                        float gutter, bool flatten, bool highContrast,
                        bool wrap, bool bordered) {
@@ -335,7 +339,10 @@ void QbScrollEdgeHints(bool axisY, float scroll, float scrollMax,
     else       mx.y -= gutter;
     if (mx.x - mn.x < 1.f || mx.y - mn.y < 1.f) return;
 
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    // The child's draw list clip stack is in an unspecified state after EndChild;
+    // pin it to the content rect so the hints can't be clipped away or bleed past
+    // the grid. Balanced by a PopClipRect on every exit below.
+    dl->PushClipRect(mn, mx, false);
 
     if (!flatten) {
         // Background shown: a dark inner shadow - present enough to read clearly,
@@ -352,6 +359,7 @@ void QbScrollEdgeHints(bool axisY, float scroll, float scrollMax,
             if (showStart) dl->AddRectFilledMultiColor(mn, ImVec2(mn.x + band, mx.y), edge, fade, fade, edge);
             if (showEnd)   dl->AddRectFilledMultiColor(ImVec2(mx.x - band, mn.y), mx, fade, edge, edge, fade);
         }
+        dl->PopClipRect();
         return;
     }
 
@@ -388,6 +396,7 @@ void QbScrollEdgeHints(bool axisY, float scroll, float scrollMax,
             if (drawLine) dl->AddRectFilled(ImVec2(mx.x - lineW, mn.y), mx, line);
         }
     }
+    dl->PopClipRect();
 }
 }  // namespace
 
@@ -1396,8 +1405,10 @@ void QuickbarRender() {
     }
 
     // Purely visual scroll-edge hints (no g_QbIconRects - not interactive). Drawn
-    // on the foreground list (see the helper), no layout reservation. Adapts to
-    // the active scroll axis (horizScroll -> X, else Y). The end-gate uses the
+    // into the grid child's own draw list (childWin->DrawList) - appended here,
+    // after EndChild, so the hints sit on top of the cells yet stay in the bar's
+    // window z-order (see the helper). No layout reservation. Adapts to the active
+    // scroll axis (horizScroll -> X, else Y). The end-gate uses the
     // cell-aligned max in BOTH modes (g_QbMaxScroll*), so the bottom/right hint
     // clears flush on the last whole row/column. Gutter trim keeps it off the bar:
     // the reserved custom-bar gutter in owned mode, ImGui's own bar width in free.
@@ -1412,7 +1423,7 @@ void QuickbarRender() {
             bool imBar = horizScroll ? childWin->ScrollbarX : childWin->ScrollbarY;
             hGutter = imBar ? ImGui::GetStyle().ScrollbarSize : 0.f;
         }
-        QbScrollEdgeHints(/*axisY=*/!horizScroll, hScroll, hMax,
+        QbScrollEdgeHints(childWin->DrawList, /*axisY=*/!horizScroll, hScroll, hMax,
                           qbChildPos, qbChildSize, hGutter,
                           flattenChrome, g_Settings.QuickbarHighContrast,
                           /*wrap=*/g_Settings.QuickbarScrollWrap,
