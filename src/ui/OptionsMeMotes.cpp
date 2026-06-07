@@ -166,14 +166,16 @@ void Persist() {
 // fields like TextDefault and Name); invalidTooltipKey shows a tooltip on
 // hover when invalid (e.g. "Name cannot be empty.").
 //
-// charBudget > 0 renders a small "N / budget" line directly under the input
-// in the same cell. Color thresholds: 0 .. 80% of budget = muted gray; > 80%
-// .. budget = amber; > budget = red plus the "will be cut off" warning.
-// Drives the GW2 chat-line-length (kMeMoteBodyCharBudget = 195) warning for
-// the three body fields; pass 0 for non-body fields so the line is omitted.
-// Counting is `buf.size()` (UTF-8 byte count) — close enough for an
-// author-side guide; GW2's exact rule at multibyte edge cases is fuzzy and
-// the warning is non-blocking either way (long bodies still save + send).
+// charBudget > 0 reserves a fixed zone on the RIGHT of the field and draws a
+// "N / budget" count INSIDE the frame there — no separate line below, and it
+// never overlaps typed text (the input is narrowed by the zone width). Color
+// thresholds: 0 .. 80% of budget = muted gray; > 80% .. budget = amber; >
+// budget = red, with the "will be cut off" note moved to a hover tooltip. Drives
+// the GW2 chat-line-length (kMeMoteBodyCharBudget = 195) guide for the three body
+// fields; pass 0 for non-body fields (full-width input, no counter). Counting is
+// `buf.size()` (UTF-8 byte count) — close enough for an author-side guide; GW2's
+// exact rule at multibyte edge cases is fuzzy and the warning is non-blocking
+// either way (long bodies still save + send).
 //
 // Returns true iff a commit fired (caller persists outside the mutex).
 bool FieldRow(const char* labelKey, const char* hintKey, const char* idSuffix,
@@ -199,51 +201,88 @@ bool FieldRow(const char* labelKey, const char* hintKey, const char* idSuffix,
     std::memcpy(scratch, buf.data(), copyN);
     scratch[copyN] = 0;
 
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (invalid) PushInvalidInputStyle();
-    const std::string inputId  = std::string("##") + idSuffix;
-    const char*       hint     = hintKey ? L(hintKey) : "";
-    if (ImGui::InputTextWithHint(inputId.c_str(), hint, scratch, sizeof(scratch))) {
-        buf = scratch;
-    }
-    bool active = ImGui::IsItemActive();
-    if (invalid) {
-        PopInvalidInputStyle();
-        DrawInvalidInputBorder();
-    }
-    if (invalid && invalidTooltipKey && ImGui::IsItemHovered())
-        TooltipText(invalidTooltipKey);
+    const ImGuiStyle& st = ImGui::GetStyle();
 
-    // Char-count line, in the same cell directly under the input. Captured
-    // `active` above so the count rendering doesn't shift IsItemActive() off
-    // the InputText (the commit check below still reads the input's state).
-    // Same for IsItemHovered() — its single tooltip call above already fired.
+    // In-field char counter (charBudget > 0): reserve a fixed-width zone on the
+    // right, sized to the worst case so the input edge doesn't jitter, and draw
+    // the count INSIDE the frame there. To keep the field ONE visual element
+    // (uniform hover/active, no seam between input and zone) we draw the frame
+    // background ourselves at full width and render the InputText with a
+    // transparent frame on top. charBudget == 0 fields just get an empty zone.
+    char   countBuf[24] = {0};
+    ImVec4 countColor;
+    bool   over  = false;
+    float  zoneW = 0.f;
     if (charBudget > 0) {
         const int n      = (int)buf.size();
         const int warnAt = (charBudget * 80) / 100;   // 156 for 195
-        const bool over  = (n > charBudget);
-        ImVec4 color;
-        if (n <= warnAt) {
-            // Same disabled tone the existing icon-status row uses — reads as
-            // an informational subline rather than a warning at small counts.
-            color = ImGui::GetStyle().Colors[ImGuiCol_TextDisabled];
-        } else if (!over) {
-            color = ImVec4(0.92f, 0.78f, 0.32f, 1.0f);   // amber — "getting close"
-        } else {
-            color = ImVec4(1.0f, 0.45f, 0.40f, 1.0f);    // red   — "over the cap"
-        }
-        ImGui::PushStyleColor(ImGuiCol_Text, color);
-        if (over) {
-            // Snap into one line by truncating the "N / budget" counter onto
-            // the warning text, so the count is read together with the
-            // consequence. The %d in the localized string formats the budget.
-            ImGui::Text("%d / %d  — %s", n, charBudget,
-                        L("opt.mm.body_truncate_warn"));
-        } else {
-            ImGui::Text("%d / %d", n, charBudget);
-        }
-        ImGui::PopStyleColor();
+        over = (n > charBudget);
+        std::snprintf(countBuf, sizeof countBuf, "%d / %d", n, charBudget);
+        if      (n <= warnAt) countColor = st.Colors[ImGuiCol_TextDisabled]; // informational
+        else if (!over)       countColor = ImVec4(0.92f, 0.78f, 0.32f, 1.0f); // amber — getting close
+        else                  countColor = ImVec4(1.0f, 0.45f, 0.40f, 1.0f);  // red   — over the cap
+        char worst[24];
+        std::snprintf(worst, sizeof worst, "%d / %d", charBudget, charBudget);
+        zoneW = ImGui::CalcTextSize(worst).x + st.FramePadding.x * 2.f;
     }
+
+    const std::string inputId  = std::string("##") + idSuffix;
+    const float       fullW    = ImGui::GetContentRegionAvail().x;
+    const ImVec2      framePos = ImGui::GetCursorScreenPos();
+    const float       frameH   = ImGui::GetFrameHeight();
+    const ImVec2      frameMax(framePos.x + fullW, framePos.y + frameH);
+
+    // One unified frame bg under the whole field. fieldActive tracks live focus,
+    // fieldHovered the WHOLE rect (so the reserved zone lights up with the input,
+    // not just the input half). IsMouseHoveringRect clips to the visible region by
+    // default, so a row scrolled partly out of view won't false-hover.
+    const bool fieldActive  = (ImGui::GetActiveID() == ImGui::GetID(inputId.c_str()));
+    const bool fieldHovered = ImGui::IsMouseHoveringRect(framePos, frameMax);
+    ImU32 frameBg;
+    if (invalid) {   // matches PushInvalidInputStyle (Layout.cpp) by state
+        frameBg = ImGui::ColorConvertFloat4ToU32(
+            fieldActive  ? ImVec4(0.70f, 0.16f, 0.16f, 1.f)
+          : fieldHovered ? ImVec4(0.65f, 0.14f, 0.14f, 1.f)
+                         : ImVec4(0.55f, 0.10f, 0.10f, 1.f));
+    } else {
+        frameBg = ImGui::GetColorU32(fieldActive  ? ImGuiCol_FrameBgActive
+                                   : fieldHovered ? ImGuiCol_FrameBgHovered
+                                                  : ImGuiCol_FrameBg);
+    }
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(framePos, frameMax, frameBg, st.FrameRounding, ImDrawCornerFlags_All);
+
+    // Input on top, transparent-framed so only our unified bg shows; narrowed by
+    // the zone so typed text never reaches the counter.
+    ImGui::PushStyleColor(ImGuiCol_FrameBg,        IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  IM_COL32(0, 0, 0, 0));
+    ImGui::SetNextItemWidth(charBudget > 0 ? (fullW - zoneW) : -FLT_MIN);
+    const char* hint = hintKey ? L(hintKey) : "";
+    if (ImGui::InputTextWithHint(inputId.c_str(), hint, scratch, sizeof(scratch)))
+        buf = scratch;
+    ImGui::PopStyleColor(3);
+    const bool active = ImGui::IsItemActive();
+
+    // Count, right-aligned inside the reserved zone, vertically centered.
+    if (charBudget > 0) {
+        const ImVec2 tsz = ImGui::CalcTextSize(countBuf);
+        dl->AddText(ImVec2(frameMax.x - st.FramePadding.x - tsz.x,
+                           framePos.y + (frameH - tsz.y) * 0.5f),
+                    ImGui::ColorConvertFloat4ToU32(countColor), countBuf);
+    }
+
+    // Invalid: red border around the full field + explanatory tooltip on hover.
+    if (invalid)
+        dl->AddRect(framePos, frameMax, IM_COL32(255, 80, 80, 255),
+                    st.FrameRounding, ImDrawCornerFlags_All, 2.0f);
+    if (invalid && invalidTooltipKey && fieldHovered)
+        TooltipText(invalidTooltipKey);
+
+    // Over budget: count is already red; the verbose "will be cut off" note is a
+    // hover hint rather than a reclaimed line.
+    if (charBudget > 0 && over && fieldHovered && !invalid)
+        TooltipText("opt.mm.body_truncate_warn");
 
     bool committed = false;
     if (dirty && !active && !invalid) {
