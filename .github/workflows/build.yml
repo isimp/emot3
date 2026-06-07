@@ -103,6 +103,22 @@ jobs:
       - name: Build PlusDevTools (emot3_plusdevtools.dll)
         run: msbuild emot3.sln /p:Configuration=PlusDevTools /p:Platform=x64 /m
 
+      # Linux/Wine readiness guard: emot3 runs on Linux under Proton/Wine, and
+      # the thing that keeps it loading there is the static CRT (/MT in every
+      # shipped config) - a /MD slip would silently need an MSVC redist in the
+      # prefix and break on a stock Linux setup. check_imports.py parses the PE
+      # import table (no dumpbin / VC env needed) and fails the job if any DLL
+      # imports the dynamic CRT (vcruntime/msvcp/ucrtbase/api-ms-win-crt). The
+      # +devtools DLLs are checked on every run (the only flavors PRs build);
+      # the public shapes are checked on main/tag. RuntimeLibrary is per-config
+      # in the vcxproj and identical across release configs, so the +devtools
+      # DLLs are a faithful proxy for the public ones on a PR.
+      - name: Check imports (Wine static-CRT guard, +devtools)
+        run: py -3 tools/check_imports.py build/DevTools/emot3_devtools.dll build/PlusDevTools/emot3_plusdevtools.dll
+      - name: Check imports (Wine static-CRT guard, public; main/tag only)
+        if: github.event_name != 'pull_request'
+        run: py -3 tools/check_imports.py build/Distribution/emot3.dll build/Plus/emot3_plus.dll
+
       # Artifact upload is split to match the asymmetric build matrix:
       # +devtools artifacts always upload (every event), public-shape artifacts
       # only on main/tag pushes. 14-day retention keeps storage well under the
