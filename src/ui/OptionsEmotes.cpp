@@ -161,15 +161,6 @@ void RenderEmotesTab() {
     PROFILE_SCOPE("opt.emotes");  // dev perf overlay
     ImGui::TextWrapped("%s", L("opt.em.intro"));
 
-    // Replaced PNGs only load on the next launch (Nexus' texture cache
-    // has no eviction) - flag it so a file swap that doesn't show up
-    // isn't a mystery.
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
-    ImGui::TextWrapped("%s", L("opt.em.restart_note"));
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-
     // Collapsible explainer for the icon resolution chain (where each
     // row's icon comes from). Closed by default; opens cheaply when
     // curiosity strikes. Its order must match ResolveIconSource
