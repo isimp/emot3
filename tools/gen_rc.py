@@ -13,7 +13,14 @@ Layout (relative to project root):
     resources/emote_data/*.json       -> bundled emote-localization table
     resources/presets/*.json          -> bundled default Quickbar presets
     resources/me_mote_data/*.json     -> bundled /me-mote seed table
-    resources/me_motes_ai/*.png       -> bundled /me-mote AI artwork (opt-in)
+    resources/me_motes_ai/*.png       -> bundled /me-mote AI artwork (opt-in).
+                                         PNG stems MUST be valid normalized
+                                         /me-mote ids ([a-z0-9_]) — the AI
+                                         fallback tier matches on the user's
+                                         m.Id via LookupBundledResource, and
+                                         a mis-named drop-in (e.g. "Clap.png"
+                                         or "ready-check.png") silently never
+                                         resolves. See NormalizeMeMoteId.
 
 Output:
     src/generated/emot3.rc               -> RCDATA entries for the resource

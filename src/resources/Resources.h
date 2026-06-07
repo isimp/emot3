@@ -78,7 +78,14 @@ extern const int         kMeMoteDataCount;
 // the AI-provenance opt-in policy consistent across the two catalogs.
 // Skipped tier vs Emotes: there's NO BundledOfficial equivalent for
 // /me-motes (the catalog is user-content; ArenaNet doesn't ship art for
-// it), so the chain is just user-IconPath → BundledAI → letter.
+// it), so the chain is icons/<id>.png → BundledAI → letter.
+//
+// Invariant: PNG stems MUST be valid normalized /me-mote ids ([a-z0-9_]).
+// The fallback matches the user's m.Id via LookupBundledResource (which
+// lowercases + slash-strips its input but does NOT collapse other
+// punctuation), so a mis-named drop-in like "Clap.png" or
+// "ready-check.png" silently never resolves. New drops should run through
+// NormalizeMeMoteId mentally first.
 extern const BundledIcon kMeMoteAIIcons[];
 extern const int         kMeMoteAIIconsCount;
 
