@@ -195,6 +195,9 @@ void IconPoolStats(IconPoolUsage& out);
 // ones already resident in Nexus (e.g. textures that survived an addon hot-reload
 // while their cells are off-screen). Probe-only - never loads. Call once per load.
 void ReconcileResidentPool();
+// Footprint of the lazy icon cache's key maps/sets (NOT the textures - those are
+// IconPoolStats). For the memory monitor. count = total entries; bytes ~2x.
+void IconCacheKeyStats(size_t& count, size_t& bytes);
 #endif
 
 // Section-header glyphs. Each one prefers the corresponding PNG under

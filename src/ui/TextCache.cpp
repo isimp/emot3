@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "Globals.h"   // g_EmoteCatalogVersion
+#include "Profiling.h" // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "shape" on cache miss
 
 // Per-mode keying: TextOnly + Compact both use Ellipsize, but their maxW comes
 // from different per-mode derivations (TextOnly = cellW - dot reservation;
@@ -177,6 +178,7 @@ const EllipsizedEntry& EllipsizeCached(const std::string& emoteId,
     EKey k{ emoteId, mode, Quantize(maxW), meMote };
     auto it = s_emap.find(k);
     if (it != s_emap.end()) return it->second;
+    PROFILE_SCOPE("shape");  // dev perf overlay - cache MISS only (the costly shaping)
     auto built = BuildEllipsized(name, maxW);
     auto ins = s_emap.emplace(std::move(k), std::move(built));
     return ins.first->second;
@@ -189,6 +191,7 @@ const FitEntry& FitNameCached(const std::string& emoteId,
     FKey k{ emoteId, Quantize(maxW), meMote };
     auto it = s_fmap.find(k);
     if (it != s_fmap.end()) return it->second;
+    PROFILE_SCOPE("shape");  // dev perf overlay - cache MISS only (the costly shaping)
     auto built = BuildFit(name, maxW);
     auto ins = s_fmap.emplace(std::move(k), std::move(built));
     return ins.first->second;

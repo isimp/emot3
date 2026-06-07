@@ -3,6 +3,7 @@
 #include "Favorites.h"   // TrimName, reused by the sanitize pass
 #include "I18n.h"        // AvailableUiLanguages, for UiLanguage validation
 #include "Logging.h"
+#include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.settings"
 
 #include <nlohmann/json.hpp>
 
@@ -18,7 +19,7 @@ Settings g_Settings;
 // Runtime state inspector section: high-signal live settings flags (the ones
 // that change visible behaviour), so a "why is it doing X?" can be checked
 // against the actual in-memory state. Self-registers via the Layer-2 standard.
-static DevStateRegistrar s_settingsSection("Settings (key flags)", [] {
+static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key flags)", [] {
     const Settings& s = g_Settings;
     DevStateRow("show window",        "%s", s.ShowWindow ? "on" : "off");
     DevStateRow("show quickbar",      "%s", s.ShowQuickbar ? "on" : "off");
@@ -546,6 +547,7 @@ bool LoadSettings(const std::string& path) {
 }
 
 void SaveSettings(const std::string& path) {
+    PROFILE_SCOPE("save.settings");  // dev perf overlay - fires on every setting toggle
     std::ofstream f(path);
     if (!f.is_open()) {
         LOG_WARNING("Could not open %s for writing - settings not persisted",

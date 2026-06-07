@@ -27,3 +27,10 @@ void OpenIconPicker(EIconTargetKind kind, const std::string& targetId,
 // Render the picker modal. Call ONCE per frame from AddonOptions, inside the
 // Options window. Renders nothing until opened.
 void RenderIconPicker();
+
+#ifdef EMOT3_DEVTOOLS
+// Footprint of the picker's transient lists (folder filenames + the four
+// built-on-open PickItem vectors) for the memory monitor. count = total list
+// entries; non-zero only while the modal is open.
+void IconPickerListStats(size_t& count, size_t& bytes);
+#endif

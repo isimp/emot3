@@ -12,6 +12,7 @@
 #include "CharacterState.h"  // g_QbUnusableKey (reason-aware block UI)
 #include "Feedback.h"        // ShowFeedback - in-window refusal line (replaces SendAlert)
 #include "Logging.h"         // LOG_DEBUG (category rename)
+#include "Profiling.h"       // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS)
 
 #include <algorithm>
 #include <cfloat>
@@ -523,6 +524,7 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
                      int  categoryIdx,
                      bool isQuickbar)
 {
+    PROFILE_SCOPE("cells");  // dev perf overlay - per visible cell (calls = cells/frame)
     // Dispatch: /me-mote cells take the simpler path (no lock/target/IsCore
     // concepts, no drag-drop yet). Emote cells fall through to the existing
     // renderer below — its behavior is unchanged for the existing Emote path.

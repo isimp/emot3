@@ -12,16 +12,11 @@
 //  exposes the NEXUS-native update path (RequestUpdate).
 // =====================================================================
 
-#ifndef EMOT3_DEVTOOLS
+#ifdef EMOT3_DEVTOOLS
 
-namespace updchkdbg { inline bool& Enabled() { static bool b = false; return b; } }
-inline void RenderUpdateCheckDebug() {}
-
-#else  // ---- dev build ----
-
-namespace updchkdbg { inline bool& Enabled() { static bool b = false; return b; } }
-
-// Draw the tester window when enabled. Implemented in UpdateCheckDebug.cpp.
-void RenderUpdateCheckDebug();
+// Draw the update-flow tester CONTENT only - no window, no enable gate; hosted
+// as a collapsing section inside the Simulators window. Implemented in
+// UpdateCheckDebug.cpp.
+void RenderUpdateCheckBody();
 
 #endif  // EMOT3_DEVTOOLS

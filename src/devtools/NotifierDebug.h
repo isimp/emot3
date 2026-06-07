@@ -16,21 +16,16 @@
 //  (g_PromptNewBundledEmotes / g_NewBundledEmoteIds) the real path uses,
 //  so it exercises the actual code rather than a parallel mock.
 //
-//  Touch points: #include "NotifierDebug.h" + the RegisterDevTool entry in
-//  DevTools.cpp (which wires the toggle + render). The render body lives in
+//  Touch points: #include "NotifierDebug.h"; the body is drawn as a section of
+//  the merged Simulators window (Simulators.cpp). The render body lives in
 //  NotifierDebug.cpp (it touches Settings/EmoteData/Globals).
 // =====================================================================
 
-#ifndef EMOT3_DEVTOOLS
+#ifdef EMOT3_DEVTOOLS
 
-namespace notifierdbg { inline bool& Enabled() { static bool b = false; return b; } }
-inline void RenderNotifierDebug() {}
-
-#else  // ---- dev build ----
-
-namespace notifierdbg { inline bool& Enabled() { static bool b = false; return b; } }
-
-// Draw the tester window when enabled. Implemented in NotifierDebug.cpp.
-void RenderNotifierDebug();
+// Draw the notifier-tester CONTENT only - no window, no enable gate; hosted as
+// a collapsing section inside the Simulators window. Implemented in
+// NotifierDebug.cpp.
+void RenderNotifierBody();
 
 #endif  // EMOT3_DEVTOOLS

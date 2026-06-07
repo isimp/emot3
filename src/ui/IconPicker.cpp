@@ -108,6 +108,7 @@ void AddBundledBank(std::vector<PickItem>& out, const BundledIcon* tbl, int cnt,
 // folder literally named "ui" is fine — only the top-level boundary is
 // policed.
 void ScanFolderTextures() {
+    PROFILE_SCOPE("picker.scan");  // dev perf overlay - disk folder walk on picker open
     s_folderFiles.clear();
     if (g_IconsDir.empty() || !APIDefs) return;
 
@@ -414,10 +415,32 @@ void RenderIconPicker() {
 }
 
 #ifdef EMOT3_DEVTOOLS
+// Footprint of the picker's transient lists for the memory monitor: the folder
+// filename list + the four built-on-open PickItem vectors (official / AI /
+// /me-mote AI / folder). Non-zero only while the modal is open; the thumbnail
+// TEXTURES live in the shared icon pool (IconPoolStats), not here. count =
+// total list entries; bytes ~2x (PickItem's ResolvedIcon key string not summed).
+void IconPickerListStats(size_t& count, size_t& bytes) {
+    auto strHeap = [](const std::string& s) -> size_t {
+        return s.capacity() > 15 ? s.capacity() + 1 : 0;
+    };
+    count = 0; bytes = 0;
+    bytes += s_folderFiles.capacity() * sizeof(std::string);
+    for (const auto& s : s_folderFiles) { ++count; bytes += strHeap(s); }
+    auto addItems = [&](const std::vector<PickItem>& v) {
+        bytes += v.capacity() * sizeof(PickItem);
+        for (const auto& it : v) {
+            ++count;
+            bytes += strHeap(it.name) + strHeap(it.nameLower) + strHeap(it.writePath);
+        }
+    };
+    addItems(s_official); addItems(s_ai); addItems(s_mmai); addItems(s_folder);
+}
+
 // Self-registering Runtime State Inspector section (Layer-2 dev-tools standard,
 // like the catalog sections). Surfaces picker state (folder scan + target);
-// thumbnail textures appear in the shared icon-pool rows ("Textures / resources").
-static DevStateRegistrar s_pickerState("Icon picker", [] {
+// thumbnail textures appear in the shared icon-pool rows ("Icon textures").
+static DevStateRegistrar s_pickerState(DevStateCat::Content, "Icon picker", [] {
     DevStateRow("folder icons",    "%zu", s_folderFiles.size());
     DevStateRow("target",          "%s",
                 s_targetId.empty() ? "(none)" : s_targetId.c_str());

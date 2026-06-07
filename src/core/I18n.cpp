@@ -273,3 +273,24 @@ size_t TranslationCacheApproxBytes() {
     }
     return bytes;
 }
+
+// The always-resident ground-truth tables (the bundled English table + the
+// per-language display names + the available-codes list), distinct from the
+// L() result cache above. The English table is loaded once at init and stays
+// for the process; the cache is only a subset that's been looked up. Surfaced
+// as its own memory-monitor row so the table's footprint isn't conflated with
+// the (smaller, lazily-grown) cache.
+size_t TranslationTableSize() { return s_english.size(); }
+
+size_t TranslationTableApproxBytes() {
+    auto strHeap = [](const std::string& s) -> size_t {
+        return s.capacity() > 15 ? s.capacity() + 1 : 0;
+    };
+    size_t bytes = s_english.size() * (2 * sizeof(std::string) + 32);
+    for (const auto& kv : s_english) { bytes += strHeap(kv.first) + strHeap(kv.second); }
+    bytes += s_displayNames.size() * (2 * sizeof(std::string) + 32);
+    for (const auto& kv : s_displayNames) { bytes += strHeap(kv.first) + strHeap(kv.second); }
+    bytes += s_available.capacity() * sizeof(std::string);
+    for (const auto& s : s_available) bytes += strHeap(s);
+    return bytes;
+}

@@ -152,18 +152,14 @@ extern HMODULE hSelf;
 // Runtime state inspector section: texture/resource health. Iterates the
 // catalog on the open frame only (read-only, no disk I/O), so it's safe per
 // the no-blocking-I/O-in-render rule. Self-registers via the Layer-2 standard.
-static DevStateRegistrar s_texStateSection("Textures / resources", [] {
-    // Catalog sizes (cheap; no I/O).
-    int emotes = 0, memotes = 0;
-    { std::lock_guard<std::mutex> lk(g_EmotesMutex);  emotes  = (int)g_Emotes.size();  }
-    { std::lock_guard<std::mutex> lk(g_MeMotesMutex); memotes = (int)g_MeMotes.size(); }
-    DevStateRow("emotes",    "%d", emotes);
-    DevStateRow("/me-motes", "%d", memotes);
-
+static DevStateRegistrar s_texStateSection(DevStateCat::Content, "Icon textures", [] {
     // Deduped content-pool accounting: every distinct icon texture we've loaded,
     // split into in-use (drawn this/last frame) vs idle (off-screen or orphaned
     // by an edit). Shared icons count once. The idle bucket is the lazy/churn
     // cost made visible. Reads icon-cache state only - no catalog lock, no I/O.
+    // (Catalog sizes intentionally not shown here: the emote / me-mote counts
+    // are in the memory monitor with bytes, and the /me-mote count in the
+    // "/me-motes catalog" section - no need to triple-show them.)
     // Once per addon load, sweep in any content textures that survived a
     // hot-reload but whose cells are off-screen (lazy per-cell recording can't
     // see them). Probe-only, so a cold start records nothing here.
