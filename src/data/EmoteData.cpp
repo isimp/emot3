@@ -3,6 +3,7 @@
 #include "JsonUtil.h"
 #include "Logging.h"
 #include "Resources.h"   // kEmoteData bundled localization table
+#include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.catalog"
 
 #include <nlohmann/json.hpp>
 
@@ -442,6 +443,7 @@ bool LoadEmotesJson(const std::string& path) {
 }
 
 void SaveEmotesJson(const std::string& path) {
+    PROFILE_SCOPE("save.catalog");  // dev perf overlay - catalog JSON serialize + write
     std::ofstream f(path);
     if (!f.is_open()) {
         LOG_WARNING("Could not open %s for writing", path.c_str());

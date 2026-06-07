@@ -9,6 +9,7 @@
 #include "PlusSettings.h"   // g_PlusSettings (whole header empty in base builds)
 #include "CharacterState.h" // CurrentEmoteBlock / EmoteBlockKey (mounted + RTAPI states)
 #include "Feedback.h"       // ShowFeedback - in-window refusal line (replaces SendAlert)
+#include "Profiling.h"      // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "send" path
 
 #include <Windows.h>
 #include <algorithm>
@@ -293,6 +294,7 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
 } // namespace
 
 void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
+    PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
     if (!APIDefs) return;
     std::string cmd = e.Command;
     if (useTarget && e.IsTargetable) cmd += " @";
@@ -324,6 +326,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
 }
 
 void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
+    PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
     if (!APIDefs) return;
 
     // Pick the variant body. Fall back to TextDefault when the requested

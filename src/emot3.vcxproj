@@ -305,11 +305,13 @@
     <ClInclude Include="plus\UpdateCheck.h" />
     <ClInclude Include="plus\PlusSettings.h" />
     <ClInclude Include="devtools\DevTools.h" />
+    <ClInclude Include="devtools\DevToolsUI.h" />
     <ClInclude Include="devtools\DevStateInspector.h" />
     <ClInclude Include="devtools\Profiling.h" />
     <ClInclude Include="devtools\QuickbarDebug.h" />
     <ClInclude Include="devtools\NotifierDebug.h" />
     <ClInclude Include="devtools\UpdateCheckDebug.h" />
+    <ClInclude Include="devtools\Simulators.h" />
     <ClInclude Include="devtools\MemoryMonitor.h" />
     <ClInclude Include="devtools\AirborneTuner.h" />
     <ClInclude Include="devtools\IconCacheTuner.h" />
@@ -364,6 +366,7 @@
     <ClCompile Include="devtools\DevStateInspector.cpp" />
     <ClCompile Include="devtools\NotifierDebug.cpp" />
     <ClCompile Include="devtools\UpdateCheckDebug.cpp" />
+    <ClCompile Include="devtools\Simulators.cpp" />
     <ClCompile Include="devtools\MemoryMonitor.cpp" />
     <ClCompile Include="ui\Feedback.cpp" />
     <ClCompile Include="core\EmoteAction.cpp" />

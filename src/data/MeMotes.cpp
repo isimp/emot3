@@ -4,6 +4,7 @@
 #include "JsonUtil.h"
 #include "Logging.h"
 #include "Resources.h"   // kMeMoteData bundled seed table
+#include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.memotes"
 
 #ifdef EMOT3_DEVTOOLS
 #include "DevStateInspector.h"
@@ -493,6 +494,7 @@ bool LoadMeMotesJson(const std::string& path) {
 }
 
 void SaveMeMotesJson(const std::string& path) {
+    PROFILE_SCOPE("save.memotes");  // dev perf overlay - /me-mote JSON serialize + write
     std::ofstream f(path);
     if (!f.is_open()) {
         LOG_WARNING("Could not open %s for writing", path.c_str());
@@ -557,7 +559,7 @@ const MeMote* FindMeMote(const std::string& id) {
 // Also surfaces the bundled-seed side: the seed table parses lazily, so the
 // LoadBundledMeMotesTable() call here forces it once if it hasn't loaded
 // (cheap on subsequent registrations since s_seedLoaded short-circuits).
-static DevStateRegistrar s_meMotesState("/me-motes catalog", [] {
+static DevStateRegistrar s_meMotesState(DevStateCat::Content, "/me-motes catalog", [] {
     DevStateRow("count",   "%zu", g_MeMotes.size());
     DevStateRow("version", "%llu",
                 (unsigned long long)g_MeMotesVersion.load(std::memory_order_relaxed));

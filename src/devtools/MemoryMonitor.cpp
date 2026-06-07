@@ -11,6 +11,7 @@
 //  CRT's default operator new/delete resolves, byte-identical to today.
 // =====================================================================
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +27,7 @@
 
 #include "imgui/imgui.h"
 
+#include "DevToolsUI.h"   // devui::FormatBytesAuto / NumCell
 #include "Globals.h"
 #include "EmoteData.h"
 #include "MeMotes.h"
@@ -33,6 +35,7 @@
 #include "TextCache.h"
 #include "I18n.h"
 #include "Icons.h"         // IconPoolStats / IconPoolUsage - deduped icon-texture pool sizing
+#include "IconPicker.h"    // IconPickerListStats - the picker's transient lists
 #include "Resources.h"     // kMeMoteAIIcons / kMeMoteAIIconsCount + BundledIcon (bundled-AI manifest row)
 #include "Profiling.h"     // prof::Ring, prof::kHistLen, prof::displayMap
 
@@ -251,6 +254,22 @@ void Sample(std::vector<Snapshot>& out) {
         out.push_back({ "icon textures (content pool, est)", u.totalCount, u.totalBytes });
     }
 
+    // Icon-cache BOOKKEEPING: the id->key memos + the permanent attempted-keys
+    // set (the string-key maps/sets behind the lazy content cache). Distinct from
+    // the texture pool row above - those bytes are Nexus-owned; these are our heap
+    // and s_attemptedKeys grows monotonically, so it's a leak-watch row.
+    {
+        size_t c = 0, b = 0; IconCacheKeyStats(c, b);
+        out.push_back({ "icon cache keys/memo", c, b });
+    }
+
+    // Icon picker's transient lists (folder filenames + the 4 PickItem vectors).
+    // Non-zero only while the picker modal is open (rebuilt each open).
+    {
+        size_t c = 0, b = 0; IconPickerListStats(c, b);
+        out.push_back({ "icon picker lists", c, b });
+    }
+
     // Notifier pending list.
     {
         size_t bytes = g_NewBundledEmoteIds.capacity() * sizeof(std::string);
@@ -276,10 +295,17 @@ void Sample(std::vector<Snapshot>& out) {
                     TextCache::EllipsizeMapSize() + TextCache::FitMapSize(),
                     TextCache::ApproxBytes() });
 
-    // I18n L() cache.
+    // I18n L() cache (the lazily-grown subset that's been looked up).
     out.push_back({ "I18n cache",
                     TranslationCacheSize(),
                     TranslationCacheApproxBytes() });
+
+    // I18n ground-truth tables (the always-resident bundled English table +
+    // display names + codes) - distinct from the cache above, and the larger of
+    // the two. Loaded once at init; flat thereafter.
+    out.push_back({ "I18n table (en)",
+                    TranslationTableSize(),
+                    TranslationTableApproxBytes() });
 
     // Favorites: total emote IDs across all user categories.
     {
@@ -361,16 +387,6 @@ void NewFrameIfNeeded() {
     }
 }
 
-// Flatten a ring's circular buffer into a contiguous stack buffer in chrono
-// order (oldest -> newest), suitable for ImGui::PlotLines. The buffer is
-// returned via out-pointer + count.
-void FlattenRing(const prof::Ring& r, float* out, int& count) {
-    count = r.count;
-    int start = (r.head - count + prof::kHistLen) % prof::kHistLen;
-    for (int i = 0; i < count; ++i)
-        out[i] = r.v[(start + i) % prof::kHistLen];
-}
-
 }  // namespace memmon
 
 void RenderMemoryMonitor() {
@@ -417,19 +433,12 @@ void RenderMemoryMonitor() {
                         && memmon::IsMonotonicGrowth(memmon::dllHistory(), 30);
         if (dllGrowing) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.55f, 1.0f));
 
-        // Auto-unit: our addon allocates ~50-200 KB of heap in practice (most
-        // "feel-like-addon" memory - icon textures, ImGui buffers - lives in
-        // Nexus's heap, not ours). MB precision at that scale makes view-mode
-        // swaps and small leaks invisible. Show KB below 10 MB; cross the
-        // threshold (a real growth spurt) before reading MB.
-        const bool dllInKB = dllBytes < 10ull * 1024 * 1024;
-        if (dllInKB) {
-            ImGui::Text("DLL heap: %.1f KB   (%zu live allocs)",
-                        dllBytes / 1024.0, dllAllocs);
-        } else {
-            ImGui::Text("DLL heap: %.2f MB   (%zu live allocs)",
-                        dllBytes / (1024.0 * 1024.0), dllAllocs);
-        }
+        // Auto-unit (KB below 10 MB, else MB): our addon allocates ~50-200 KB of
+        // heap in practice (most "feel-like-addon" memory - icon textures, ImGui
+        // buffers - lives in Nexus's heap, not ours), so MB precision at that
+        // scale would make view-mode swaps and small leaks invisible.
+        ImGui::Text("DLL heap: %s   (%zu live allocs)",
+                    devui::FormatBytesAuto(dllBytes).c_str(), dllAllocs);
         if (memmon::baseline().active) {
             int64_t delta = (int64_t)dllBytes - (int64_t)memmon::baseline().dllBytes;
             ImGui::SameLine();
@@ -442,8 +451,7 @@ void RenderMemoryMonitor() {
         // Sparkline of DLL heap over time (KB).
         {
             float buf[prof::kHistLen];
-            int n = 0;
-            memmon::FlattenRing(memmon::dllHistory(), buf, n);
+            int n = prof::FlattenRing(memmon::dllHistory(), buf);
             if (n > 0) {
                 ImGui::PlotLines("##dll_spark", buf, n, 0,
                                   "DLL heap (KB) over time",
@@ -453,51 +461,88 @@ void RenderMemoryMonitor() {
         ImGui::Separator();
 
         // ---- Per-subsystem table --------------------------------------
-        const int cols = memmon::baseline().active ? 5 : 4;
-        if (ImGui::BeginTable("##memmon_subsystems", cols,
-                              ImGuiTableFlags_SizingFixedFit |
-                              ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("subsystem");
-            ImGui::TableSetupColumn("count");
-            ImGui::TableSetupColumn("bytes (KB)");
-            if (memmon::baseline().active) ImGui::TableSetupColumn("Δ KB");
-            ImGui::TableSetupColumn("peak KB");
+        // Columns are click-sortable; numerics right-aligned. Rows are copied
+        // out of the map into a vector so they can be reordered per the sort
+        // spec (default: bytes desc - biggest consumer on top). A pinned TOTAL
+        // row stays at the bottom regardless of sort.
+        const bool baseAct = memmon::baseline().active;
+        struct MRow { const std::string* name; size_t count; size_t bytes;
+                      int64_t delta; double peakKB; bool growing; };
+        std::vector<MRow> mrows;
+        mrows.reserve(memmon::rows().size());
+        size_t sumCount = 0, sumBytes = 0; int64_t sumDelta = 0;
+        for (const auto& kv : memmon::rows()) {
+            const memmon::RowStat& s = kv.second;
+            int64_t deltaBytes = 0; bool growing = false;
+            if (baseAct) {
+                auto it = memmon::baseline().rows.find(kv.first);
+                if (it != memmon::baseline().rows.end()) {
+                    deltaBytes = (int64_t)s.bytes - (int64_t)it->second.second;
+                    if (deltaBytes > 0) growing = memmon::IsMonotonicGrowth(s.bytesHist, 30);
+                }
+            }
+            mrows.push_back({ &kv.first, s.count, s.bytes, deltaBytes,
+                              s.bytesHist.peak(), growing });
+            sumCount += s.count; sumBytes += s.bytes; sumDelta += deltaBytes;
+        }
+
+        const int cols = baseAct ? 5 : 4;
+        constexpr ImGuiTableFlags kMemFlags =
+            ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingFixedFit |
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
+            ImGuiTableFlags_NoSavedSettings;
+        if (ImGui::BeginTable("##memmon_subsystems", cols, kMemFlags)) {
+            ImGui::TableSetupColumn("subsystem", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("count",     ImGuiTableColumnFlags_PreferSortDescending);
+            ImGui::TableSetupColumn("bytes (KB)",
+                ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_DefaultSort);
+            if (baseAct) ImGui::TableSetupColumn("Δ KB", ImGuiTableColumnFlags_PreferSortDescending);
+            ImGui::TableSetupColumn("peak KB",   ImGuiTableColumnFlags_PreferSortDescending);
             ImGui::TableHeadersRow();
 
-            for (const auto& kv : memmon::rows()) {
-                const memmon::RowStat& s = kv.second;
-                ImGui::TableNextRow();
-
-                bool growing = false;
-                int64_t deltaBytes = 0;
-                if (memmon::baseline().active) {
-                    auto it = memmon::baseline().rows.find(kv.first);
-                    if (it != memmon::baseline().rows.end()) {
-                        deltaBytes = (int64_t)s.bytes - (int64_t)it->second.second;
-                        if (deltaBytes > 0)
-                            growing = memmon::IsMonotonicGrowth(s.bytesHist, 30);
-                    }
+            if (ImGuiTableSortSpecs* sp = ImGui::TableGetSortSpecs()) {
+                if (sp->SpecsCount > 0) {
+                    const ImGuiTableColumnSortSpecs& c = sp->Specs[0];
+                    bool asc = c.SortDirection == ImGuiSortDirection_Ascending;
+                    int  ci  = c.ColumnIndex;
+                    std::sort(mrows.begin(), mrows.end(),
+                              [&](const MRow& a, const MRow& b) {
+                        if (ci == 0) { int r = a.name->compare(*b.name);
+                                       return asc ? r < 0 : r > 0; }
+                        double x, y;
+                        if      (ci == 1)            { x = (double)a.count; y = (double)b.count; }
+                        else if (ci == 2)            { x = (double)a.bytes; y = (double)b.bytes; }
+                        else if (baseAct && ci == 3) { x = (double)a.delta; y = (double)b.delta; }
+                        else                         { x = a.peakKB;        y = b.peakKB; }
+                        return asc ? (x < y) : (x > y);
+                    });
                 }
-
-                if (growing) ImGui::PushStyleColor(ImGuiCol_Text,
-                                                    ImVec4(1.0f, 0.55f, 0.55f, 1.0f));
-
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextUnformatted(kv.first.c_str());
-                ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%zu", s.count);
-                ImGui::TableSetColumnIndex(2);
-                ImGui::Text("%.1f", s.bytes / 1024.0);
-                int col = 3;
-                if (memmon::baseline().active) {
-                    ImGui::TableSetColumnIndex(col++);
-                    ImGui::Text("%+lld", (long long)(deltaBytes / 1024));
-                }
-                ImGui::TableSetColumnIndex(col);
-                ImGui::Text("%.1f", s.bytesHist.peak());
-
-                if (growing) ImGui::PopStyleColor();
             }
+
+            for (const MRow& r : mrows) {
+                ImGui::TableNextRow();
+                if (r.growing) ImGui::PushStyleColor(ImGuiCol_Text,
+                                                     ImVec4(1.0f, 0.55f, 0.55f, 1.0f));
+                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(r.name->c_str());
+                ImGui::TableSetColumnIndex(1); devui::NumCell("%zu", r.count);
+                ImGui::TableSetColumnIndex(2); devui::NumCell("%.1f", r.bytes / 1024.0);
+                int col = 3;
+                if (baseAct) { ImGui::TableSetColumnIndex(col++);
+                               devui::NumCell("%+lld", (long long)(r.delta / 1024)); }
+                ImGui::TableSetColumnIndex(col); devui::NumCell("%.1f", r.peakKB);
+                if (r.growing) ImGui::PopStyleColor();
+            }
+
+            // Pinned total row (after the sorted rows, set apart by a tinted bg).
+            ImGui::TableNextRow();
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                                   ImGui::GetColorU32(ImVec4(0.26f, 0.26f, 0.32f, 0.55f)));
+            ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("TOTAL");
+            ImGui::TableSetColumnIndex(1); devui::NumCell("%zu", sumCount);
+            ImGui::TableSetColumnIndex(2); devui::NumCell("%.1f", sumBytes / 1024.0);
+            if (baseAct) { ImGui::TableSetColumnIndex(3);
+                           devui::NumCell("%+lld", (long long)(sumDelta / 1024)); }
+            // peak column left blank (summing windowed peaks isn't meaningful).
             ImGui::EndTable();
         }
         ImGui::Separator();

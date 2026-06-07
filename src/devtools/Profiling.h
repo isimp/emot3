@@ -33,6 +33,7 @@ inline void RenderProfilerOverlay() {}
 #include <vector>
 
 #include "imgui/imgui.h"
+#include "DevToolsUI.h"   // devui::NumCell (the per-section table cells)
 
 namespace prof {
 
@@ -77,6 +78,18 @@ struct Ring {
         return tmp[tmp.size() / 2];  // upper-middle for even counts - fine for a dev tool
     }
 };
+
+// Flatten a Ring's circular buffer into a contiguous stack buffer in chrono
+// order (oldest -> newest), suitable for ImGui::PlotLines. Returns the number
+// of valid samples written; `out` must hold kHistLen floats. Lives here (next
+// to Ring) so DevToolsUI.h needn't depend on this header - shared by the memory
+// monitor and the airborne tuner.
+inline int FlattenRing(const Ring& r, float* out) {
+    int n = r.count;
+    int start = (r.head - n + kHistLen) % kHistLen;
+    for (int i = 0; i < n; ++i) out[i] = r.v[(start + i) % kHistLen];
+    return n;
+}
 
 // Live, this-frame accumulation per label. calls counts how many scopes with
 // this name closed this frame (so the same label in MainPanel + Quickbar shows
@@ -178,20 +191,81 @@ inline void RenderProfilerOverlay() {
         ImGui::Text("frame %8.3f ms  (%5.1f fps)  avg %8.3f ms", frMs, fps, frAvg);
         ImGui::Separator();
 
-        ImGui::Text("%-14s %8s %8s %8s %8s %7s %6s",
-                    "section", "cur", "avg", "med", "peak", "%frame", "calls");
+        // Per-section table - addon scopes only (never the whole frame). Columns
+        // are click-sortable; numeric cells are right-aligned so digits line up
+        // (the old printf-padded Text never did under the proportional UI font).
+        // A section whose avg exceeds the budget threshold is flagged red.
+        struct PRow { const std::string* name; double cur, avg, med, peak, pct; int calls; };
+        std::vector<PRow> prows;
+        prows.reserve(::prof::displayMap().size());
         double total = 0.0;
         for (const auto& kv : ::prof::displayMap()) {
             const ::prof::SectionStat& s = kv.second;
             total += s.cur;
             // Share of the whole-frame budget, averaged so it doesn't jitter.
             double pct = frAvg > 0.0 ? (s.hist.avg() / frAvg * 100.0) : 0.0;
-            ImGui::Text("%-14s %8.3f %8.3f %8.3f %8.3f %6.1f%% %6d",
-                        kv.first.c_str(), s.cur, s.hist.avg(), s.hist.median(),
-                        s.hist.peak(), pct, s.calls);
+            prows.push_back({ &kv.first, s.cur, s.hist.avg(), s.hist.median(),
+                              s.hist.peak(), pct, s.calls });
+        }
+
+        // avg ms over this = hotspot (red). The whole addon is usually a small
+        // slice of the frame, so a single section past ~2 ms is worth the eye.
+        constexpr double kBudgetMsRed = 2.0;
+
+        constexpr ImGuiTableFlags kPerfFlags =
+            ImGuiTableFlags_Sortable | ImGuiTableFlags_RowBg |
+            ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV |
+            ImGuiTableFlags_NoSavedSettings;
+        if (ImGui::BeginTable("##perf", 7, kPerfFlags)) {
+            ImGui::TableSetupColumn("section",
+                ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoSort);
+            ImGui::TableSetupColumn("cur",    ImGuiTableColumnFlags_PreferSortDescending);
+            ImGui::TableSetupColumn("avg",    ImGuiTableColumnFlags_PreferSortDescending);
+            ImGui::TableSetupColumn("med",    ImGuiTableColumnFlags_PreferSortDescending);
+            ImGui::TableSetupColumn("peak",   ImGuiTableColumnFlags_PreferSortDescending);
+            ImGui::TableSetupColumn("%frame",
+                ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_DefaultSort);
+            ImGui::TableSetupColumn("calls",  ImGuiTableColumnFlags_PreferSortDescending);
+            ImGui::TableHeadersRow();
+
+            if (ImGuiTableSortSpecs* sp = ImGui::TableGetSortSpecs()) {
+                if (sp->SpecsCount > 0) {
+                    const ImGuiTableColumnSortSpecs& c = sp->Specs[0];
+                    bool asc = c.SortDirection == ImGuiSortDirection_Ascending;
+                    std::sort(prows.begin(), prows.end(),
+                              [&](const PRow& a, const PRow& b) {
+                        double x = 0, y = 0;
+                        switch (c.ColumnIndex) {
+                            case 1: x = a.cur;   y = b.cur;   break;
+                            case 2: x = a.avg;   y = b.avg;   break;
+                            case 3: x = a.med;   y = b.med;   break;
+                            case 4: x = a.peak;  y = b.peak;  break;
+                            case 5: x = a.pct;   y = b.pct;   break;
+                            case 6: x = a.calls; y = b.calls; break;
+                            default: return false;
+                        }
+                        return asc ? (x < y) : (x > y);
+                    });
+                }
+            }
+
+            for (const PRow& r : prows) {
+                ImGui::TableNextRow();
+                bool hot = r.avg > kBudgetMsRed;
+                if (hot) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.55f, 1.0f));
+                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(r.name->c_str());
+                ImGui::TableSetColumnIndex(1); devui::NumCell("%.3f", r.cur);
+                ImGui::TableSetColumnIndex(2); devui::NumCell("%.3f", r.avg);
+                ImGui::TableSetColumnIndex(3); devui::NumCell("%.3f", r.med);
+                ImGui::TableSetColumnIndex(4); devui::NumCell("%.3f", r.peak);
+                ImGui::TableSetColumnIndex(5); devui::NumCell("%.1f%%", r.pct);
+                ImGui::TableSetColumnIndex(6); devui::NumCell("%d", r.calls);
+                if (hot) ImGui::PopStyleColor();
+            }
+            ImGui::EndTable();
         }
         ImGui::Separator();
-        ImGui::Text("%-14s %8.3f ms", "(sum marked)", total);
+        ImGui::Text("(sum marked) %.3f ms", total);
         ImGui::TextDisabled("addon sections only - not whole frame");
     }
     ImGui::End();

@@ -27,8 +27,8 @@
 //       your ImGui window (guard it with `if (!Enabled()) return;`, like
 //       Profiling.h does), both inside `#ifndef EMOT3_DEVTOOLS #else`.
 //    2. Add ONE line to RegisterBuiltinDevTools() in DevTools.cpp:
-//         RegisterDevTool({ "myid", "My label", &mytool::Enabled(),
-//                           mytool::Render });
+//         RegisterDevTool({ "myid", "My label", DevCat::Inspect,
+//                           &mytool::Enabled(), mytool::Render });
 //    It then appears automatically in Options (a "[debug] My label"
 //    checkbox) and is drawn every frame when enabled. No entry.cpp or
 //    Options.cpp edits needed.
@@ -48,12 +48,18 @@ inline void RenderDevToolToggles()    {}
 
 #else  // ---- dev build: full implementation ----
 
+// Theme a tool falls under - drives the grouped headings in the Options
+// toggle list (Inspect = live read-only views; Tune = runtime knobs;
+// Simulate = trigger prod-only code paths).
+enum class DevCat { Inspect, Tune, Simulate };
+
 // One registered overlay. `enabled` points at the tool's own runtime bool
 // (typically the function-local static behind its Enabled() accessor, which
 // has a stable address); `render` draws the tool's window when enabled.
 struct DevToolDef {
     const char* id;       // stable id (used for the checkbox's ImGui ##id)
     const char* label;    // shown as "[debug] <label>" in Options
+    DevCat      cat;      // grouping for the Options toggle list
     bool*       enabled;  // runtime on/off (not persisted; reset each launch)
     void      (*render)();// draws the tool's window; called only while enabled
 };

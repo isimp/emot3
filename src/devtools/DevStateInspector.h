@@ -18,7 +18,7 @@
 //
 //      #ifdef EMOT3_DEVTOOLS
 //      #include "DevStateInspector.h"
-//      static DevStateRegistrar s_myState("My section", [] {
+//      static DevStateRegistrar s_myState(DevStateCat::Content, "My section", [] {
 //          DevStateRow("some flag", "%d", g_SomeFlag);
 //          DevStateRow("a string",  "%s", g_Name.c_str());
 //      });
@@ -27,11 +27,16 @@
 //    The lambda must be captureless (it converts to a void(*)()). It runs
 //    every frame the section is open; keep it read-only and cheap (no disk
 //    I/O - this is a dev tool, but the no-blocking-I/O-in-render rule still
-//    applies). It appears in the inspector window automatically, in
-//    registration order.
+//    applies). It appears in the inspector window automatically, grouped under
+//    its category heading (sections are sorted by category, so the order is
+//    deterministic regardless of static-init order across translation units).
 // =====================================================================
 
 #ifdef EMOT3_DEVTOOLS
+
+// Theme a state section falls under - drives the grouped headings (and the
+// deterministic ordering) in the inspector window.
+enum class DevStateCat { GameSignals, Content, Config };
 
 // Render one "label .... value" row inside a section's emit callback.
 // printf-style; value is right-of a fixed label column.
@@ -40,7 +45,7 @@ void DevStateRow(const char* label, const char* fmt, ...);
 // Self-registering section. Construct one static instance per section (in
 // the owning module's .cpp). `emit` draws the section's rows when it's open.
 struct DevStateRegistrar {
-    DevStateRegistrar(const char* title, void (*emit)());
+    DevStateRegistrar(DevStateCat cat, const char* title, void (*emit)());
 };
 
 namespace devstate {

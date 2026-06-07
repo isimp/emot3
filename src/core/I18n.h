@@ -79,3 +79,7 @@ void TooltipOptions(const char* introKey, const TooltipOption* options, int coun
 // absolute number.
 size_t TranslationCacheSize();
 size_t TranslationCacheApproxBytes();
+// The always-resident ground-truth tables (bundled English + display names +
+// available codes), distinct from the L() cache above. Size = English key count.
+size_t TranslationTableSize();
+size_t TranslationTableApproxBytes();

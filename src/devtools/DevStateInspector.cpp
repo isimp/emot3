@@ -4,6 +4,7 @@
 
 #include "imgui/imgui.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <string>
@@ -12,6 +13,7 @@
 namespace {
 
 struct Section {
+    DevStateCat cat;
     const char* title;
     void      (*emit)();
 };
@@ -23,10 +25,19 @@ std::vector<Section>& Registry() {
     return r;
 }
 
+const char* CatTitle(DevStateCat c) {
+    switch (c) {
+        case DevStateCat::GameSignals: return "Game signals";
+        case DevStateCat::Content:     return "Content & catalogs";
+        case DevStateCat::Config:      return "Config";
+    }
+    return "";
+}
+
 }  // namespace
 
-DevStateRegistrar::DevStateRegistrar(const char* title, void (*emit)()) {
-    Registry().push_back({ title, emit });
+DevStateRegistrar::DevStateRegistrar(DevStateCat cat, const char* title, void (*emit)()) {
+    Registry().push_back({ cat, title, emit });
 }
 
 void DevStateRow(const char* label, const char* fmt, ...) {
@@ -54,12 +65,27 @@ void Render() {
         if (Registry().empty()) {
             ImGui::TextDisabled("no state sections registered");
         }
+        // Group by category with a heading per group. Stable-sort pointers (not
+        // the registry) so within-category order stays as registered, but the
+        // groups themselves are deterministic regardless of static-init order.
+        std::vector<const Section*> ordered;
+        ordered.reserve(Registry().size());
+        for (const Section& s : Registry()) ordered.push_back(&s);
+        std::stable_sort(ordered.begin(), ordered.end(),
+            [](const Section* a, const Section* b) { return (int)a->cat < (int)b->cat; });
+
+        bool haveCat = false; DevStateCat curCat = DevStateCat::GameSignals;
         int i = 0;
-        for (const Section& s : Registry()) {
+        for (const Section* s : ordered) {
+            if (!haveCat || s->cat != curCat) {
+                haveCat = true; curCat = s->cat;
+                if (i != 0) ImGui::Spacing();
+                ImGui::TextDisabled("%s", CatTitle(curCat));
+            }
             // "title##devstate_<i>" keeps each header's id unique/stable.
-            std::string id = std::string(s.title) + "##devstate_" + std::to_string(i++);
+            std::string id = std::string(s->title) + "##devstate_" + std::to_string(i++);
             if (ImGui::CollapsingHeader(id.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
-                s.emit();
+                s->emit();
         }
     }
     ImGui::End();

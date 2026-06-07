@@ -519,6 +519,32 @@ void IconPoolStats(IconPoolUsage& out) {
         else       { out.idleCount++;  out.idleBytes  += bytes; }
     }
 }
+
+// Footprint of the lazy cache's BOOKKEEPING containers (the id->key memos + the
+// permanent attempted-keys set + the dev per-key frame map) - NOT the textures,
+// which IconPoolStats counts. These string-key maps/sets are invisible to the
+// pool readout; s_attemptedKeys in particular grows monotonically (keys are
+// immutable) so it's worth a memory-monitor row. Rough (~2x) - node overhead is
+// an estimate. count = total entries across the containers.
+void IconCacheKeyStats(size_t& count, size_t& bytes) {
+    auto strHeap = [](const std::string& s) -> size_t {
+        return s.capacity() > 15 ? s.capacity() + 1 : 0;
+    };
+    constexpr size_t kNode = 40;  // unordered_map/set node + bucket slot, rough
+    count = 0; bytes = 0;
+    for (const auto& kv : s_emoteKey) {
+        ++count; bytes += kNode + sizeof(MemoEntry) + strHeap(kv.first) + strHeap(kv.second.key);
+    }
+    for (const auto& kv : s_memoteKey) {
+        ++count; bytes += kNode + sizeof(MemoEntry) + strHeap(kv.first) + strHeap(kv.second.key);
+    }
+    for (const auto& k : s_attemptedKeys) {
+        ++count; bytes += kNode + sizeof(std::string) + strHeap(k);
+    }
+    for (const auto& kv : s_keyLastFrame) {
+        ++count; bytes += kNode + sizeof(std::string) + sizeof(uint32_t) + strHeap(kv.first);
+    }
+}
 // One-shot (per addon load) sweep that records content textures ALREADY resident
 // in Nexus but not yet in our lazy set. Per-cell recording only sees on-screen
 // cells, so after a hot-reload (Nexus keeps textures until game restart while our

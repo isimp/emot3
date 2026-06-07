@@ -5,8 +5,9 @@
 #include "Globals.h"
 #include "Settings.h"
 #include "EmoteData.h"
-#include "MainPanel.h"   // DetectNewBundledEmotes (the real, setting-gated path)
+#include "MainPanel.h"          // DetectNewBundledEmotes (the real, setting-gated path)
 #include "Logging.h"
+#include "DevStateInspector.h"  // DevStateRow (aligned key/value rows)
 
 #include "imgui/imgui.h"
 
@@ -19,22 +20,18 @@
 // Tester for the new-bundled-emote notifier. Drives the production helpers +
 // globals so it validates the real pipeline (snapshot diff, catalog filter,
 // dialog, add-by-id), not a mock. See NotifierDebug.h.
-void RenderNotifierDebug() {
-    if (!notifierdbg::Enabled()) return;
-
-    ImGui::SetNextWindowBgAlpha(0.9f);
-    if (ImGui::Begin("emot3 Notifier##notifierdbg", &notifierdbg::Enabled(),
-                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav)) {
+void RenderNotifierBody() {
+    {
         std::vector<std::string> bundle = AllBundledEmoteIds();
         int catalog = 0;
         { std::lock_guard<std::mutex> lk(g_EmotesMutex); catalog = (int)g_Emotes.size(); }
 
-        ImGui::Text("notify setting : %s", g_Settings.NotifyNewBundledEmotes ? "on" : "off");
-        ImGui::Text("known snapshot : %d", (int)g_Settings.KnownBundledEmotes.size());
-        ImGui::Text("bundle total   : %d", (int)bundle.size());
-        ImGui::Text("catalog size   : %d", catalog);
-        ImGui::Text("prompt pending : %s", g_PromptNewBundledEmotes ? "yes" : "no");
-        ImGui::Text("staged new ids : %d", (int)g_NewBundledEmoteIds.size());
+        DevStateRow("notify setting", "%s", g_Settings.NotifyNewBundledEmotes ? "on" : "off");
+        DevStateRow("known snapshot", "%d", (int)g_Settings.KnownBundledEmotes.size());
+        DevStateRow("bundle total",   "%d", (int)bundle.size());
+        DevStateRow("catalog size",   "%d", catalog);
+        DevStateRow("prompt pending", "%s", g_PromptNewBundledEmotes ? "yes" : "no");
+        DevStateRow("staged new ids", "%d", (int)g_NewBundledEmoteIds.size());
         ImGui::Separator();
 
         // 1) Eyeball the dialog: force it open with a few real ids, IGNORING the
@@ -98,7 +95,6 @@ void RenderNotifierDebug() {
             LOG_INFO("notifier[dev]: snapshot reset to full bundle (%d)", (int)bundle.size());
         }
     }
-    ImGui::End();
 }
 
 #endif  // EMOT3_DEVTOOLS

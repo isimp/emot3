@@ -293,7 +293,7 @@ const char* BlockName(EmoteBlock r) {
 // Runtime state inspector section: the raw signals this module bridges, so a
 // "why is my emote refused / greyed?" report can be diagnosed live. Self-
 // registers via the Layer-2 standard (DevStateInspector.h).
-static DevStateRegistrar s_gameStateSection("Game state", [] {
+static DevStateRegistrar s_gameStateSection(DevStateCat::GameSignals, "Game state", [] {
     const bool haveMumble = (MumbleLink != nullptr);
     const bool mounted = haveMumble &&
         MumbleLink->Context.MountIndex != Mumble::EMountIndex::None;
@@ -303,12 +303,31 @@ static DevStateRegistrar s_gameStateSection("Game state", [] {
     DevStateRow("in combat",         "%s", InCombatNow() ? "yes" : "no");
     DevStateRow("textbox focused",   "%s",
                 (haveMumble && MumbleLink->Context.IsTextboxFocused) ? "yes" : "no");
+    // UI-gate inputs the addon itself acts on: both already drive whether the
+    // bar/panel render (MainPanel/Quickbar early-return on these), so surfacing
+    // them makes "why did the UI hide?" explainable.
+    DevStateRow("IsGameplay (Nexus)", "%s",
+                (NexusLink && NexusLink->IsGameplay) ? "yes" : "no");
+    DevStateRow("IsMapOpen (Mumble)", "%s",
+                (haveMumble && MumbleLink->Context.IsMapOpen) ? "yes" : "no");
     DevStateRow("RTAPI connected",   "%s", RTApiConnected() ? "yes" : "no");
     // Raw RTAPI signals, so the precise-state blocks (downed/swim/underwater/
     // glide/fly) can be verified flag-by-flag once a working RTAPI is installed.
     if (RealTimeData* rt = LiveRTApi()) {
         uint32_t s = rt->CharacterState;
+        auto gsName = [](uint32_t g) -> const char* {
+            switch (g) {
+                case GS_CharacterSelection: return "char-select";
+                case GS_CharacterCreation:  return "char-create";
+                case GS_Cinematic:          return "cinematic";
+                case GS_LoadingScreen:      return "loading";
+                case GS_Gameplay:           return "gameplay";
+                default:                    return "?";
+            }
+        };
         DevStateRow("RTAPI GameBuild",  "%u", rt->GameBuild);
+        // The master "should emotes work" context (CharSelect/Loading/Gameplay/...).
+        DevStateRow("RTAPI GameState",  "%u (%s)", rt->GameState, gsName(rt->GameState));
         DevStateRow("char state bits",  "0x%02X", s);
         DevStateRow("  downed/sw/uw",   "%d/%d/%d", !!(s & CS_IsDowned),
                     !!(s & CS_IsSwimming), !!(s & CS_IsUnderwater));

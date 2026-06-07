@@ -38,6 +38,7 @@ inline void RenderAirborneTuner() {}
 #include "imgui/imgui.h"
 
 #include "Profiling.h"        // prof::Ring (120-sample rolling buffer reused here)
+#include "DevToolsUI.h"       // devui::StateDot / DrawThresholdOnLastPlot
 #include "CharacterState.h"   // cs_constants::AirSpeed() etc. - the tunable knobs
 
 // All the data TickCharacterState computes for one fresh game tick, packaged
@@ -150,41 +151,9 @@ inline void OnSample(const AirtunerSample& s) {
 }
 
 // ---- rendering helpers ----------------------------------------------
-
-// Flatten a prof::Ring's circular buffer into a stack-allocated contiguous
-// array in chrono order (oldest -> newest) for ImGui::PlotLines. Returns
-// the number of valid samples written to `out`.
-inline int FlattenRing(const prof::Ring& r, float* out) {
-    int n = r.count;
-    int start = (r.head - n + prof::kHistLen) % prof::kHistLen;
-    for (int i = 0; i < n; ++i) out[i] = r.v[(start + i) % prof::kHistLen];
-    return n;
-}
-
-// Draw a horizontal threshold line across the last plotted item's rect.
-// `valueRange` is the Y span used by PlotLines (scaleMax - scaleMin),
-// `valueMin` is its scaleMin. col is IM_COL32.
-inline void DrawThresholdOnLastPlot(float value, float valueMin, float valueRange,
-                                    ImU32 col) {
-    ImVec2 a = ImGui::GetItemRectMin();
-    ImVec2 b = ImGui::GetItemRectMax();
-    if (valueRange <= 0.f) return;
-    float tNorm = (value - valueMin) / valueRange;  // 0 = bottom, 1 = top
-    if (tNorm < 0.f || tNorm > 1.f) return;          // off-plot
-    float y = b.y - tNorm * (b.y - a.y);             // ImGui plots top->bottom = max->min
-    ImGui::GetWindowDrawList()->AddLine(ImVec2(a.x, y), ImVec2(b.x, y), col);
-}
-
-// Coloured dot for boolean live readouts: bright red when on, dim grey off.
-inline void StateDot(bool on) {
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    float  h = ImGui::GetTextLineHeight();
-    float  r = h * 0.35f;
-    ImU32  col = on ? IM_COL32(220, 70, 70, 255) : IM_COL32(100, 100, 100, 160);
-    ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(p.x + r, p.y + h * 0.5f),
-                                                 r, col);
-    ImGui::Dummy(ImVec2(h, h));
-}
+// DrawThresholdOnLastPlot / StateDot now live in DevToolsUI.h (namespace devui),
+// and FlattenRing in Profiling.h (namespace prof) - both shared with the memory
+// monitor. Call sites below use those.
 
 // Build the "constexpr float kAirSpeed = X.XXf; ..." text from current slider
 // values, ready to paste back into CharacterState.h.
@@ -297,9 +266,9 @@ inline void RenderAirborneTuner() {
 
         // Right column: flags + timers
         ImGui::TableSetColumnIndex(1);
-        airtuner::StateDot(s.airborne); ImGui::SameLine();
+        devui::StateDot(s.airborne); ImGui::SameLine();
         ImGui::Text("airborne");
-        airtuner::StateDot(s.moving);   ImGui::SameLine();
+        devui::StateDot(s.moving);   ImGui::SameLine();
         ImGui::Text("moving");
         ImGui::Text("downRun      %d / %d", s.downRun, cs_constants::FallEngageTicks());
         if (have && s.groundSince >= 0.0) {
@@ -333,7 +302,7 @@ inline void RenderAirborneTuner() {
     // Vertical velocity. Symmetric scale, ±max(kAirSpeed*2, recent peak).
     {
         float buf[prof::kHistLen];
-        int n = airtuner::FlattenRing(airtuner::VertVelHist(), buf);
+        int n = prof::FlattenRing(airtuner::VertVelHist(), buf);
         const float air = cs_constants::AirSpeed();
         // Symmetric scale: ±max(2*threshold, |buffer extreme|). prof::Ring's
         // .peak() returns the positive windowed max; vUp goes negative on a
@@ -348,14 +317,14 @@ inline void RenderAirborneTuner() {
             "vert vel  cur %+.2f  range \xc2\xb1%.1f m/s", n ? buf[n-1] : 0.f, absMax);
         ImGui::PlotLines("##vvplot", buf, n, 0, overlay, sMin, sMax, plotSize);
         // ±kAirSpeed threshold lines (red so they pop)
-        airtuner::DrawThresholdOnLastPlot( air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
-        airtuner::DrawThresholdOnLastPlot(-air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
+        devui::DrawThresholdOnLastPlot( air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
+        devui::DrawThresholdOnLastPlot(-air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
     }
 
     // Horizontal speed. 0..max(kMoveSpeed*2, recent peak).
     {
         float buf[prof::kHistLen];
-        int n = airtuner::FlattenRing(airtuner::HorizSpeedHist(), buf);
+        int n = prof::FlattenRing(airtuner::HorizSpeedHist(), buf);
         const float mvs = cs_constants::MoveSpeed();
         float peak = mvs * 2.f;
         for (int i = 0; i < n; ++i) if (buf[i] > peak) peak = buf[i];
@@ -363,14 +332,14 @@ inline void RenderAirborneTuner() {
         char overlay[48]; std::snprintf(overlay, sizeof(overlay),
             "horiz spd  cur %.2f  range 0..%.1f m/s", n ? buf[n-1] : 0.f, peak);
         ImGui::PlotLines("##hsplot", buf, n, 0, overlay, sMin, sMax, plotSize);
-        airtuner::DrawThresholdOnLastPlot(mvs, sMin, sMax - sMin,
+        devui::DrawThresholdOnLastPlot(mvs, sMin, sMax - sMin,
                                            IM_COL32(220, 70, 70, 200));
     }
 
     // Avatar Y. Auto-scaled (FLT_MAX) - spatial context for the velocity plot.
     {
         float buf[prof::kHistLen];
-        int n = airtuner::FlattenRing(airtuner::AvatarYHist(), buf);
+        int n = prof::FlattenRing(airtuner::AvatarYHist(), buf);
         char overlay[48]; std::snprintf(overlay, sizeof(overlay),
             "Avatar Y  cur %.2f", n ? buf[n-1] : 0.f);
         ImGui::PlotLines("##yplot", buf, n, 0, overlay, FLT_MAX, FLT_MAX, plotSize);
