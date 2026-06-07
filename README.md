@@ -47,7 +47,7 @@ them from the official ArenaNet artwork.
   <br><b>Catalog & Unlocks</b>
 </td>
 <td align="center" width="50%">
-  <a href="https://github.com/user-attachments/assets/519c7544-b76d-4f54-a5b9-9dddac7e9a1a"><img src="https://github.com/user-attachments/assets/519c7544-b76d-4f54-a5b9-9dddac7e9a1a" alt="/me-motes" width="280"></a>
+  <a href="https://github.com/user-attachments/assets/f08ea745-a2ff-406d-a91d-1d83378d971b"><img src="https://github.com/user-attachments/assets/f08ea745-a2ff-406d-a91d-1d83378d971b" alt="/me-motes" width="280"></a>
   <br><b>/me-motes</b>
 </td>
 </tr>
