@@ -34,6 +34,7 @@
 #include "MeMotes.h"
 #include "Settings.h"
 #include "TextCache.h"
+#include "Usage.h"      // usage log row (Recently/Frequently used)
 #include "I18n.h"
 #include "Icons.h"         // IconPoolStats / IconPoolUsage - deduped icon-texture pool sizing
 #include "IconPicker.h"    // IconPickerListStats - the picker's transient lists
@@ -295,6 +296,9 @@ void Sample(std::vector<Snapshot>& out) {
     out.push_back({ "TextCache (combined)",
                     TextCache::EllipsizeMapSize() + TextCache::FitMapSize(),
                     TextCache::ApproxBytes() });
+
+    // Usage log (Recently/Frequently used; bounded at kUsageLog).
+    out.push_back({ "usage log", usage::LogSize(), usage::ApproxBytes() });
 
     // I18n L() cache (the lazily-grown subset that's been looked up).
     out.push_back({ "I18n cache",

@@ -9,6 +9,7 @@
 #include "EmoteData.h"
 #include "EmoteAction.h"
 #include "Favorites.h"
+#include "Usage.h"        // usage::RemoveRef / RemoveAllOfType on delete / clear
 #include "StringUtil.h"     // TrimWhitespace / IsAbsolutePath (shared helpers)
 #include "Icons.h"          // ResolveIconPath for icon-source status
 #include "Layout.h"         // ToggleButton, PushHighContrastButtonStyles
@@ -762,6 +763,7 @@ void RenderEmotesTab() {
 
     if (!deleteId.empty()) {
         DeleteEmote(deleteId);       // erase + favorites/manual-unlock cascade + persist + dirty
+        usage::RemoveRef(EFavoriteRefType::Emote, deleteId);  // drop it from Recently/Frequently used
         s_rowBufs.erase(deleteId);   // UI-only: drop the edit buffer for the now-gone row
     }
 
@@ -928,6 +930,7 @@ void RenderEmotesTab() {
                                cat.Refs.end());
             }
             g_Settings.ManuallyUnlocked.clear();
+            usage::RemoveAllOfType(EFavoriteRefType::Emote);  // drop emote usage history
             RequestSave(SaveKind::Emotes);
             RequestSave(SaveKind::Settings);
             MarkEmotesDirty();

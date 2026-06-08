@@ -10,6 +10,7 @@
 #include "PlusSettings.h"   // g_PlusSettings (whole header empty in base builds)
 #include "CharacterState.h" // CurrentEmoteBlock / EmoteBlockKey (mounted + RTAPI states)
 #include "Feedback.h"       // ShowFeedback - in-window refusal line (replaces SendAlert)
+#include "Usage.h"          // usage::Record - feeds the Recently/Frequently used categories
 #include "Profiling.h"      // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "send" path
 
 #include <Windows.h>
@@ -342,6 +343,18 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
         return;
     }
 
+    // Real send/fill (gate passed) — record for Recently / Frequently used.
+    // Locked emotes (non-core + not in ManuallyUnlocked) are excluded: the game
+    // won't play them, so they shouldn't seed the usage categories. Checked
+    // inline off the already-resolved `e` (no extra catalog scan).
+    {
+        const bool unlocked = e.IsCore ||
+            std::find(g_Settings.ManuallyUnlocked.begin(),
+                      g_Settings.ManuallyUnlocked.end(), e.Id)
+                != g_Settings.ManuallyUnlocked.end();
+        if (unlocked) usage::Record(EFavoriteRefType::Emote, e.Id);
+    }
+
     LOG_DEBUG("%s emote: %s", send ? "Sending" : "Filling", cmd.c_str());
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
 }
@@ -388,6 +401,9 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
         ShowFeedback(L(skipKey));
         return;
     }
+
+    // Real send/fill (gate passed) — record for Recently / Frequently used.
+    usage::Record(EFavoriteRefType::MeMote, m.Id);
 
     LOG_DEBUG("%s /me-mote: %s", send ? "Sending" : "Filling", cmd.c_str());
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
