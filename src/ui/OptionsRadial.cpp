@@ -92,10 +92,6 @@ bool                  s_wizDoneSynced = false;  // done panel: already pushed to
 // and writes back under the same group; empty = creating a new one.
 std::string           s_wizEditGroup;
 
-// Inline deploy feedback (no Nexus toast for a routine in-tab action; see RenderRadialTab).
-std::string s_deployMsg;
-bool        s_deployOk = false;
-
 // rename inline edit (keyed on a group id; "" = none) - matches the Library's inline
 // category rename, no popup.
 std::string s_renameGroup;
@@ -354,27 +350,36 @@ void RenderWizard() {
         }
         ImGui::Spacing();
         ImGui::Separator();
+        bool doClose = false;
 #ifdef EMOT3_PLUS
-        // +plus: offer to push this wheel straight into RadialMenus from here (the
-        // click is the approval). Overwrites same-named files; reload radials after.
-        if (s_rmDetected && !s_wizResult.group.empty()) {
-            if (!s_wizDoneSynced) {
-                if (ImGui::Button(L("opt.radial.sync_now"))) {
-                    std::vector<std::string> slugs;
-                    for (const auto& w : WheelsInGroup(s_wizResult.group)) slugs.push_back(w.Slug);
-                    DeployGroupToRadialMenus(slugs);
-                    RefreshStatus();
-                    s_wizDoneSynced = true;
-                }
-                PlusBadge();
-            } else {
-                ImGui::TextColored(kGreen, "%s", L("opt.radial.synced_inline"));
-            }
+        // +plus: a "Sync to RadialMenus" button right here (the click is the approval);
+        // once synced it becomes a confirmation line and only Close remains.
+        const bool canSync = s_rmDetected && !s_wizResult.group.empty();
+        if (canSync && s_wizDoneSynced) {
+            ImGui::TextColored(kGreen, "%s", L("opt.radial.synced_inline"));
             ImGui::Spacing();
         }
+        if (canSync && !s_wizDoneSynced) {
+            const float wSync = 170.0f, wClose = 110.0f;
+            float total = wSync + ImGui::GetStyle().ItemSpacing.x + wClose;
+            float avail = ImGui::GetContentRegionAvail().x;
+            if (avail > total) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
+            if (ImGui::Button(L("opt.radial.sync_now"), ImVec2(wSync, 0))) {
+                std::vector<std::string> slugs;
+                for (const auto& w : WheelsInGroup(s_wizResult.group)) slugs.push_back(w.Slug);
+                DeployGroupToRadialMenus(slugs);
+                RefreshStatus();
+                s_wizDoneSynced = true;
+            }
+            ImGui::SameLine();
+            doClose = ImGui::Button(L("common.close"), ImVec2(wClose, 0));
+        } else
 #endif
-        RightAlignButtons(120.0f, 1);
-        if (ImGui::Button(L("common.close"), ImVec2(120, 0))) {
+        {
+            RightAlignButtons(120.0f, 1);
+            doClose = ImGui::Button(L("common.close"), ImVec2(120, 0));
+        }
+        if (doClose) {
             s_wizActive = false;
             ImGui::CloseCurrentPopup();
         }
@@ -893,55 +898,13 @@ void RenderRadialTab() {
         }
     }
 
-    // 5. Apply (Deploy) — PLUS ONLY. The base build can't write into another addon's
-    // folder, so it has no Apply section; its intro explains the manual copy + reload.
+    // No bulk-deploy section anymore: each wheel carries its own Sync button. Plus just
+    // keeps the standing reminder to reload + bind in RadialMenus after syncing.
 #ifdef EMOT3_PLUS
-    // Section header carries the Plus badge (this whole deploy convenience is +plus).
     ImGui::Spacing();
-    ImGui::TextDisabled("%s", L("opt.radial.sec_apply"));
-    PlusBadge();
-    ImGui::Separator();
-    {
-        std::vector<RadialExport> wheels;
-        { std::lock_guard<std::mutex> lk(g_RadialExportsMutex); wheels = g_RadialExports; }
-
-        char btn[64];
-        std::snprintf(btn, sizeof(btn), L("opt.radial.deploy_btn"), (int)wheels.size());
-        bool none = wheels.empty() || !s_rmDetected;
-        if (none) BeginDisabledCompat();
-        if (ImGui::Button(btn) && !none) ImGui::OpenPopup("##radialdeploy");
-        if (none) EndDisabledCompat();
-
-        // Replacing files in RadialMenus needs explicit approval (overwrites, no backup).
-        {
-            ImVec2 ds = ImGui::GetIO().DisplaySize;
-            ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f),
-                                    ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-        }
-        if (ImGui::BeginPopupModal("##radialdeploy", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
-            ImGui::TextColored(kAmber, "%s", L("opt.radial.deploy_warn"));
-            ImGui::PopTextWrapPos();
-            ImGui::Spacing();
-            if (ImGui::Button(L("opt.radial.deploy_go"), ImVec2(120, 0))) {
-                RadialDeployResult r = DeployToRadialMenus();
-                if (r.ok) LOG_INFO("radials: deploy ok (%d packs, %d icons)", r.packs, r.icons);
-                s_deployOk = r.ok;  // inline feedback in the tab (window is open), no toast
-                char msg[128];
-                if (r.ok) std::snprintf(msg, sizeof(msg), L("opt.radial.deployed_inline"),
-                                        r.packs, r.icons);
-                else      std::snprintf(msg, sizeof(msg), "%s", L("opt.radial.deploy_failed_inline"));
-                s_deployMsg = msg;
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button(L("common.cancel"), ImVec2(120, 0))) ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-        if (!s_deployMsg.empty())
-            ImGui::TextColored(s_deployOk ? kGreen : kRed, "%s", s_deployMsg.c_str());
-        ImGui::TextWrapped("%s", L("opt.radial.reload_reminder"));
-    }
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+    ImGui::TextDisabled("%s", L("opt.radial.reload_reminder"));
+    ImGui::PopTextWrapPos();
 #endif
 
     // Fire the deferred OpenPopup at the top-level ID scope (the Create/Edit buttons
