@@ -576,17 +576,6 @@ void RenderWizard() {
         if (ImGui::Combo(L("opt.radial.opt_selmode"), &selIdx, sels, 4))
             s_wizOpt.SelectionMode = selVals[selIdx];
         ItemTip("opt.radial.opt_selmode_tip");
-        // Flavor-aware limitation note: in base, a held bare printable key garbles the
-        // injected command, so Click (commits with the wheel hotkey still held) only works
-        // if that hotkey carries a modifier; Release and Hover commit with no key down.
-        // +plus's input swallow lets Click work too - a lighter caveat there.
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
-#ifdef EMOT3_PLUS
-        ImGui::TextColored(kAmber, "%s", L("opt.radial.sel_limit_plus"));
-#else
-        ImGui::TextColored(kAmber, "%s", L("opt.radial.sel_limit"));
-#endif
-        ImGui::PopTextWrapPos();
 
         SliderWithReset(L("opt.radial.opt_scale"), &s_wizOpt.Scale, 0.5f, 2.0f,
                         1.0f, "opt.radial.opt_scale_tip");
