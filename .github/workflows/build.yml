@@ -1,69 +1,69 @@
-# Builds emot3 and publishes release assets whenever a tag matching v* is pushed.
+# emot3 CI: build on PRs + main (the gate), publish on v* tags (no rebuild).
 #
-# Build matrix is asymmetric by event type to cut PR-CI time roughly in half:
-#   pull_request -> DevTools + PlusDevTools only (the +devtools artifact is the
-#                   only one we ever grab to test a PR in-game; the public-shape
-#                   Distribution/Plus DLLs are wasted compile time on a PR since
-#                   the +devtools macro is purely additive on top of the base
-#                   flavor — if DevTools/PlusDevTools build, the base shape
-#                   almost certainly does too. Accepted risk: a #ifndef
-#                   EMOT3_DEVTOOLS path could break undetected until the next
-#                   main-push run catches it).
-#   push: main  -> all four (Distribution + Plus + DevTools + PlusDevTools).
-#                   Safety net for direct-to-main version-bump commits.
-#   push: v*    -> all four + release-asset publish.
+# Model - build once, ship the bytes you built:
+#   pull_request (into main OR release/**) -> `build` job, LIGHT: DevTools +
+#       PlusDevTools only. Fast per-feature feedback. The +devtools macro is
+#       additive on the base flavor, so if the +devtools shapes build the base
+#       shapes almost certainly do (accepted risk: a #ifndef EMOT3_DEVTOOLS path
+#       could slip past a PR until the main build catches it).
+#   push: main -> `build` job, FULL: all four configs + the public static-CRT
+#       import guard + uploads the emot3-public-builds artifact. THIS is the
+#       release gate. It does NOT publish.
+#   push: v* tag -> `publish` job ONLY (no compile): downloads the
+#       emot3-public-builds artifact that the main build produced FOR THIS EXACT
+#       COMMIT and attaches emot3.dll + emot3_plus-<tag>.zip to the Release. So a
+#       tag ships the byte-for-byte artifacts the main build already validated,
+#       and a tag can never trigger a red build.
+#       >>> TAG ONLY AFTER THE MAIN BUILD IS GREEN <<< the publish job needs that
+#       build's artifact; tagging before it finishes = no artifact = failed
+#       publish (recoverable: re-push the tag once the main build is green).
 #
-# Configs:
-#   Distribution -> emot3.dll              (public base: no dev tools, no swallows)
-#   Plus         -> emot3_plus.dll         (+plus: convenience input-swallows)
-#   DevTools     -> emot3_devtools.dll     (+devtools: dev diagnostic tools)
-#   PlusDevTools -> emot3_plusdevtools.dll (+plus +devtools: swallows + dev tools)
-# Two additive flavor macros drive this: EMOT3_PLUS adds the AV-sensitive input-
-# swallows, EMOT3_DEVTOOLS adds the diagnostic dev tools; base defines neither.
-# See the README and src/emot3.vcxproj.
+# Configs: Distribution -> emot3.dll | Plus -> emot3_plus.dll |
+#   DevTools -> emot3_devtools.dll | PlusDevTools -> emot3_plusdevtools.dll.
+#   EMOT3_PLUS adds the AV-sensitive input-swallows, EMOT3_DEVTOOLS adds the
+#   diagnostic dev tools; base defines neither. See README + src/emot3.vcxproj.
 #
-# Release assets (v* tag): emot3.dll (loose, for Nexus auto-update) +
-# emot3_plus-<tag>.zip. The +devtools builds stay workflow artifacts only.
+# Release assets (v* tag): emot3.dll (loose, the single Nexus auto-update target)
+#   + emot3_plus-<tag>.zip (a zip Nexus' .dll updater ignores -> manual Plus
+#   download). The +devtools builds stay workflow artifacts only, never shipped.
 #
-# Doc-only main pushes skip CI via paths-ignore (**/*.md, LICENSE) since none
-# of those files affect a DLL. Tag pushes ignore path filters by GitHub Actions
-# design, so releases still fire regardless of which files the bump touched.
+# Doc-only main pushes skip CI via paths-ignore. Tag pushes ignore path filters
+# by GitHub Actions design, so a release still fires regardless of the bump files.
 #
-# Runs entirely on GitHub-hosted windows-latest (Windows Server 2022),
-# which ships with MSBuild, the C++ Build Tools, the Windows SDK,
-# rc.exe, and Python 3 pre-installed - the same stack the existing
-# Visual Studio .sln expects. No CMake / MinGW migration required.
-#
-# Public-repo runners are free with no minute cap, so the workflow
-# fires on every push without budget concerns.
+# windows-latest for the build (MSBuild / Windows SDK / py preinstalled);
+# ubuntu-latest for the no-compile publish. Public-repo runners are free.
 
 name: Build
 
 on:
   push:
-    branches: [main]
-    # Doc-only main pushes don't affect any DLL — skip CI entirely. Tag pushes
-    # ignore paths-ignore by GitHub Actions design, so releases still fire on
-    # v* regardless of which files the bump commit touched.
+    branches: [main]                 # full build = the release gate (no publish)
+    # Doc-only main pushes don't affect any DLL - skip CI. Tag pushes ignore
+    # paths-ignore by GitHub Actions design, so releases still fire on v*.
     paths-ignore: ['**/*.md', 'LICENSE']
-    tags: ['v*']
+    tags: ['v*']                     # publish-only job (no rebuild)
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**']   # light build (feature PRs onto main OR a release branch)
 
-# Cancel any in-flight build for the same ref when a new push lands.
-# Saves runner time when commits arrive in quick succession.
+# Cancel any in-flight run for the same ref when a new push lands.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
-# The release step (softprops/action-gh-release on a v* tag) creates/updates a
-# GitHub Release, which needs write access to repo contents. The default
-# GITHUB_TOKEN is read-only on many repos, so grant it explicitly.
+# contents:write - the publish job creates a GitHub Release.
+# actions:read    - the publish job reads/downloads the build job's artifact via
+#                   the Actions API. Declaring `permissions:` replaces the token
+#                   defaults, so actions:read must be listed explicitly or the
+#                   artifact lookup 403s.
 permissions:
   contents: write
+  actions: read
 
 jobs:
+  # Compile + validate. Runs on PRs (light) and main pushes (full = the gate).
+  # Never runs on a tag (the tag does not compile - see `publish`).
   build:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: windows-latest
 
     steps:
@@ -87,15 +87,15 @@ jobs:
         run: py -3 tools/gen_rc.py
 
       # Build matrix: PRs only build the +devtools flavors (DevTools +
-      # PlusDevTools); main/tag pushes build all four. The +devtools macro is
+      # PlusDevTools); main pushes build all four. The +devtools macro is
       # additive on top of the base flavor, so PlusDevTools building strongly
-      # implies Plus does too — same DevTools -> Distribution. Each config
-      # writes its own folder + DLL name (per-config TargetName / OutDir), so
-      # they never clobber each other.
-      - name: Build Distribution (emot3.dll, main/tag only)
+      # implies Plus does too - same DevTools -> Distribution. Each config writes
+      # its own folder + DLL name (per-config TargetName / OutDir), so they never
+      # clobber each other.
+      - name: Build Distribution (emot3.dll, main only)
         if: github.event_name != 'pull_request'
         run: msbuild emot3.sln /p:Configuration=Distribution /p:Platform=x64 /m
-      - name: Build Plus (emot3_plus.dll, main/tag only)
+      - name: Build Plus (emot3_plus.dll, main only)
         if: github.event_name != 'pull_request'
         run: msbuild emot3.sln /p:Configuration=Plus /p:Platform=x64 /m
       - name: Build DevTools (emot3_devtools.dll)
@@ -110,20 +110,19 @@ jobs:
       # import table (no dumpbin / VC env needed) and fails the job if any DLL
       # imports the dynamic CRT (vcruntime/msvcp/ucrtbase/api-ms-win-crt). The
       # +devtools DLLs are checked on every run (the only flavors PRs build);
-      # the public shapes are checked on main/tag. RuntimeLibrary is per-config
-      # in the vcxproj and identical across release configs, so the +devtools
-      # DLLs are a faithful proxy for the public ones on a PR.
+      # the public shapes are checked on main. RuntimeLibrary is per-config in
+      # the vcxproj and identical across release configs, so the +devtools DLLs
+      # are a faithful proxy for the public ones on a PR.
       - name: Check imports (Wine static-CRT guard, +devtools)
         run: py -3 tools/check_imports.py build/DevTools/emot3_devtools.dll build/PlusDevTools/emot3_plusdevtools.dll
-      - name: Check imports (Wine static-CRT guard, public; main/tag only)
+      - name: Check imports (Wine static-CRT guard, public; main only)
         if: github.event_name != 'pull_request'
         run: py -3 tools/check_imports.py build/Distribution/emot3.dll build/Plus/emot3_plus.dll
 
-      # Artifact upload is split to match the asymmetric build matrix:
-      # +devtools artifacts always upload (every event), public-shape artifacts
-      # only on main/tag pushes. 14-day retention keeps storage well under the
-      # free 500 MB quota. The +devtools DLLs stay artifacts only - never
-      # published as release assets.
+      # Artifact upload mirrors the matrix: +devtools artifacts upload on every
+      # build run; the public-shape artifact uploads only on main pushes and is
+      # what the `publish` job ships at tag time. 14-day retention stays well
+      # under the free quota; the gap between a main build and its tag is minutes.
       - name: Upload +devtools DLL artifacts (every run)
         uses: actions/upload-artifact@v4
         with:
@@ -133,7 +132,7 @@ jobs:
             build/PlusDevTools/emot3_plusdevtools.dll
           retention-days: 14
           if-no-files-found: error
-      - name: Upload public DLL artifacts (main/tag only)
+      - name: Upload public DLL artifacts (main only - the release gate's output)
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
@@ -144,24 +143,53 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-      # On tag pushes (v1.0.0, v0.2.1-beta, etc.) attach the public emot3.dll AND
-      # a zipped Plus build to the GitHub Release. Nexus' GitHub update provider
-      # only auto-downloads a release asset whose name ends in .dll, so emot3.dll
-      # stays the single, unambiguous auto-update target while emot3_plus ships as
-      # a .zip the updater ignores - a public, permanent, manual download (the
-      # build artifact above needs a login and expires after 14 days). Plus is a
-      # distinct addon (own Signature, Provider=None) so it coexists in addons/
-      # and is never auto-updated/clobbered. The +devtools builds are never shipped.
-      - name: Package Plus build (zip - ignored by Nexus' .dll updater)
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: Compress-Archive -Path build/Plus/emot3_plus.dll -DestinationPath emot3_plus-${{ github.ref_name }}.zip
+  # Publish-only. Runs on a v* tag, never compiles: it ships the exact
+  # emot3-public-builds artifact the main `build` produced for this commit. A red
+  # build therefore can never reach a release, and the published bytes are
+  # identical to the validated ones.
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download the validated public build for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # The emote-public-builds artifact was produced by the main `build` run
+          # for THIS exact commit (the tag points at it). Find it by head_sha so
+          # we never grab a different commit's bytes, and so the tag's own run
+          # (which has no such artifact) is ignored.
+          ART_ID=$(gh api "repos/$REPO/actions/artifacts?name=emot3-public-builds&per_page=100" \
+            --jq "[.artifacts[] | select(.workflow_run.head_sha==\"$SHA\" and .expired==false)] | sort_by(.created_at) | last | .id")
+          if [ -z "$ART_ID" ] || [ "$ART_ID" = "null" ]; then
+            echo "::error::No emot3-public-builds artifact for $SHA. The main build must be green and finished before you tag. Re-push the tag once it is."
+            exit 1
+          fi
+          gh api "repos/$REPO/actions/artifacts/$ART_ID/zip" > public.zip
+          mkdir -p _assets && unzip -o public.zip -d _assets
+
+      - name: Stage release assets (no compile)
+        run: |
+          set -euo pipefail
+          DLL=$(find _assets -name emot3.dll | head -1)
+          PLUS=$(find _assets -name emot3_plus.dll | head -1)
+          if [ -z "$DLL" ] || [ -z "$PLUS" ]; then
+            echo "::error::Downloaded artifact is missing emot3.dll or emot3_plus.dll."
+            exit 1
+          fi
+          cp "$DLL" emot3.dll
+          # Zip Nexus' .dll updater ignores -> manual Plus download, name carries the tag.
+          zip -j "emot3_plus-${{ github.ref_name }}.zip" "$PLUS"
+
       - name: Publish release assets
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/Distribution/emot3.dll
+            emot3.dll
             emot3_plus-${{ github.ref_name }}.zip
           fail_on_unmatched_files: true
           generate_release_notes: true
