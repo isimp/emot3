@@ -8,6 +8,7 @@
 #include "I18n.h"         // L()
 #include "Logging.h"      // LOG_WARNING (folder cap)
 #include "StringUtil.h"   // ToLower (shared helper)
+#include "WinEncoding.h"  // Utf8ToWide / WideToUtf8 (Unicode folder enumeration)
 #include "Profiling.h"    // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS)
 
 #ifdef EMOT3_DEVTOOLS
@@ -127,17 +128,26 @@ void ScanFolderTextures() {
         stack.pop_back();
         if (++dirsVisited > kMaxDirs) { bounded = true; break; }
 
-        const std::string pattern = f.dir + "\\*";   // walk everything, filter below
-        WIN32_FIND_DATAA fd;
-        HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+        // Wide enumeration so non-ASCII filenames (umlauts etc.) survive intact;
+        // names are converted to UTF-8 for storage/display/JSON. (f.dir is UTF-8.)
+        const std::wstring pattern = Utf8ToWide(f.dir + "\\*");   // walk everything, filter below
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
         if (h == INVALID_HANDLE_VALUE) continue;
         do {
-            const std::string name = fd.cFileName;
+            const std::string name = WideToUtf8(fd.cFileName);    // UTF-16 -> UTF-8
             if (name == "." || name == "..") continue;
             // FindFirstFile names can't contain a path separator / ':' / wildcard
             // (illegal in Windows names), so `name` is always a safe relative leaf.
             // Guard anyway against an exotic name; skip anything weird.
             if (name.find_first_of("\\/:") != std::string::npos) continue;
+            // Defensive backstop: WideToUtf8 yields valid UTF-8 for any real name,
+            // so this should never fire now - but keep it so a pathological name
+            // can't feed invalid UTF-8 to the JSON writer.
+            if (!IsValidUtf8(name)) {
+                LOG_WARNING("Icon picker: skipping a file whose name isn't valid UTF-8");
+                continue;
+            }
 
             if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
                 // Skip the UI-overrides subfolder at the top level only.
@@ -195,7 +205,7 @@ void ScanFolderTextures() {
             // Lazy: just list it; the thumbnail loads on first show in the grid
             // (RenderBucket -> EnsureResolved), into the shared cell content pool.
             s_folderFiles.push_back(relPath);
-        } while (FindNextFileA(h, &fd) && !capped);
+        } while (FindNextFileW(h, &fd) && !capped);
         FindClose(h);
     }
     if (capped)

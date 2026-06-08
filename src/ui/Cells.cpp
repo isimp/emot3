@@ -1,5 +1,7 @@
 #include "Cells.h"
 #include "Globals.h"
+#include "QuickbarGeometry.h"  // g_QbStep* / g_QbMaxScroll* / ... (grid layout)
+#include "QbHitRects.h"        // g_QbIconRects (register cell hit-rects)
 #include "I18n.h"
 #include "Settings.h"
 #include "EmoteData.h"

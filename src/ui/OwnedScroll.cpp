@@ -1,6 +1,6 @@
 #include "OwnedScroll.h"
 
-#include "Globals.h"    // g_QbStepX/Y, g_QbRows/Cols, g_QbMaxScroll*
+#include "QuickbarGeometry.h"  // g_QbStepX/Y, g_QbRows/Cols, g_QbMaxScroll*
 #include "Settings.h"   // g_Settings.QuickbarSnapScroll / EQbScrollSnap
 
 #include "imgui/imgui.h"

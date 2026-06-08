@@ -1,16 +1,13 @@
 #include "IconCacheConfig.h"
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <Windows.h>    // MoveFileExA (atomic config replace)
-
 #include "JsonUtil.h"   // jsonutil::GetInt (never-throw, type-checked)
 #include "Logging.h"
+#include "AtomicFile.h" // AtomicWriteFile (shared crash-safe temp+rename)
 
 #include <nlohmann/json.hpp>
 
 #include <fstream>
+#include <sstream>
 
 using json = nlohmann::json;
 using namespace jsonutil;
@@ -47,31 +44,17 @@ void LoadIconCacheConfig(const std::string& path) {
 
 void SaveIconCacheConfig(const std::string& path) {
     if (path.empty()) return;
-    // Atomic write: fill a temp file, then replace the real one in a single move,
-    // so a crash mid-write can't leave a half-truncated icon_cache.json that the
-    // next load would have to discard (silently dropping the user's settings).
-    const std::string tmp = path + ".tmp";
-    {
-        std::ofstream f(tmp, std::ios::trunc);   // fresh temp each save
-        if (!f.is_open()) {
-            LOG_WARNING("could not write icon_cache.json temp (%s)", tmp.c_str());
-            return;
-        }
-        // Hand-rolled writer (3 ints) - keeps the on-disk shape stable + matches the
-        // keys LoadIconCacheConfig reads. Only the dev tuner calls this.
-        f << "{\n";
-        f << "  \"max_icon_dim\": "     << g_IconCache.maxIconDim     << ",\n";
-        f << "  \"max_folder_icons\": " << g_IconCache.maxFolderIcons << ",\n";
-        f << "  \"pool_budget_mb\": "   << g_IconCache.poolBudgetMB   << "\n";
-        f << "}\n";
-    }   // close (flush) before the move
-    if (!MoveFileExA(tmp.c_str(), path.c_str(),
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        LOG_WARNING("could not replace icon_cache.json (move failed, err %lu); "
-                    "existing file left intact", GetLastError());
-        DeleteFileA(tmp.c_str());   // don't leave the temp behind
-        return;
-    }
+    // Hand-rolled writer (3 ints) - keeps the on-disk shape stable + matches the
+    // keys LoadIconCacheConfig reads. Only the dev tuner calls this.
+    std::ostringstream f;
+    f << "{\n";
+    f << "  \"max_icon_dim\": "     << g_IconCache.maxIconDim     << ",\n";
+    f << "  \"max_folder_icons\": " << g_IconCache.maxFolderIcons << ",\n";
+    f << "  \"pool_budget_mb\": "   << g_IconCache.poolBudgetMB   << "\n";
+    f << "}\n";
+    // Crash-safe temp+rename so a mid-write crash can't leave a half-truncated
+    // icon_cache.json that the next load would discard (dropping the user's settings).
+    if (!AtomicWriteFile(path, f.str())) return;
     LOG_INFO("wrote icon_cache.json: max_icon_dim=%d max_folder_icons=%d pool_budget_mb=%d",
              g_IconCache.maxIconDim, g_IconCache.maxFolderIcons, g_IconCache.poolBudgetMB);
 }

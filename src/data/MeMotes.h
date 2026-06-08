@@ -92,6 +92,11 @@ void ClearMeMotes();
 bool LoadMeMotesJson(const std::string& path);
 void SaveMeMotesJson(const std::string& path);
 
+// Delete a /me-mote from the catalog by Id and cascade: drop it from favorites,
+// bump the epoch, and persist me_motes.json. Self-contained (the Options UI just
+// calls it, then clears its own row buffers).
+void DeleteMeMote(const std::string& id);
+
 // Lookup by stable Id. Returns nullptr if not found. Caller should hold
 // g_MeMotesMutex if the catalog could mutate concurrently (the per-frame
 // renderer takes it; background mutators take it too — same discipline as

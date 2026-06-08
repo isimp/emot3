@@ -4,6 +4,7 @@
 
 #include "JsonUtil.h"
 #include "Logging.h"
+#include "AtomicFile.h"  // AtomicWriteFile (crash-safe save - no live-file truncation)
 
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -38,18 +39,13 @@ void LoadPlusSettings(const std::string& path) {
 
 void SavePlusSettings() {
     if (s_path.empty()) return;  // never loaded (no addon dir) - nothing to write
-    std::ofstream f(s_path);
-    if (!f.is_open()) {
-        LOG_WARNING("Could not open %s for writing - Plus settings not persisted",
-                    s_path.c_str());
-        return;
-    }
     // Tiny file: nlohmann's pretty dump is fine (no hand-rolled writer needed,
     // unlike settings.json where we control the layout).
     nlohmann::json j;
     j["qb_click_through_wheel"] = g_PlusSettings.QbClickThroughWheel;
     j["swallow_input_on_send"]  = g_PlusSettings.SwallowInputOnSend;
-    f << j.dump(2) << "\n";
+    AtomicWriteFile(s_path,
+                    j.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) + "\n");
 }
 
 #endif  // EMOT3_PLUS

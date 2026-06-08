@@ -7,6 +7,7 @@
 
 #include <cstdio>       // snprintf (RTApiDebugInfo)
 #include <cmath>        // std::fabs (falling-speed guard)
+#include <chrono>       // steady_clock (monotonic time; replaces ImGui::GetTime)
 
 #include "rtapi/RTAPI.h" // RealTimeData, ECharacterState, DL_RTAPI (vendored)
 
@@ -147,7 +148,10 @@ void TickCharacterState() {
     const unsigned tick = MumbleLink->UITick;
     if (tick == lastUITick) return;   // no fresh game data this frame
 
-    const double now = ImGui::GetTime();
+    // Monotonic seconds (steady_clock; was ImGui::GetTime - keeps core/CharacterState
+    // imgui-free). Used only for self-consistent deltas, so the arbitrary epoch is fine.
+    const double now = std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
     const float  x = MumbleLink->AvatarPosition.X;
     const float  y = MumbleLink->AvatarPosition.Y;
     const float  z = MumbleLink->AvatarPosition.Z;

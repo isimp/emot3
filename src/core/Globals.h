@@ -17,7 +17,6 @@
 #include <vector>
 #include <utility>
 
-#include "imgui/imgui.h"
 #include "nexus/Nexus.h"
 #include "mumble/Mumble.h"
 
@@ -101,54 +100,11 @@ struct InflightWorkerScope {
     ~InflightWorkerScope() { g_InflightWorkers.fetch_sub(1); }
 };
 
-// Screen-space rects of every interactive widget rendered in the Quickbar
-// last frame (icon buttons, title bar, category selector). The QB's
-// click-through logic hit-tests the cursor against this list before
-// deciding whether to add ImGuiWindowFlags_NoInputs to the window — over
-// any rect → keep input; off → pass through to the game.
-extern std::vector<std::pair<ImVec2, ImVec2>> g_QbIconRects;
-
-// --- Quickbar window geometry ------------------------------------------
+// The Quickbar's screen-space hit-rects (g_QbIconRects, ImVec2-typed) moved to
+// ui/QbHitRects.h; its window geometry + grid metrics (g_QbWin* / g_QbStep* /
+// g_QbMaxScroll* / ...) moved to core/QuickbarGeometry.h. Keeping the lone
+// ImVec2 global out of this header (which is included almost everywhere) is what
+// lets the data/ and core/ layers compile without imgui.
 //
-// The Quickbar's size/position normally live only in ImGui's .ini. Presets
-// need to read the live geometry (to capture) and write it back (to apply),
-// so the Quickbar render mirrors it into these globals.
-
-// Live geometry, refreshed each frame the Quickbar actually renders.
-// g_QbGeometryValid stays false until the QB has drawn at least once, so a
-// preset captured before the QB has ever opened simply stores no geometry.
-extern float g_QbWinX, g_QbWinY, g_QbWinW, g_QbWinH;
-extern bool  g_QbGeometryValid;
-
-// One-shot apply: set when a preset is applied. The Quickbar consumes it on
-// its next render — clamps to the viewport work area (so an off-screen or
-// oversized saved geometry still lands usable), positions/sizes the window
-// with ImGuiCond_Always, then clears the flag.
-extern bool  g_QbApplyGeometry;
-extern float g_QbApplyX, g_QbApplyY, g_QbApplyW, g_QbApplyH;
-
-// Cell step (cellW+spacingX, cellH+spacingY) of the LAST Quickbar grid
-// render, written by RenderEmoteSection on the isQuickbar pass. The window
-// drag-snap (Quickbar.cpp) reads these one frame later to round the window
-// to whole cells; 0 until the QB has drawn once.
-extern float g_QbStepX, g_QbStepY;
-
-// Column/row count of the LAST Quickbar grid render (RenderEmoteSection,
-// isQuickbar pass). Used by the dev sizing readout (QuickbarDebug.h).
-extern int   g_QbCols, g_QbRows;
-
-// True when the last Quickbar grid had more cells than the viewport showed
-// (integer test: total rows/cols > visible). This drives the custom
-// scrollbar / gutter decision - immune to ImGui's sub-pixel ContentSize
-// rounding, unlike a pixel scrollMax threshold.
-extern bool  g_QbOverflow;
-
-// The Quickbar's per-frame "can't emote right now" reason (mounted, swimming,
-// downed, ...) lives in core/CharacterState.h as g_QbBlockReason - set by
-// QuickbarRender, consumed by RenderEmoteCell to dim + block + explain cells.
-
-// Cell-aligned max scroll of the last Quickbar grid = (total - visible)*step
-// on the scroll axis (0 when it fits). Quickbar clamps owned scrolling to
-// this so ImGui's ~1px ContentSize overhead is never scrollable (no sub-pixel
-// scroll, no leftover notch at the end). The other axis is 0.
-extern float g_QbMaxScrollX, g_QbMaxScrollY;
+// (CharacterState's g_QbBlockReason / g_QbUnusableKey are a separate concern -
+// see core/CharacterState.h.)

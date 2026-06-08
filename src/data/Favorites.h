@@ -5,6 +5,7 @@
 // the shared core/StringUtil.h TrimWhitespace.)
 
 #include <string>
+#include <vector>
 #include "Settings.h"   // EFavoriteRefType for the type-tagged ref API
 
 // Generic, type-tagged API. Favorites mix Emote-typed refs and /me-mote-typed
@@ -66,4 +67,14 @@ void EnsureDefaultCategory();
 // emotes — dropping them here would lose favorites permanently. Skips entirely
 // when the catalog is empty (nothing meaningful to validate against).
 void ReconcileFavoritesWithCatalog();
+
+// Derive filesystem-safe, collision-free FOLDER names for the favorite categories,
+// parallel to g_Settings.FavoriteCategories (index i -> folder for category i).
+// Each is SanitizeFilename(category.Name) made unique within the set (later dupes
+// get _2/_3); the stored category Name (the display string) is NOT changed.
+//
+// Scaffolding for the upcoming per-category folder feature - there is NO caller
+// yet. Batch (not per-index) so uniqueness is correct: two categories that slug to
+// the same stem can't both win. Call once when the mapping is needed.
+std::vector<std::string> CategoryFolderNames();
 

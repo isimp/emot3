@@ -1,8 +1,13 @@
 #include "EmoteData.h"
-#include "Icons.h"       // SanitizeIconPath (IconPath ingress heal)
+#include "IconPath.h"    // SanitizeIconPath (IconPath ingress heal) - data-layer, no ui/
 #include "JsonUtil.h"
+#include "StringUtil.h"  // TruncateUtf8 / kMaxNameBytes (name cap at load)
+#include "AtomicFile.h"  // AtomicWriteFile (crash-safe save - no live-file truncation)
 #include "Logging.h"
 #include "Resources.h"   // kEmoteData bundled localization table
+#include "Settings.h"    // g_Settings.ManuallyUnlocked + SaveSettings (DeleteEmote cascade)
+#include "Favorites.h"   // RemoveEmoteFromCategories (DeleteEmote cascade)
+#include "Globals.h"     // g_*Path + MarkEmotesDirty (DeleteEmote)
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.catalog"
 
 #include <nlohmann/json.hpp>
@@ -11,6 +16,7 @@
 #include <cctype>
 #include <cstring>
 #include <fstream>
+#include <sstream>
 #include <map>
 
 std::vector<Emote> g_Emotes;
@@ -370,7 +376,7 @@ bool LoadEmotesJson(const std::string& path) {
         Emote e;
         e.Id           = jsonutil::GetString(item, "id",         std::string());
         e.Command      = jsonutil::GetString(item, "command",    std::string());
-        e.Name         = jsonutil::GetString(item, "name",       std::string());
+        e.Name         = TruncateUtf8(jsonutil::GetString(item, "name", std::string()), kMaxNameBytes);
         // Sanitize IconPath at ingress: locks the value to addons/emot3/icons
         // (subfolders allowed; ui/ subfolder excluded) and passes bundled refs
         // through untouched. A hand-edit pointing outside the icons folder
@@ -442,19 +448,38 @@ bool LoadEmotesJson(const std::string& path) {
     return true;
 }
 
+void DeleteEmote(const std::string& id) {
+    {
+        std::lock_guard<std::mutex> lk(g_EmotesMutex);
+        auto it = std::find_if(g_Emotes.begin(), g_Emotes.end(),
+                               [&](const Emote& e){ return e.Id == id; });
+        if (it != g_Emotes.end()) g_Emotes.erase(it);
+    }
+    // Cascade: drop it from favorites and from the manual-unlock list (its own
+    // settings-backed state), then persist both files + bump the catalog epoch.
+    RemoveEmoteFromCategories(id);
+    auto& u = g_Settings.ManuallyUnlocked;
+    u.erase(std::remove(u.begin(), u.end(), id), u.end());
+    if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+    if (!g_SettingsPath.empty())   SaveSettings(g_SettingsPath);
+    MarkEmotesDirty();
+    LOG_INFO("Deleted emote %s", id.c_str());
+}
+
 void SaveEmotesJson(const std::string& path) {
     PROFILE_SCOPE("save.catalog");  // dev perf overlay - catalog JSON serialize + write
-    std::ofstream f(path);
-    if (!f.is_open()) {
-        LOG_WARNING("Could not open %s for writing", path.c_str());
-        return;
-    }
+    std::ostringstream f;   // build in memory, then write atomically (temp + rename)
 
     // Hand-rolled writer (mirrors Settings.cpp's SaveSettings) so the on-disk
     // layout is controlled: per-emote keys in a logical, stable order instead of
     // nlohmann's alphabetical default, and the aliases array stays inline. We
     // still lean on nlohmann for string escaping via json(v).dump().
-    auto quoted = [](const std::string& v) { return json(v).dump(); };
+    // error_handler_t::replace: a string with invalid UTF-8 (e.g. an ANSI-codepage
+    // filename picked into IconPath) yields U+FFFD instead of THROWING - an
+    // uncaught dump() exception here would terminate the game.
+    auto quoted = [](const std::string& v) {
+        return json(v).dump(-1, ' ', false, json::error_handler_t::replace);
+    };
     auto B = [](bool v) { return v ? "true" : "false"; };
 
     f << "{\n";
@@ -492,6 +517,8 @@ void SaveEmotesJson(const std::string& path) {
 
     f << "]\n";
     f << "}\n";
+    AtomicWriteFile(path, f.str());   // replace the live file only once the full
+                                      // content is on disk (crash-safe)
 }
 
 const Emote* FindEmote(const std::string& id) {

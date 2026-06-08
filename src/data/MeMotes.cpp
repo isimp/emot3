@@ -1,10 +1,12 @@
 #include "MeMotes.h"
 #include "Globals.h"     // g_MeMotesVersion (DevStateRegistrar reads it)
-#include "Icons.h"       // SanitizeIconPath (IconPath ingress heal)
+#include "IconPath.h"    // SanitizeIconPath (IconPath ingress heal) - data-layer, no ui/
 #include "JsonUtil.h"
 #include "Logging.h"
 #include "StringUtil.h"  // TrimWhitespace (shared helper)
+#include "AtomicFile.h"  // AtomicWriteFile (crash-safe save - no live-file truncation)
 #include "Resources.h"   // kMeMoteData bundled seed table
+#include "Favorites.h"   // RemoveRefFromCategories + EFavoriteRefType (DeleteMeMote cascade)
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.memotes"
 
 #ifdef EMOT3_DEVTOOLS
@@ -16,6 +18,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <sstream>
 #include <map>
 #include <unordered_set>
 
@@ -365,7 +368,7 @@ bool LoadMeMotesJson(const std::string& path) {
         if (!item.is_object()) { ++skippedNonObj; changed = true; continue; }
         MeMote m;
         m.Id          = jsonutil::GetString(item, "id",       std::string());
-        m.Name        = jsonutil::GetString(item, "name",     std::string());
+        m.Name        = TruncateUtf8(jsonutil::GetString(item, "name", std::string()), kMaxNameBytes);
         // Sanitize IconPath at ingress: locks the value to addons/emot3/icons
         // (subfolders allowed; ui/ subfolder excluded) and passes bundled refs
         // through untouched. A hand-edit pointing outside the icons folder
@@ -484,17 +487,31 @@ bool LoadMeMotesJson(const std::string& path) {
     return true;
 }
 
+void DeleteMeMote(const std::string& id) {
+    std::string nameForLog;
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        auto it = std::find_if(g_MeMotes.begin(), g_MeMotes.end(),
+                               [&](const MeMote& m){ return m.Id == id; });
+        if (it != g_MeMotes.end()) { nameForLog = it->Name; g_MeMotes.erase(it); }
+    }
+    LOG_DEBUG("/me-mote deleted: id=%s (name='%s')", id.c_str(), nameForLog.c_str());
+    RemoveRefFromCategories(EFavoriteRefType::MeMote, id);   // favorites cascade
+    MarkMeMotesDirty();
+    if (!g_MeMotesJsonPath.empty()) SaveMeMotesJson(g_MeMotesJsonPath);
+}
+
 void SaveMeMotesJson(const std::string& path) {
     PROFILE_SCOPE("save.memotes");  // dev perf overlay - /me-mote JSON serialize + write
-    std::ofstream f(path);
-    if (!f.is_open()) {
-        LOG_WARNING("Could not open %s for writing", path.c_str());
-        return;
-    }
+    std::ostringstream f;   // build in memory, then write atomically (temp + rename)
 
     // Hand-rolled writer (mirrors SaveEmotesJson) so the on-disk layout is
     // controlled: per-/me-mote keys in a logical order, aliases inline.
-    auto quoted = [](const std::string& v) { return json(v).dump(); };
+    // error_handler_t::replace: invalid UTF-8 (e.g. an ANSI-codepage filename in
+    // IconPath) becomes U+FFFD instead of THROWING and crashing the host.
+    auto quoted = [](const std::string& v) {
+        return json(v).dump(-1, ' ', false, json::error_handler_t::replace);
+    };
 
     f << "{\n";
     f << "  \"version\": 1,\n";
@@ -532,6 +549,8 @@ void SaveMeMotesJson(const std::string& path) {
 
     f << "]\n";
     f << "}\n";
+    AtomicWriteFile(path, f.str());   // replace the live file only once the full
+                                      // content is on disk (crash-safe)
 }
 
 const MeMote* FindMeMote(const std::string& id) {

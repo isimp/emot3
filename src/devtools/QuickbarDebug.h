@@ -27,7 +27,7 @@ inline void RenderQbSizingOverlay() {}
 
 #include "imgui/imgui.h"
 #include "DevStateInspector.h"  // DevStateRow (aligned key/value rows)
-#include "Globals.h"            // g_Qb* live grid globals (folded-in grid block)
+#include "QuickbarGeometry.h"   // g_Qb* live grid globals (folded-in grid block)
 
 namespace qbdbg {
 

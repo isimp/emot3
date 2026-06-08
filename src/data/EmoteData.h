@@ -99,6 +99,12 @@ std::vector<std::string> ComputeNewBundledEmotes(const std::vector<std::string>&
 bool LoadEmotesJson(const std::string& path);
 void SaveEmotesJson(const std::string& path);
 
+// Delete an emote from the catalog by Id and cascade the cleanup: drop it from
+// favorites + the manual-unlock list, persist emotes.json + settings.json, and
+// bump the catalog epoch. Self-contained data operation (the Options UI just
+// calls it, then clears its own row buffers).
+void DeleteEmote(const std::string& id);
+
 // Lookup by stable Id. Returns nullptr if not found.
 const Emote* FindEmote(const std::string& id);
 
