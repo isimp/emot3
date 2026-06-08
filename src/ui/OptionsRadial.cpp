@@ -65,6 +65,15 @@ std::vector<WizItem>  s_wizItems;
 RadialWheelOptions    s_wizOpt;
 bool                  s_wizAutoSplit = false;
 RadialExportResult    s_wizResult;
+// Edit mode: when s_wizEditSlug is non-empty the wizard re-opens an EXISTING wheel
+// (seeded from its source category with its last selection + options) and writes
+// back in place; empty = creating a new wheel.
+std::string           s_wizEditSlug;
+int                   s_wizEditId = 0;
+
+// Inline deploy feedback (no Nexus toast for a routine in-tab action; see RenderRadialTab).
+std::string s_deployMsg;
+bool        s_deployOk = false;
 
 // rename inline edit
 std::string s_renameSlug;       // slug being renamed ("" = none)
@@ -98,19 +107,12 @@ void RightAlignButtons(float w, int count) {
     if (avail > total) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
 }
 
-void OpenWizard(const std::string& category) {
+// Snapshot a category's refs into s_wizItems (in order). Emotes -> one row; /me-motes
+// -> one row per non-empty variant (Default checked, You/All available but unchecked).
+// Shared by the create and edit entry points.
+void SeedWizardFromCategory(const std::string& category) {
     s_wizCategory = category;
     s_wizItems.clear();
-    s_wizOpt = RadialWheelOptions{};   // defaults (Normal, ReleaseOrClick, gate on)
-    s_wizAutoSplit = false;
-    s_wizPhase = 0;
-    s_wizResult = RadialExportResult{};
-
-    // default wheel name = category name
-    std::snprintf(s_wizName, sizeof(s_wizName), "%s", category.c_str());
-
-    // Snapshot the category's refs (in order). Emotes -> one row; /me-motes -> one row
-    // per non-empty variant (Default on by default, You/All available but unchecked).
     for (const auto& fc : g_Settings.FavoriteCategories) {
         if (fc.Name != category) continue;
         for (const auto& ref : fc.Refs) {
@@ -151,6 +153,43 @@ void OpenWizard(const std::string& category) {
         }
         break;
     }
+}
+
+// Create a NEW wheel from a category (full default selection).
+void OpenWizard(const std::string& category) {
+    s_wizOpt = RadialWheelOptions{};   // defaults (Normal, ReleaseOrClick, gate on, icon 0.8)
+    s_wizAutoSplit = false;
+    s_wizPhase = 0;
+    s_wizResult = RadialExportResult{};
+    s_wizEditSlug.clear();
+    s_wizEditId = 0;
+    SeedWizardFromCategory(category);
+    std::snprintf(s_wizName, sizeof(s_wizName), "%s", category.c_str());
+    s_wizActive = true;
+    ImGui::OpenPopup("###radialwizard");
+}
+
+// EDIT an existing wheel: re-open the same dialog seeded from its source category, with
+// the wheel's last selection (items + /me-mote variants) and options pre-applied, so the
+// user reconfigures and writes back in place. Seeding from the FULL category (not just
+// the wheel's subset) is what lets a split/subset wheel pull items back in.
+void OpenWizardForEdit(const RadialExport& w) {
+    s_wizOpt = w.Options;
+    s_wizAutoSplit = false;
+    s_wizPhase = 0;
+    s_wizResult = RadialExportResult{};
+    s_wizEditSlug = w.Slug;
+    s_wizEditId   = w.Id;
+    SeedWizardFromCategory(w.SourceCategory);
+    // Apply the wheel's selection: a row is checked iff (type,id,variant) is in w.Items.
+    for (auto& row : s_wizItems) {
+        bool inWheel = false;
+        for (const auto& it : w.Items)
+            if (it.Type == row.ref.Type && it.Id == row.ref.Id &&
+                it.Variant == row.ref.Variant) { inWheel = true; break; }
+        row.include = inWheel;
+    }
+    std::snprintf(s_wizName, sizeof(s_wizName), "%s", w.Name.c_str());
     s_wizActive = true;
     ImGui::OpenPopup("###radialwizard");
 }
@@ -180,8 +219,11 @@ void RenderWizard() {
                             ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(460, 320), ImVec2(720, 760));
 
-    std::string title = std::string(L("opt.radial.wizard_title")) + " '" +
-                        s_wizCategory + "'###radialwizard";
+    const bool editing = !s_wizEditSlug.empty();
+    std::string title = std::string(L(editing ? "opt.radial.edit_title"
+                                               : "opt.radial.wizard_title")) +
+                        " '" + (editing ? std::string(s_wizName) : s_wizCategory) +
+                        "'###radialwizard";
     if (!ImGui::BeginPopupModal(title.c_str(), nullptr,
                                 ImGuiWindowFlags_AlwaysAutoResize))
         return;
@@ -326,14 +368,37 @@ void RenderWizard() {
     }
     ImGui::SameLine();
     if (!canExport) BeginDisabledCompat();
-    if (ImGui::Button(L("opt.radial.export_confirm"), ImVec2(120, 0)) && canExport) {
+    const char* exportLbl = editing ? L("common.save") : L("opt.radial.export_confirm");
+    if (ImGui::Button(exportLbl, ImVec2(120, 0)) && canExport) {
         std::vector<RadialItemRef> items;
         for (const auto& w : s_wizItems) if (w.include) items.push_back(w.ref);
-        s_wizResult = ExportCategoryAsWheels(s_wizCategory, s_wizName, items, s_wizOpt,
-                                             s_wizAutoSplit);
+        const bool willSplit = s_wizAutoSplit && (int)items.size() > cap;
+        if (editing && !willSplit) {
+            // In-place single-wheel edit: keep this wheel's slug + id. Partial when it
+            // isn't a 1:1 default mirror of the category (matches ExportCategoryAsWheels).
+            int catCount = 0;
+            for (const auto& fc : g_Settings.FavoriteCategories)
+                if (fc.Name == s_wizCategory) { catCount = (int)fc.Refs.size(); break; }
+            bool partial = ((int)items.size() != catCount);
+            if (!partial)
+                for (const auto& it : items)
+                    if (it.Variant != EMeMoteVariant::Default) { partial = true; break; }
+            bool ok = ReExportWheel(s_wizEditSlug, s_wizEditId, s_wizName, s_wizCategory,
+                                    partial, items, s_wizOpt);
+            s_wizResult = RadialExportResult{};
+            s_wizResult.ok = ok;
+            s_wizResult.wheelsWritten = ok ? 1 : 0;
+            if (ok) {
+                s_wizResult.ids.push_back(s_wizEditId);
+                s_wizResult.names.push_back(std::string(kRadialPackNamePrefix) + s_wizName);
+            }
+        } else {
+            // New export, or an edit that grew past capacity -> replace with a (split) set.
+            if (editing) RemoveWheel(s_wizEditSlug);
+            s_wizResult = ExportCategoryAsWheels(s_wizCategory, s_wizName, items, s_wizOpt,
+                                                 s_wizAutoSplit);
+        }
         RefreshStatus();
-        if (s_wizResult.ok && APIDefs && APIDefs->UI.SendAlert)
-            APIDefs->UI.SendAlert(L("opt.radial.alert_exported"));
         s_wizPhase = 1;  // -> done panel (modal stays open)
     }
     if (!canExport) EndDisabledCompat();
@@ -382,16 +447,6 @@ bool WheelDrift(const RadialExport& w) {
     return false;
 }
 
-// The item list a Re-export should write: a full wheel re-snapshots the whole
-// category; a partial wheel keeps its current items minus any that left the category
-// (preserving order + /me-mote variant), staying partial by design.
-std::vector<RadialItemRef> BuildReexportItems(const RadialExport& w) {
-    if (!w.Partial) return ResnapshotCategory(w);
-    std::vector<RadialItemRef> out;
-    for (const auto& it : w.Items) if (CategoryHasRef(w, it)) out.push_back(it);
-    return out;
-}
-
 }  // namespace
 
 void RenderRadialTab() {
@@ -415,21 +470,17 @@ void RenderRadialTab() {
     if (ImGui::SmallButton(L("opt.radial.copy_path")))
         ImGui::SetClipboardText(g_RadialsDir.c_str());
 
-    // 3. Create
+    // 3. Create — any favorites category, any number of times (a category can back
+    // several wheels, e.g. an auto-split or curated subsets; Edit reconfigures each).
     OptionsSection(L("opt.radial.sec_create"));
     ImGui::TextUnformatted(L("opt.radial.create_label"));
     {
-        std::vector<std::string> exported = ExportedSourceCategories();
         std::vector<std::string> avail;
-        for (const auto& fc : g_Settings.FavoriteCategories)
-            if (std::find(exported.begin(), exported.end(), fc.Name) == exported.end())
-                avail.push_back(fc.Name);
+        for (const auto& fc : g_Settings.FavoriteCategories) avail.push_back(fc.Name);
 
         static int s_sel = 0;
-        if (g_Settings.FavoriteCategories.empty()) {
+        if (avail.empty()) {
             ImGui::TextDisabled("%s", L("opt.radial.no_categories"));
-        } else if (avail.empty()) {
-            ImGui::TextDisabled("%s", L("opt.radial.all_exported"));
         } else {
             if (s_sel >= (int)avail.size()) s_sel = 0;
             ImGui::SetNextItemWidth(220.0f);
@@ -484,17 +535,10 @@ void RenderRadialTab() {
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.st_in_sync_tip"));
                 }
 
-                // actions
+                // actions — Edit re-opens the wizard pre-filled (selection + options),
+                // so updating a wheel always goes through the same dialog as creating one.
                 if (sourceExists && !w.ParseError) {
-                    if (ImGui::SmallButton(L("opt.radial.reexport"))) {
-                        std::vector<RadialItemRef> items = BuildReexportItems(w);
-                        bool ok = ReExportWheel(w.Slug, w.Id, w.Name, w.SourceCategory,
-                                                w.Partial, items, w.Options);
-                        RefreshStatus();
-                        if (APIDefs && APIDefs->UI.SendAlert)
-                            APIDefs->UI.SendAlert(L(ok ? "opt.radial.alert_reexported"
-                                                        : "opt.radial.alert_failed"));
-                    }
+                    if (ImGui::SmallButton(L("opt.radial.edit"))) OpenWizardForEdit(w);
                     ImGui::SameLine();
                 }
                 if (ImGui::SmallButton(L("opt.radial.rename"))) {
@@ -541,10 +585,7 @@ void RenderRadialTab() {
                     ImGui::Spacing();
                     bool removed = false;
                     if (ImGui::Button(L("opt.radial.remove"), ImVec2(110, 0))) {
-                        bool ok = RemoveWheel(w.Slug);
-                        if (APIDefs && APIDefs->UI.SendAlert)
-                            APIDefs->UI.SendAlert(L(ok ? "opt.radial.alert_removed"
-                                                        : "opt.radial.alert_failed"));
+                        RemoveWheel(w.Slug);   // the row vanishing is the feedback
                         removed = true;
                         ImGui::CloseCurrentPopup();
                     }
@@ -572,19 +613,18 @@ void RenderRadialTab() {
         if (ImGui::Button(btn) && !none) {
             RadialDeployResult r = DeployToRadialMenus();
             if (r.ok) LOG_INFO("radials: deploy ok (%d packs, %d icons)", r.packs, r.icons);
-            if (APIDefs && APIDefs->UI.SendAlert) {
-                if (r.ok) {
-                    char msg[96];
-                    std::snprintf(msg, sizeof(msg), L("opt.radial.alert_deployed"),
-                                  r.packs, r.icons);
-                    APIDefs->UI.SendAlert(msg);
-                } else {
-                    APIDefs->UI.SendAlert(L("opt.radial.alert_failed"));
-                }
-            }
+            // Inline feedback in the tab (the window is open) instead of a Nexus toast.
+            s_deployOk = r.ok;
+            char msg[128];
+            if (r.ok) std::snprintf(msg, sizeof(msg), L("opt.radial.deployed_inline"),
+                                    r.packs, r.icons);
+            else      std::snprintf(msg, sizeof(msg), "%s", L("opt.radial.deploy_failed_inline"));
+            s_deployMsg = msg;
         }
         if (none) EndDisabledCompat();
         PlusBadge();  // tag the deploy convenience as an emot3 (Plus) feature
+        if (!s_deployMsg.empty())
+            ImGui::TextColored(s_deployOk ? kGreen : kRed, "%s", s_deployMsg.c_str());
         ImGui::TextWrapped("%s", L("opt.radial.reload_reminder"));
 #else
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);

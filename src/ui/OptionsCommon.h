@@ -58,12 +58,13 @@ bool PlusDisabledCheckbox(const char* labelKey, bool* state, bool enabled,
 // "Window", "Look", ...) without the weight of a CollapsingHeader.
 void OptionsSection(const char* title);
 
-// Inline "- active via radial 'X'" note for the catalog editors' keybind row. When
-// (type,id) is referenced by >= 1 staged radial wheel the entry is already bound for
-// the wheel without a key, so we say so (SameLine TextDisabled + tooltip) rather than
-// nagging the user to enable a personal hotkey they don't need. No-op when the entry
-// is in no wheel. Shared so the Emote and /me-mote editors render it identically.
-void RadialMembershipNote(EFavoriteRefType type, const std::string& id);
+// Inline radial-membership note for the catalog editors' keybind row, SameLine after
+// the checkbox. When (type,id) is in >= 1 staged wheel it reads "- active via radial
+// 'X'" (no personal key needed) when the personal keybind is OFF, or "- also in radial
+// 'X'" when it's ON - so ticking the box visibly changes the note (it isn't dead).
+// No-op when the entry is in no wheel. Shared by the Emote and /me-mote editors.
+void RadialMembershipNote(EFavoriteRefType type, const std::string& id,
+                          bool hasPersonalKeybind);
 
 // The four Options tabs, one per TU, invoked by AddonOptions() in Options.cpp.
 void RenderGeneralOptionsTab();

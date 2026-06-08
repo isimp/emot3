@@ -133,17 +133,21 @@ void OptionsSection(const char* title) {
     ImGui::Separator();
 }
 
-void RadialMembershipNote(EFavoriteRefType type, const std::string& id) {
+void RadialMembershipNote(EFavoriteRefType type, const std::string& id,
+                          bool hasPersonalKeybind) {
     std::vector<std::string> wheels = RadialWheelsContaining(type, id);
     if (wheels.empty()) return;
     ImGui::SameLine();
+    // "also in" when the user already has a personal key; "active via" when the wheel
+    // is the ONLY reason it's bound (so they know it works without ticking the box).
+    const char* oneKey  = hasPersonalKeybind ? "opt.radial.also_one"  : "opt.radial.via_one";
+    const char* manyKey = hasPersonalKeybind ? "opt.radial.also_many" : "opt.radial.via_many";
     std::string note;
     if (wheels.size() == 1)
-        note = std::string(L("opt.radial.via_one")) + " '" +
-               Ellipsize(wheels[0], 160.0f) + "'";
+        note = std::string(L(oneKey)) + " '" + Ellipsize(wheels[0], 160.0f) + "'";
     else
-        note = std::string(L("opt.radial.via_many")) + " (" +
-               std::to_string(wheels.size()) + ")";
+        note = std::string(L(manyKey)) + " (" + std::to_string(wheels.size()) + ")";
     ImGui::TextDisabled("- %s", note.c_str());
-    if (ImGui::IsItemHovered()) TooltipText("opt.radial.via_tip");
+    if (ImGui::IsItemHovered())
+        TooltipText(hasPersonalKeybind ? "opt.radial.also_tip" : "opt.radial.via_tip");
 }

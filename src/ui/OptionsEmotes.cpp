@@ -671,8 +671,9 @@ void RenderEmotesTab() {
                     bool kbBefore = e.UserKeybind;
                     flowCheckbox("opt.em.keybind", &e.UserKeybind, nullptr, /*Off*/0);
                     if (e.UserKeybind != kbBefore) keybindEdited = true;
-                    // Already bound for any radial wheel it's in (no key needed).
-                    RadialMembershipNote(EFavoriteRefType::Emote, e.Id);
+                    // Radial-membership note; reads "also in" vs "active via" depending
+                    // on whether this emote also has its own (personal) keybind.
+                    RadialMembershipNote(EFavoriteRefType::Emote, e.Id, e.UserKeybind);
                 }
 
                 // ---- Icon ----
