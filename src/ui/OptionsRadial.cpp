@@ -58,6 +58,19 @@ void RefreshStatus() {
 }
 void EnsureStatus()  { if (!s_statusKnown) RefreshStatus(); }
 
+#ifdef EMOT3_PLUS
+// Sync feedback for the Nexus options window. ShowFeedback's in-window overlay only
+// paints on emot3's own MainPanel/Quickbar surfaces - the options tab renders in
+// Nexus' addon-options window - so a sync result goes through Nexus' SendAlert (the
+// same toast RadialMenus itself uses). `wrote` is DeployGroupToRadialMenus' return:
+// 0 means nothing landed (RadialMenus' folder is gone / not installed), which the
+// detected-gate normally prevents but a stale detection could still hit.
+void AlertSyncResult(int wrote) {
+    if (!APIDefs || !APIDefs->UI.SendAlert) return;
+    APIDefs->UI.SendAlert(L(wrote > 0 ? "opt.radial.sync_done" : "opt.radial.sync_fail"));
+}
+#endif
+
 // status colors (reuse the established palette)
 const ImVec4 kGreen(0.45f, 0.85f, 0.50f, 1.0f);
 const ImVec4 kAmber(0.92f, 0.78f, 0.32f, 1.0f);
@@ -367,9 +380,10 @@ void RenderWizard() {
             if (ImGui::Button(L("opt.radial.sync_now"), ImVec2(wSync, 0))) {
                 std::vector<std::string> slugs;
                 for (const auto& w : WheelsInGroup(s_wizResult.group)) slugs.push_back(w.Slug);
-                DeployGroupToRadialMenus(slugs);
+                const int wrote = DeployGroupToRadialMenus(slugs);
                 RefreshStatus();
-                s_wizDoneSynced = true;
+                AlertSyncResult(wrote);
+                s_wizDoneSynced = (wrote > 0);
             }
             ImGui::SameLine();
             doClose = ImGui::Button(L("common.close"), ImVec2(wClose, 0));
@@ -707,8 +721,6 @@ void RenderRadialTab() {
     OptionsSection(L("opt.radial.sec_status"));
     if (s_rmDetected) ImGui::TextColored(kGreen, "%s", L("opt.radial.status_detected"));
     else              ImGui::TextColored(kAmber, "%s", L("opt.radial.status_not_detected"));
-    ImGui::SameLine();
-    if (ImGui::SmallButton(L("opt.radial.refresh"))) RefreshStatus();
     ImGui::TextDisabled("%s %s", L("opt.radial.staging_root"), g_RadialsDir.c_str());
     ImGui::SameLine();
     if (ImGui::SmallButton(L("opt.radial.copy_path")))
@@ -863,12 +875,13 @@ void RenderRadialTab() {
                     ImGui::SameLine();
                 }
 #ifdef EMOT3_PLUS
-                // +plus: push this wheel's files into RadialMenus (overwrites). The click
-                // is the approval; deploy-all and remove keep their own confirms.
+                // +plus: push this wheel's content into RadialMenus (keeps its presentation).
+                // The click is the approval; deploy-all and remove keep their own confirms.
                 if (!parseErr && s_rmDetected) {
                     if (ImGui::SmallButton(L("opt.radial.sync"))) {
-                        DeployGroupToRadialMenus(groupSlugs);
+                        const int wrote = DeployGroupToRadialMenus(groupSlugs);
                         RefreshStatus();
+                        AlertSyncResult(wrote);
                     }
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.sync_tip"));
                     ImGui::SameLine();
