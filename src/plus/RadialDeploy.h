@@ -15,6 +15,7 @@
 // =====================================================================
 
 #include <string>
+#include <vector>
 
 // Absolute path to addons/RadialMenus (whether or not it exists). Empty only if the
 // Nexus path API is unavailable. Available in every build.
@@ -39,3 +40,13 @@ struct RadialDeployResult {
 // flat folders stays identifiable). Base build: inert stub returning available=false.
 // Either way the caller still shows the "Reload radials" reminder.
 RadialDeployResult DeployToRadialMenus();
+
+// +plus: is a pack with this page stem currently deployed in RadialMenus' packs
+// folder? (Lets the remove flow offer "also delete from RadialMenus" only when there's
+// something there.) Base build: always false (it never writes outside emot3's folder).
+bool RadialMenusHasPack(const std::string& slug);
+
+// +plus: delete the given page slugs' packs + their emot3_<slug>_* icons from
+// RadialMenus' folders. Returns the count of files removed. Base build: no-op (0) -
+// touching another addon's folder is a +plus-only action.
+int RemoveFromRadialMenus(const std::vector<std::string>& slugs);

@@ -79,6 +79,8 @@ bool        s_deployOk = false;
 // rename inline edit (keyed on a group id; "" = none)
 std::string s_renameGroup;
 char        s_renameBuf[128] = {};
+// remove modal: in +plus, whether to also delete the deployed copy from RadialMenus.
+bool        s_removeAlsoRM = true;
 
 int IncludedCount() {
     int n = 0;
@@ -625,8 +627,19 @@ void RenderRadialTab() {
                     ImGui::OpenPopup("##radialrename");
                 }
                 ImGui::SameLine();
-                if (ImGui::SmallButton(L("opt.radial.remove")))
+                if (ImGui::SmallButton(L("opt.radial.remove"))) {
+                    s_removeAlsoRM = true;
                     ImGui::OpenPopup("##radialremove");
+                }
+
+                // This export's page slugs + whether any are deployed in RadialMenus
+                // (so the +plus remove modal can offer to clean them up there too).
+                std::vector<std::string> groupSlugs;
+                bool deployedInRM = false;
+                for (const auto& pg : pages) {
+                    groupSlugs.push_back(pg.Slug);
+                    if (RadialMenusHasPack(pg.Slug)) deployedInRM = true;
+                }
 
                 // rename popup (with an explicit Cancel)
                 if (s_renameGroup == group && ImGui::BeginPopup("##radialrename")) {
@@ -657,12 +670,29 @@ void RenderRadialTab() {
                 }
                 if (ImGui::BeginPopupModal("##radialremove", nullptr,
                                            ImGuiWindowFlags_AlwaysAutoResize)) {
-                    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 22.0f);
+                    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
                     ImGui::TextWrapped("%s", L("opt.radial.remove_confirm"));
+                    ImGui::Spacing();
+                    // Always: the binds go away, so a wheel still in RadialMenus goes dead.
+                    ImGui::TextWrapped("%s", L("opt.radial.remove_keybind_warn"));
+#ifdef EMOT3_PLUS
+                    // +plus: offer to also delete the deployed copy (only if it's there).
+                    if (deployedInRM) {
+                        ImGui::Spacing();
+                        ImGui::Checkbox(L("opt.radial.remove_rm_also"), &s_removeAlsoRM);
+                    }
+#else
+                    // Base: we never touch RadialMenus' folder - tell the user to.
+                    ImGui::Spacing();
+                    ImGui::TextColored(kAmber, "%s", L("opt.radial.remove_rm_manual"));
+#endif
                     ImGui::PopTextWrapPos();
                     ImGui::Spacing();
                     bool removed = false;
                     if (ImGui::Button(L("opt.radial.remove"), ImVec2(110, 0))) {
+#ifdef EMOT3_PLUS
+                        if (deployedInRM && s_removeAlsoRM) RemoveFromRadialMenus(groupSlugs);
+#endif
                         RemoveGroup(group);   // the row vanishing is the feedback
                         removed = true;
                         ImGui::CloseCurrentPopup();
@@ -690,27 +720,39 @@ void RenderRadialTab() {
         std::vector<RadialExport> wheels;
         { std::lock_guard<std::mutex> lk(g_RadialExportsMutex); wheels = g_RadialExports; }
 
-        // Deploy overwrites same-named files in RadialMenus' folders, no backup.
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-        ImGui::TextColored(kAmber, "%s", L("opt.radial.deploy_warn"));
-        ImGui::PopTextWrapPos();
-
         char btn[64];
         std::snprintf(btn, sizeof(btn), L("opt.radial.deploy_btn"), (int)wheels.size());
         bool none = wheels.empty() || !s_rmDetected;
         if (none) BeginDisabledCompat();
-        if (ImGui::Button(btn) && !none) {
-            RadialDeployResult r = DeployToRadialMenus();
-            if (r.ok) LOG_INFO("radials: deploy ok (%d packs, %d icons)", r.packs, r.icons);
-            // Inline feedback in the tab (the window is open) instead of a Nexus toast.
-            s_deployOk = r.ok;
-            char msg[128];
-            if (r.ok) std::snprintf(msg, sizeof(msg), L("opt.radial.deployed_inline"),
-                                    r.packs, r.icons);
-            else      std::snprintf(msg, sizeof(msg), "%s", L("opt.radial.deploy_failed_inline"));
-            s_deployMsg = msg;
-        }
+        if (ImGui::Button(btn) && !none) ImGui::OpenPopup("##radialdeploy");
         if (none) EndDisabledCompat();
+
+        // Replacing files in RadialMenus needs explicit approval (overwrites, no backup).
+        {
+            ImVec2 ds = ImGui::GetIO().DisplaySize;
+            ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f),
+                                    ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        }
+        if (ImGui::BeginPopupModal("##radialdeploy", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
+            ImGui::TextColored(kAmber, "%s", L("opt.radial.deploy_warn"));
+            ImGui::PopTextWrapPos();
+            ImGui::Spacing();
+            if (ImGui::Button(L("opt.radial.deploy_go"), ImVec2(120, 0))) {
+                RadialDeployResult r = DeployToRadialMenus();
+                if (r.ok) LOG_INFO("radials: deploy ok (%d packs, %d icons)", r.packs, r.icons);
+                s_deployOk = r.ok;  // inline feedback in the tab (window is open), no toast
+                char msg[128];
+                if (r.ok) std::snprintf(msg, sizeof(msg), L("opt.radial.deployed_inline"),
+                                        r.packs, r.icons);
+                else      std::snprintf(msg, sizeof(msg), "%s", L("opt.radial.deploy_failed_inline"));
+                s_deployMsg = msg;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(L("common.cancel"), ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
         if (!s_deployMsg.empty())
             ImGui::TextColored(s_deployOk ? kGreen : kRed, "%s", s_deployMsg.c_str());
         ImGui::TextWrapped("%s", L("opt.radial.reload_reminder"));
