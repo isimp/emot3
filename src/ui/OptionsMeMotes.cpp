@@ -12,6 +12,7 @@
 #include "Logging.h"
 #include "StringUtil.h"  // TrimWhitespace (shared helper)
 #include "MeMotes.h"
+#include "RadialExports.h"  // RadialContainsRef (tri-state keybind checkboxes)
 #include "OptionsCommon.h"   // OptionsSection
 #include "Profiling.h"   // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 #include "Icons.h"       // ResolveMeMoteIconSource + MeMoteIconSource (icon status tier)
@@ -827,7 +828,13 @@ void RenderMeMotesTab() {
                                             ImGui::GetStyle().Alpha * 0.5f);
                     }
                     bool v = enabled && cur;
-                    if (ImGui::Checkbox(L(lblKey), &v) && enabled) {
+                    // Tri-state dash when this variant is bound ONLY via a radial wheel.
+                    const bool pushMixed = enabled && !cur &&
+                        RadialContainsRef(EFavoriteRefType::MeMote, id, which);
+                    if (pushMixed) ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
+                    bool clicked = ImGui::Checkbox(L(lblKey), &v);
+                    if (pushMixed) ImGui::PopItemFlag();
+                    if (clicked && enabled) {
                         std::lock_guard<std::mutex> lk(g_MeMotesMutex);
                         if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
                             switch (which) {
@@ -848,6 +855,8 @@ void RenderMeMotesTab() {
                 variantCheckbox(EMeMoteVariant::You,     "opt.mm.variant_you",     ky, hasYou);
                 ImGui::SameLine();
                 variantCheckbox(EMeMoteVariant::All,     "opt.mm.variant_all",     ka, hasAll);
+                // Radial-membership note; "also in" when any variant has a personal key.
+                RadialMembershipNote(EFavoriteRefType::MeMote, id, kd || ky || ka);
             }
 
             ImGui::EndTable();

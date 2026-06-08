@@ -1,6 +1,7 @@
 #include "Options.h"
 #include "OptionsCommon.h"  // RenderGeneral/Quickbar/EmotesOptionsTab
 #include "OptionsMeMotes.h" // RenderMeMotesTab — /me-motes editor
+#include "OptionsRadial.h"  // RenderRadialTab — RadialMenus wheel export
 #include "Globals.h"
 #include "Logging.h"
 #include "I18n.h"
@@ -68,6 +69,7 @@ void AddonOptions() {
         std::string tQuickbar = std::string(L("opt.tab.quickbar")) + "###tab_quickbar";
         std::string tEmotes   = std::string(L("opt.tab.emotes"))   + "###tab_emotes";
         std::string tMeMotes  = std::string(L("opt.tab.me_motes")) + "###tab_me_motes";
+        std::string tRadial   = std::string(L("opt.tab.radial"))   + "###tab_radial";
         std::string tUnlocks  = std::string(L("opt.tab.unlocks"))  + "###tab_unlocks";
         if (ImGui::BeginTabItem(tGeneral.c_str())) {
             RenderGeneralOptionsTab();
@@ -89,6 +91,11 @@ void AddonOptions() {
         // ui/OptionsMeMotes.cpp + data/MeMotes.h.
         if (ImGui::BeginTabItem(tMeMotes.c_str())) {
             RenderMeMotesTab();
+            ImGui::EndTabItem();
+        }
+        // RadialMenus — export favorites categories as wheels. See ui/OptionsRadial.cpp.
+        if (ImGui::BeginTabItem(tRadial.c_str())) {
+            RenderRadialTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

@@ -5,6 +5,7 @@
 #include "MeMotes.h"      // g_MeMotes, g_MeMotesMutex, FindMeMote, EMeMoteVariant
 #include "EmoteAction.h"  // SendOrFillEmote / SendOrFillMeMote
 #include "Settings.h"     // g_Settings (SendTargetableOnTarget)
+#include "RadialExports.h" // g_RadialExports - wheel refs union into the desired set
 #include "Logging.h"
 
 #include <cstring>
@@ -50,7 +51,11 @@ void OnEmoteBind(const char* identifier, bool isRelease) {
         }
         // Honor the live "send on target" setting, exactly like a panel click.
         const bool autoTarget = copy.IsTargetable && g_Settings.SendTargetableOnTarget;
-        SendOrFillEmote(copy, autoTarget, /*useSync=*/false, /*fromKeybind=*/true);
+        // The held-key/movement gate applies (like a click): a bind/wheel-hotkey that's a
+        // bare printable key, held at fire, is refused (would garble) - so binds want a
+        // non-printable key or a modifier combo, or the +plus swallow. Alert sink: the
+        // window is usually closed on a bind/radial fire, so a refusal uses SendAlert.
+        SendOrFillEmote(copy, autoTarget, /*useSync=*/false, EFeedbackSink::Alert);
         return;
     }
 
@@ -70,7 +75,8 @@ void OnEmoteBind(const char* identifier, bool isRelease) {
             if (!m) return;
             copy = *m;
         }
-        SendOrFillMeMote(copy, variant, /*fromKeybind=*/true);
+        // Same posture as emotes: the held-key/movement gate applies (see above).
+        SendOrFillMeMote(copy, variant, EFeedbackSink::Alert);
         return;
     }
 }
@@ -81,6 +87,29 @@ std::string EmoteBindIdentifier(EFavoriteRefType type, const std::string& id,
                                 EMeMoteVariant variant) {
     if (type == EFavoriteRefType::Emote) return std::string(kEmotePrefix) + id;
     return std::string(kMeMotePrefix) + id + " [" + VariantStr(variant) + "]";
+}
+
+bool ParseEmoteBindIdentifier(const std::string& identifier,
+                              EFavoriteRefType& outType, std::string& outId,
+                              EMeMoteVariant& outVariant) {
+    outVariant = EMeMoteVariant::Default;
+    if (identifier.rfind(kEmotePrefix, 0) == 0) {
+        outType = EFavoriteRefType::Emote;
+        outId   = identifier.substr(std::strlen(kEmotePrefix));
+        return !outId.empty();
+    }
+    if (identifier.rfind(kMeMotePrefix, 0) == 0) {
+        outType = EFavoriteRefType::MeMote;
+        std::string rest = identifier.substr(std::strlen(kMeMotePrefix));  // "<id> [variant]"
+        outId = rest;
+        const size_t br = rest.rfind(" [");
+        if (br != std::string::npos && !rest.empty() && rest.back() == ']') {
+            outId      = rest.substr(0, br);
+            outVariant = ParseVariant(rest.substr(br + 2, rest.size() - (br + 2) - 1));
+        }
+        return !outId.empty();
+    }
+    return false;
 }
 
 void SyncEmoteBinds() {
@@ -104,6 +133,17 @@ void SyncEmoteBinds() {
             if (m.KeybindAll)
                 desired.insert(EmoteBindIdentifier(EFavoriteRefType::MeMote, m.Id, EMeMoteVariant::All));
         }
+    }
+    // Union in every ref referenced by a staged RadialMenus wheel. A wheel item
+    // fires its bind without the user assigning a key, so the bind MUST be
+    // registered even when the catalog's UserKeybind flag is off (this is the
+    // "active via radial" case surfaced in the catalog editors). /me-mote variant
+    // is carried on the ref so the right [variant] identifier is registered.
+    {
+        std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+        for (const auto& w : g_RadialExports)
+            for (const auto& it : w.Items)
+                desired.insert(EmoteBindIdentifier(it.Type, it.Id, it.Variant));
     }
 
     // Register additions (newly desired identifiers).

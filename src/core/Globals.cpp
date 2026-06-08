@@ -12,6 +12,7 @@ std::string g_MeMotesJsonPath;
 std::string g_IconsDir;
 std::string g_PresetsDir;
 std::string g_UsageJsonPath;
+std::string g_RadialsDir;
 
 std::atomic<uint64_t> g_EmoteCatalogVersion { 0 };
 std::atomic<uint64_t> g_MeMotesVersion      { 0 };

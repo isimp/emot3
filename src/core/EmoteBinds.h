@@ -28,6 +28,16 @@
 std::string EmoteBindIdentifier(EFavoriteRefType type, const std::string& id,
                                 EMeMoteVariant variant = EMeMoteVariant::Default);
 
+// Inverse of EmoteBindIdentifier: parse one of our bind identifiers back into
+// (type, id, variant). Returns false for a string that isn't one of ours. Used by
+// the RadialMenus scan to recover a staged wheel's refs from its pack item Action
+// identifiers (the identifier is the single carrier of type/id/variant), and by
+// anything that needs to read a bind name back. Kept beside the writer so the two
+// can't drift.
+bool ParseEmoteBindIdentifier(const std::string& identifier,
+                              EFavoriteRefType& outType, std::string& outId,
+                              EMeMoteVariant& outVariant);
+
 // Reconcile the registered Nexus InputBinds with the catalogs' opt-in flags
 // (Emote.UserKeybind / MeMote.UserKeybind + KeybindVariant). Diff-based:
 // registers newly-opted-in binds, deregisters removed ones, leaves the rest

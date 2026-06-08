@@ -11,20 +11,28 @@ struct Emote;
 struct MeMote;
 enum class EmoteBlock;   // core/CharacterState.h (PickQbBlockReason param)
 
+// Where a refusal message goes when a send is gated. A click in an emot3 surface
+// keeps the in-window ShowFeedback overlay (the window is open, the user is looking
+// at it). A bind / RadialMenus-wheel Invoke uses Nexus' SendAlert instead: emot3's
+// window is usually closed at that point, so the in-window overlay wouldn't show -
+// and SendAlert is exactly what RadialMenus itself uses for its own cancels.
+enum class EFeedbackSink { InWindow, Alert };
+
 // Inject the slash command for `e` into the game's chat box.
 //   useTarget — appends " @" when the emote is targetable (caller decides;
 //               the function double-checks IsTargetable defensively).
 //   useSync   — appends " *" unconditionally.
-//   fromKeybind — the call originated from a Nexus InputBind (a per-emote
-//               keybind or a RadialMenus wheel item), NOT a panel click. The
-//               key used to trigger the bind is physically HELD at fire time,
-//               so it would trip the held-printable-key garble/movement guard
-//               and refuse the send; this skips that guard (the held key is the
-//               trigger, not movement) — same posture as the +plus swallow.
+//   sink      — where a gated-send refusal is shown (in-window overlay for a click;
+//               Nexus SendAlert for a keybind / radial Invoke, since the window is
+//               usually closed then).
+// The held-printable-key / movement guard ALWAYS applies (unless the +plus input
+// swallow is active): a keybind or radial invoke fires only when no bare printable
+// key is held, exactly like a panel click - holding the trigger key through the
+// injection would garble the command, so we refuse instead.
 // Whether the input is auto-submitted (Enter at the end) or left for the
 // user to finish is controlled by g_Settings.SendOnClick.
 void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync,
-                     bool fromKeybind = false);
+                     EFeedbackSink sink = EFeedbackSink::InWindow);
 
 // EMeMoteVariant (Default / You / All) is defined in data/MeMotes.h (its
 // /me-mote domain home, now that MeMote stores a KeybindVariant of this type).
@@ -42,10 +50,10 @@ enum class EMeMoteVariant;
 //
 // GW2's @ token doesn't substitute inside /me text and its * sync token also
 // doesn't work — verified in-game — so the /me-mote send path is targetless
-// and unsync'd by construction. `fromKeybind` — see SendOrFillEmote (skips the
-// held-key garble/movement guard since the bind's trigger key is held at fire).
+// and unsync'd by construction. The held-key/movement guard applies as in
+// SendOrFillEmote; `sink` routes a refusal to the overlay or SendAlert.
 void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant,
-                      bool fromKeybind = false);
+                      EFeedbackSink sink = EFeedbackSink::InWindow);
 
 // A *transient* reason the send would be refused RIGHT NOW that can clear on its
 // own: a GW2 text box is focused (Typing) or a printable key is held (KeysHeld).

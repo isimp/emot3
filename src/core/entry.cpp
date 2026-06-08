@@ -29,6 +29,7 @@
 #include "Favorites.h"
 #include "Usage.h"        // usage log load/prune/save (Recently/Frequently used)
 #include "EmoteBinds.h"   // per-emote Nexus InputBinds (Sync/Deregister)
+#include "RadialExports.h" // staged RadialMenus wheels (scan at load; refs union into binds)
 #include "MainPanel.h"
 #include "NexusShortcut.h"
 #include "Quickbar.h"
@@ -217,6 +218,10 @@ void AddonLoad(AddonAPI* aApi) {
         // it's kept out of settings.json. See data/Usage.h.
         g_UsageJsonPath = std::string(addonDir) + "\\usage.json";
 
+        // Exported RadialMenus wheels — one subfolder per wheel. See
+        // data/RadialExports.h. Scanned by LoadRadialExports below.
+        g_RadialsDir = std::string(addonDir) + "\\radials";
+
 #ifdef EMOT3_PLUS
         // +plus settings live in their own plus.json (never touched by a base
         // build, so it can't be dropped by one). See PlusSettings.h.
@@ -292,6 +297,7 @@ void AddonLoad(AddonAPI* aApi) {
         }
         SetUiLanguage(g_Settings.UiLanguage);  // "auto" follows Nexus
         LoadQuickbarPresets();  // creates + seeds presets/ on first run
+        LoadRadialExports();    // scan radials/ so SyncEmoteBinds unions wheel refs
         // The icons/ folder is created empty on purpose: bundled artwork
         // is served directly from the DLL's resource section, so the only
         // reason for a file to appear in icons/ is a user-supplied
