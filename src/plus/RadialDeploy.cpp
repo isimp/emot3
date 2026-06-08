@@ -1,6 +1,7 @@
 #include "RadialDeploy.h"
 
-#include "Globals.h"   // APIDefs (+ Windows.h), g_RadialsDir
+#include "Globals.h"       // APIDefs (+ Windows.h), g_RadialsDir
+#include "RadialExports.h" // RadialPacksDir / RadialIconsDir (the staged layout)
 #include "Logging.h"
 
 #include <string>
@@ -42,47 +43,35 @@ RadialDeployResult DeployToRadialMenus() {
     }
     if (g_RadialsDir.empty()) { res.error = "no staged wheels"; return res; }
 
-    const std::string packsDir = rmDir + "\\packs";
-    const std::string iconsDir = rmDir + "\\icons";
-    CreateDirectoryA(packsDir.c_str(), nullptr);
-    CreateDirectoryA(iconsDir.c_str(), nullptr);
+    const std::string dstPacks = rmDir + "\\packs";
+    const std::string dstIcons = rmDir + "\\icons";
+    CreateDirectoryA(dstPacks.c_str(), nullptr);
+    CreateDirectoryA(dstIcons.c_str(), nullptr);
 
-    // Walk each staged radials/<slug>/ subfolder.
-    std::string pattern = g_RadialsDir + "\\*";
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
-        do {
-            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
-            std::string slug = fd.cFileName;
-            if (slug == "." || slug == "..") continue;
-            std::string wheelDir = g_RadialsDir + "\\" + slug;
-
-            // pack: <slug>/<slug>.json -> packs/<slug>.json
-            std::string srcPack = wheelDir + "\\" + slug + ".json";
-            std::string dstPack = packsDir + "\\" + slug + ".json";
-            if (CopyFileA(srcPack.c_str(), dstPack.c_str(), /*bFailIfExists=*/FALSE))
-                ++res.packs;
-            else
-                LOG_WARNING("radials: deploy failed to copy pack %s", srcPack.c_str());
-
-            // icons: <slug>/icons/* -> icons/* (slug-named, so no cross-wheel collision)
-            std::string iconPattern = wheelDir + "\\icons\\*";
-            WIN32_FIND_DATAA ifd;
-            HANDLE ih = FindFirstFileA(iconPattern.c_str(), &ifd);
-            if (ih != INVALID_HANDLE_VALUE) {
-                do {
-                    if (ifd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-                    std::string fn  = ifd.cFileName;
-                    std::string src = wheelDir + "\\icons\\" + fn;
-                    std::string dst = iconsDir + "\\" + fn;
-                    if (CopyFileA(src.c_str(), dst.c_str(), FALSE)) ++res.icons;
-                } while (FindNextFileA(ih, &ifd));
-                FindClose(ih);
-            }
-        } while (FindNextFileA(h, &fd));
-        FindClose(h);
-    }
+    // The staged layout already mirrors RadialMenus (radials/packs + radials/icons),
+    // so deploy is just two flat folder copies (everything is slug-named, so nothing
+    // collides in RadialMenus' shared folders).
+    auto copyDir = [](const std::string& srcDir, const std::string& dstDir) -> int {
+        int n = 0;
+        std::string pattern = srcDir + "\\*";
+        WIN32_FIND_DATAA fd;
+        HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+                std::string fn = fd.cFileName;
+                if (CopyFileA((srcDir + "\\" + fn).c_str(),
+                              (dstDir + "\\" + fn).c_str(), /*bFailIfExists=*/FALSE))
+                    ++n;
+                else
+                    LOG_WARNING("radials: deploy failed to copy %s", fn.c_str());
+            } while (FindNextFileA(h, &fd));
+            FindClose(h);
+        }
+        return n;
+    };
+    res.packs = copyDir(RadialPacksDir(), dstPacks);
+    res.icons = copyDir(RadialIconsDir(), dstIcons);
 
     res.ok = res.packs > 0;
     if (!res.ok && res.error.empty()) res.error = "no wheels to deploy";

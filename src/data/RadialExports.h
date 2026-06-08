@@ -1,12 +1,13 @@
 #pragma once
 
 // Exported RadialMenus wheels — the managed record behind the Options "RadialMenus"
-// tab. Each wheel is staged in its OWN subfolder addons/emot3/radials/<slug>/
-// holding a RadialMenus-format pack <slug>.json plus an icons/ subfolder. The pack
-// carries an `emot3_source_category` marker (ignored by RadialMenus), so the staged
-// files double AS emot3's record — there is no separate bookkeeping file. This
-// module scans those subfolders into an in-memory list at AddonLoad and on every
-// mutation, mirroring data/QuickbarPresets.
+// tab. Staging mirrors RadialMenus' own layout: addons/emot3/radials/packs/ holds the
+// RadialMenus-format pack <slug>.json files and addons/emot3/radials/icons/ holds
+// their PNGs (named emot3_<slug>_*), so the user copies the two folders straight into
+// RadialMenus. Each pack carries an `emot3_source_category` marker (ignored by
+// RadialMenus), so the staged files double AS emot3's record — there is no separate
+// bookkeeping file. This module scans radials/packs/ into an in-memory list at
+// AddonLoad and on every mutation, mirroring data/QuickbarPresets.
 //
 // Writing packs + icons (and rename/remove that rewrite them) lives in
 // core/RadialExport.{h,cpp}; this module is the passive record + read helpers + the
@@ -73,8 +74,14 @@ extern std::mutex                g_RadialExportsMutex;
 // RadialMenus' own list ("emot3: Greetings"). The scan strips it to recover Name.
 extern const char* const kRadialPackNamePrefix;
 
-// (Re)scan radials/ into g_RadialExports. Call at AddonLoad (after g_RadialsDir is
-// set) and after any mutation. Tolerant of missing/malformed packs.
+// Staging subfolders that mirror RadialMenus' layout: radials/packs and radials/icons
+// (empty strings if g_RadialsDir is unset). Creating them on demand is the writer's
+// job; these just build the paths.
+std::string RadialPacksDir();
+std::string RadialIconsDir();
+
+// (Re)scan radials/packs/ into g_RadialExports. Call at AddonLoad (after g_RadialsDir
+// is set) and after any mutation. Tolerant of missing/malformed packs.
 void LoadRadialExports();
 
 // Favorites categories that already have >= 1 exported wheel (so the wizard's
@@ -93,7 +100,7 @@ int NextFreeRadialId(const std::vector<int>& alsoReserved);
 // True if a radials/<slug>/ subfolder already exists (slug-uniqueness probe).
 bool RadialSlugInUse(const std::string& slug);
 
-// Delete a wheel's entire radials/<slug>/ subfolder (pack + icons). Pure
-// filesystem; the caller rescans + re-syncs binds. An already-missing folder counts
-// as success; returns false only on a real delete failure.
-bool RemoveRadialDir(const std::string& slug);
+// Delete a wheel's staged files: radials/packs/<slug>.json + every
+// radials/icons/emot3_<slug>_* PNG (the slug-prefixed naming makes this exact). Pure
+// filesystem; the caller rescans + re-syncs binds. Missing files count as success.
+bool RemoveRadialFiles(const std::string& slug);

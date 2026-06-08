@@ -30,26 +30,10 @@ bool DirExists(const std::string& path) {
 void EnsureRadialsDir() {
     if (g_RadialsDir.empty()) return;
     if (!DirExists(g_RadialsDir)) CreateDirectoryA(g_RadialsDir.c_str(), nullptr);
-}
-
-// Recursively delete a directory tree (the staged radials/<slug>/ folder: a flat
-// dir + an icons/ subdir of PNGs, so two levels deep at most). ASCII paths under
-// addons/emot3/ — same assumption the rest of the addon's file code makes.
-bool RemoveDirRecursive(const std::string& dir) {
-    std::string pattern = dir + "\\*";
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
-        do {
-            std::string name = fd.cFileName;
-            if (name == "." || name == "..") continue;
-            std::string full = dir + "\\" + name;
-            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) RemoveDirRecursive(full);
-            else                                                DeleteFileA(full.c_str());
-        } while (FindNextFileA(h, &fd));
-        FindClose(h);
-    }
-    return RemoveDirectoryA(dir.c_str()) != 0;
+    std::string packs = g_RadialsDir + "\\packs";
+    std::string icons = g_RadialsDir + "\\icons";
+    if (!DirExists(packs)) CreateDirectoryA(packs.c_str(), nullptr);
+    if (!DirExists(icons)) CreateDirectoryA(icons.c_str(), nullptr);
 }
 
 // Parse one staged pack into w (w.Slug already set). Returns false on missing /
@@ -109,24 +93,27 @@ bool ReadPack(const std::string& packPath, RadialExport& w) {
 
 }  // namespace
 
+std::string RadialPacksDir() { return g_RadialsDir.empty() ? std::string() : g_RadialsDir + "\\packs"; }
+std::string RadialIconsDir() { return g_RadialsDir.empty() ? std::string() : g_RadialsDir + "\\icons"; }
+
 void LoadRadialExports() {
     std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
     g_RadialExports.clear();
     if (g_RadialsDir.empty()) return;
     EnsureRadialsDir();
 
-    std::string pattern = g_RadialsDir + "\\*";
+    const std::string packsDir = RadialPacksDir();
+    std::string pattern = packsDir + "\\*.json";
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
     if (h != INVALID_HANDLE_VALUE) {
         do {
-            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
-            std::string slug = fd.cFileName;
-            if (slug == "." || slug == "..") continue;
-            std::string packPath = g_RadialsDir + "\\" + slug + "\\" + slug + ".json";
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            std::string file = fd.cFileName;                 // "<slug>.json"
+            std::string slug = file.substr(0, file.size() - 5);  // drop ".json"
             RadialExport w;
             w.Slug = slug;
-            if (!ReadPack(packPath, w)) {
+            if (!ReadPack(packsDir + "\\" + file, w)) {
                 w.ParseError = true;
                 if (w.Name.empty()) w.Name = slug;
             }
@@ -176,17 +163,34 @@ int NextFreeRadialId(const std::vector<int>& alsoReserved) {
 
 bool RadialSlugInUse(const std::string& slug) {
     if (g_RadialsDir.empty() || slug.empty()) return false;
-    return DirExists(g_RadialsDir + "\\" + slug);
+    std::string pack = RadialPacksDir() + "\\" + slug + ".json";
+    return GetFileAttributesA(pack.c_str()) != INVALID_FILE_ATTRIBUTES;
 }
 
-bool RemoveRadialDir(const std::string& slug) {
+bool RemoveRadialFiles(const std::string& slug) {
     if (g_RadialsDir.empty() || slug.empty()) return false;
-    std::string dir = g_RadialsDir + "\\" + slug;
-    if (!DirExists(dir)) return true;  // already gone counts as success
-    if (!RemoveDirRecursive(dir)) {
-        LOG_WARNING("radials: failed to remove %s", dir.c_str());
-        return false;
+    bool ok = true;
+
+    // pack: radials/packs/<slug>.json
+    std::string pack = RadialPacksDir() + "\\" + slug + ".json";
+    if (!DeleteFileA(pack.c_str()) &&
+        GetFileAttributesA(pack.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        LOG_WARNING("radials: failed to remove %s", pack.c_str());
+        ok = false;
     }
-    LOG_INFO("radials: removed wheel subfolder %s", slug.c_str());
-    return true;
+
+    // icons: radials/icons/emot3_<slug>_*  (slug-prefixed, so the match is exact)
+    const std::string iconsDir = RadialIconsDir();
+    std::string pattern = iconsDir + "\\emot3_" + slug + "_*";
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            DeleteFileA((iconsDir + "\\" + fd.cFileName).c_str());
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    LOG_INFO("radials: removed staged files for wheel %s", slug.c_str());
+    return ok;
 }

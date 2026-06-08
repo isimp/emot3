@@ -117,16 +117,17 @@ json BuildItem(const std::string& itemName, const std::string& identifier,
     return it;
 }
 
-// Write radials/<slug>/<slug>.json + radials/<slug>/icons/* for one wheel.
+// Write radials/packs/<slug>.json + radials/icons/emot3_<slug>_* for one wheel
+// (the shared packs/ + icons/ layout that mirrors RadialMenus).
 bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
                    const std::string& sourceCategory, bool partial,
                    const std::vector<RadialItemRef>& items,
                    const RadialWheelOptions& opt) {
     if (g_RadialsDir.empty()) return false;
-    std::string wheelDir = g_RadialsDir + "\\" + slug;
-    std::string iconsDir = wheelDir + "\\icons";
+    std::string packsDir = RadialPacksDir();
+    std::string iconsDir = RadialIconsDir();
     CreateDirectoryA(g_RadialsDir.c_str(), nullptr);
-    CreateDirectoryA(wheelDir.c_str(), nullptr);
+    CreateDirectoryA(packsDir.c_str(), nullptr);
     CreateDirectoryA(iconsDir.c_str(), nullptr);
 
     json j;
@@ -180,14 +181,14 @@ bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
         LOG_WARNING("radials: serialize failed for %s: %s", slug.c_str(), e.what());
         return false;
     }
-    std::string packPath = wheelDir + "\\" + slug + ".json";
+    std::string packPath = packsDir + "\\" + slug + ".json";
     if (!AtomicWriteFile(packPath, body, /*binary=*/true)) return false;
     LOG_INFO("radials: wrote wheel \"%s\" (id %d, %d items) -> %s",
              name.c_str(), id, (int)nItems, slug.c_str());
     return true;
 }
 
-// Allocate a unique slug from a name, skipping on-disk subfolders and slugs already
+// Allocate a unique slug from a name, skipping packs already on disk and slugs already
 // reserved in this batch.
 std::string AllocSlug(const std::string& name, const std::vector<std::string>& reserved) {
     std::string base = SanitizeFilename(name, "wheel");
@@ -266,7 +267,7 @@ bool ReExportWheel(const std::string& slug, int id, const std::string& name,
                    const RadialWheelOptions& options) {
     // Clear stale pack + icons (a removed ref's icon would otherwise linger), then
     // rewrite from scratch under the same slug + id.
-    RemoveRadialDir(slug);
+    RemoveRadialFiles(slug);
     bool ok = WriteOneWheel(slug, id, name, sourceCategory, partial, items, options);
     LoadRadialExports();
     SyncEmoteBinds();
@@ -297,14 +298,14 @@ bool RenameWheel(const std::string& oldSlug, const std::string& newName) {
     }
     bool ok = WriteOneWheel(newSlug, w.Id, newName, w.SourceCategory, w.Partial,
                             w.Items, w.Options);
-    if (ok) RemoveRadialDir(oldSlug);
+    if (ok) RemoveRadialFiles(oldSlug);
     LoadRadialExports();
     SyncEmoteBinds();
     return ok;
 }
 
 bool RemoveWheel(const std::string& slug) {
-    bool ok = RemoveRadialDir(slug);
+    bool ok = RemoveRadialFiles(slug);
     LoadRadialExports();
     SyncEmoteBinds();  // drop the wheel's radial-only binds (user binds persist)
     return ok;
