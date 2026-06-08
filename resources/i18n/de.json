@@ -159,7 +159,7 @@
   "opt.tab.unlocks": "Freischaltungen",
   "opt.tab.radial": "RadialMenus",
 
-  "opt.radial.intro": "Exportiere eine Favoritenkategorie als Rad für das separate RadialMenus-Addon. emot3 legt die Dateien unter radials\\packs und radials\\icons ab - um ein Rad zu verwenden, kopiere den Inhalt beider Ordner in die packs- und icons-Ordner von RadialMenus, klicke in RadialMenus auf 'Radials neu laden' und weise dem Rad in den Einstellungen von RadialMenus eine Taste zu.",
+  "opt.radial.intro": "Exportiere eine Favoritenkategorie als Rad für das separate RadialMenus-Addon. emot3 legt die Dateien unter radials\\packs und radials\\icons ab - um ein Rad zu verwenden, kopiere den Inhalt beider Ordner in die packs- und icons-Ordner von RadialMenus, klicke in RadialMenus auf 'Radials neu laden' und weise dem Rad in den Einstellungen von RadialMenus eine Taste zu. Die Emotes auf einem Rad brauchen keine eigene Tastenbelegung - emot3 registriert sie automatisch; nur das Rad selbst braucht eine Taste.",
   "opt.radial.sec_status": "RadialMenus",
   "opt.radial.status_detected": "RadialMenus: erkannt",
   "opt.radial.status_not_detected": "RadialMenus: nicht erkannt",
@@ -250,7 +250,7 @@
   "opt.radial.edit_title": "Bearbeiten",
   "opt.radial.deployed_inline": "%d Pack(s), %d Symbol(e) bereitgestellt.",
   "opt.radial.deploy_failed_inline": "Bereitstellung fehlgeschlagen - siehe Log.",
-  "opt.radial.intro_plus": "Exportiere eine Favoritenkategorie als Rad für das separate RadialMenus-Addon. emot3 legt die Dateien unter radials\\packs und radials\\icons ab; nutze unten Bereitstellen, um sie nach RadialMenus zu kopieren (oder kopiere die beiden Ordner selbst), klicke auf 'Radials neu laden' und weise dem Rad in den Einstellungen von RadialMenus eine Taste zu.",
+  "opt.radial.intro_plus": "Exportiere eine Favoritenkategorie als Rad für das separate RadialMenus-Addon. emot3 legt die Dateien unter radials\\packs und radials\\icons ab; nutze unten Bereitstellen, um sie nach RadialMenus zu kopieren (oder kopiere die beiden Ordner selbst), klicke auf 'Radials neu laden' und weise dem Rad in den Einstellungen von RadialMenus eine Taste zu. Die Emotes auf einem Rad brauchen keine eigene Tastenbelegung - emot3 registriert sie automatisch; nur das Rad selbst braucht eine Taste.",
   "opt.radial.done_next_plus": "Weiter: Übertrage nach RadialMenus (oder kopiere die bereitgestellten Dateien selbst), klicke auf 'Radials neu laden' und weise jedem Rad in den Tastenbelegungen von RadialMenus eine Taste zu.",
   "opt.radial.opt_type_tip": "Normal zeigt bis zu 12 Einträge, Klein bis zu 8.",
   "opt.radial.opt_selmode_tip": "Wann das Rad einen Eintrag bestätigt: Klick (Mausklick), Loslassen (Rad-Taste loslassen), Loslassen oder klicken (beides) oder Überfahren (kurz darauf zeigen).",

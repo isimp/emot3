@@ -162,7 +162,7 @@
   "opt.tab.unlocks": "Unlocks",
   "opt.tab.radial": "RadialMenus",
 
-  "opt.radial.intro": "Export a favorites category as a wheel for the separate RadialMenus addon. emot3 stages the files under radials\\packs and radials\\icons - to use a wheel, copy the contents of both folders into RadialMenus' packs and icons folders, click 'Reload radials' in RadialMenus, then bind a key to the wheel in RadialMenus' settings.",
+  "opt.radial.intro": "Export a favorites category as a wheel for the separate RadialMenus addon. emot3 stages the files under radials\\packs and radials\\icons - to use a wheel, copy the contents of both folders into RadialMenus' packs and icons folders, click 'Reload radials' in RadialMenus, then bind a key to the wheel in RadialMenus' settings. The emotes on a wheel don't need their own keybinds set - emot3 registers them automatically; only the wheel itself needs a key.",
   "opt.radial.sec_status": "RadialMenus",
   "opt.radial.status_detected": "RadialMenus: detected",
   "opt.radial.status_not_detected": "RadialMenus: not detected",
@@ -253,7 +253,7 @@
   "opt.radial.edit_title": "Edit",
   "opt.radial.deployed_inline": "Deployed %d pack(s), %d icon(s).",
   "opt.radial.deploy_failed_inline": "Deploy failed - see the log.",
-  "opt.radial.intro_plus": "Export a favorites category as a wheel for the separate RadialMenus addon. emot3 stages the files under radials\\packs and radials\\icons; use Deploy below to copy them into RadialMenus (or copy the two folders yourself), click 'Reload radials', then bind a key to the wheel in RadialMenus' settings.",
+  "opt.radial.intro_plus": "Export a favorites category as a wheel for the separate RadialMenus addon. emot3 stages the files under radials\\packs and radials\\icons; use Deploy below to copy them into RadialMenus (or copy the two folders yourself), click 'Reload radials', then bind a key to the wheel in RadialMenus' settings. The emotes on a wheel don't need their own keybinds set - emot3 registers them automatically; only the wheel itself needs a key.",
   "opt.radial.done_next_plus": "Next: Deploy to RadialMenus (or copy the staged files yourself), click 'Reload radials', then bind a key to each wheel in RadialMenus' keybind settings.",
   "opt.radial.opt_type_tip": "Normal shows up to 12 items, Small up to 8.",
   "opt.radial.opt_selmode_tip": "When the wheel commits an item: Click (mouse click), Release (let the wheel hotkey go), Release or click (either), or Hover (point at it briefly).",
