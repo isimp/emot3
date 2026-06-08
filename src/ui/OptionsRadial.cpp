@@ -247,54 +247,47 @@ void OpenWizardForEdit(const std::string& group) {
         }
     }
 
-    // Surface what changed since export, so editing a drifted wheel is reviewable.
-    // Removed = a wheel item whose (type,id) is no longer a category row (left the
-    // category) - it can't be shown as a row, so list it. Computed for any export.
-    s_wizRemoved.clear();
-    auto inCategoryNow = [&](EFavoriteRefType t, const std::string& id) {
-        for (const auto& row : s_wizItems)
-            if (row.ref.Type == t && row.ref.Id == id) return true;
+    // Surface what changed against the SAME baseline the status uses: the category
+    // membership snapshot from export (emot3_source_refs). One source of truth, so the
+    // "(new)" tags + "removed" note always agree with the "Category changed" status,
+    // for full and subset wheels alike.
+    //   new     = a current category entry that wasn't in the snapshot (added since).
+    //   removed = a snapshot entry no longer in the category (left since).
+    const std::vector<std::string>& snap = pages.front().SourceRefs;
+    auto keyOf = [](EFavoriteRefType t, const std::string& id) {
+        return std::to_string((int)t) + ":" + id;
+    };
+    auto inSnap = [&](EFavoriteRefType t, const std::string& id) {
+        const std::string k = keyOf(t, id);
+        for (const auto& s : snap) if (s == k) return true;
         return false;
     };
-    {
-        std::vector<std::string> seen;
-        auto keyOf = [](EFavoriteRefType t, const std::string& id) {
-            return std::to_string((int)t) + ":" + id;
-        };
-        for (const auto& pg : pages)
-            for (const auto& it : pg.Items) {
-                if (inCategoryNow(it.Type, it.Id)) continue;
-                std::string k = keyOf(it.Type, it.Id);
-                bool dup = false;
-                for (const auto& s : seen) if (s == k) { dup = true; break; }
-                if (dup) continue;
-                seen.push_back(k);
-                std::string nm;
-                if (it.Type == EFavoriteRefType::Emote) {
-                    std::lock_guard<std::mutex> lk(g_EmotesMutex);
-                    const Emote* e = FindEmote(it.Id);
-                    nm = (e && !e->Name.empty()) ? e->Name : it.Id;
-                } else {
-                    std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-                    const MeMote* m = FindMeMote(it.Id);
-                    nm = (m && !m->Name.empty()) ? m->Name : it.Id;
-                }
-                s_wizRemoved.push_back(nm);
-            }
-    }
-    // New = a category entry not present in the wheel. Only flag for a FULL export
-    // (where the wheel was the whole category, so anything extra is genuinely added);
-    // a subset export deliberately omits entries, so "new" would be misleading.
-    if (!pages.front().Partial) {
-        for (auto& row : s_wizItems) {
-            bool wasInWheel = false;
-            for (const auto& pg : pages) {
-                for (const auto& it : pg.Items)
-                    if (it.Type == row.ref.Type && it.Id == row.ref.Id) { wasInWheel = true; break; }
-                if (wasInWheel) break;
-            }
-            row.isNew = !wasInWheel;
+    for (auto& row : s_wizItems)
+        row.isNew = !snap.empty() && !inSnap(row.ref.Type, row.ref.Id);
+
+    s_wizRemoved.clear();
+    for (const auto& s : snap) {
+        // parse "<type>:<id>"
+        size_t colon = s.find(':');
+        if (colon == std::string::npos) continue;
+        EFavoriteRefType t = (s.substr(0, colon) == "1") ? EFavoriteRefType::MeMote
+                                                         : EFavoriteRefType::Emote;
+        std::string id = s.substr(colon + 1);
+        bool stillThere = false;
+        for (const auto& row : s_wizItems)
+            if (row.ref.Type == t && row.ref.Id == id) { stillThere = true; break; }
+        if (stillThere) continue;
+        std::string nm;
+        if (t == EFavoriteRefType::Emote) {
+            std::lock_guard<std::mutex> lk(g_EmotesMutex);
+            const Emote* e = FindEmote(id);
+            nm = (e && !e->Name.empty()) ? e->Name : id;
+        } else {
+            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+            const MeMote* m = FindMeMote(id);
+            nm = (m && !m->Name.empty()) ? m->Name : id;
         }
+        s_wizRemoved.push_back(nm);
     }
 
     std::snprintf(s_wizName, sizeof(s_wizName), "%s", pages.front().Name.c_str());

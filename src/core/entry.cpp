@@ -30,6 +30,7 @@
 #include "Usage.h"        // usage log load/prune/save (Recently/Frequently used)
 #include "EmoteBinds.h"   // per-emote Nexus InputBinds (Sync/Deregister)
 #include "RadialExports.h" // staged RadialMenus wheels (scan at load; refs union into binds)
+#include "RadialExport.h"  // MigrateRadialSnapshots (one-time drift-snapshot backfill)
 #include "MainPanel.h"
 #include "NexusShortcut.h"
 #include "Quickbar.h"
@@ -298,6 +299,7 @@ void AddonLoad(AddonAPI* aApi) {
         SetUiLanguage(g_Settings.UiLanguage);  // "auto" follows Nexus
         LoadQuickbarPresets();  // creates + seeds presets/ on first run
         LoadRadialExports();    // scan radials/ so SyncEmoteBinds unions wheel refs
+        MigrateRadialSnapshots(); // backfill drift snapshot for legacy packs (one-time)
         // The icons/ folder is created empty on purpose: bundled artwork
         // is served directly from the DLL's resource section, so the only
         // reason for a file to appear in icons/ is a user-supplied

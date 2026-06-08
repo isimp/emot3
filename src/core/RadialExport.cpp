@@ -342,6 +342,41 @@ bool RenameGroup(const std::string& group, const std::string& newName) {
     return ok;
 }
 
+void MigrateRadialSnapshots() {
+    // Backfill emot3_source_refs for packs written before snapshots existed (using the
+    // current category as the baseline), so every wheel uses the same precise drift
+    // path - no mix of "snapshot" and the old lenient fallback. One-time + idempotent.
+    struct Todo { std::string slug, cat; };
+    std::vector<Todo> todo;
+    {
+        std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+        for (const auto& w : g_RadialExports)
+            if (w.SourceRefs.empty() && !w.ParseError && !w.SourceCategory.empty())
+                todo.push_back({ w.Slug, w.SourceCategory });
+    }
+    if (todo.empty()) return;
+    const std::string packsDir = RadialPacksDir();
+    int n = 0;
+    for (const auto& t : todo) {
+        std::vector<std::string> refs = CaptureCategoryRefs(t.cat);
+        if (refs.empty()) continue;  // category gone -> can't establish a baseline
+        std::string path = packsDir + "\\" + t.slug + ".json";
+        std::ifstream f(path, std::ios::binary);
+        if (!f.is_open()) continue;
+        json j;
+        try { f >> j; } catch (const std::exception&) { f.close(); continue; }
+        f.close();
+        if (j.contains("emot3_source_refs")) continue;  // already has one
+        j["emot3_source_refs"] = json(refs);
+        std::string body = j.dump(2, ' ', false, json::error_handler_t::replace) + "\n";
+        if (AtomicWriteFile(path, body, /*binary=*/true)) ++n;
+    }
+    if (n > 0) {
+        LOG_INFO("radials: backfilled drift snapshot for %d legacy pack(s)", n);
+        LoadRadialExports();
+    }
+}
+
 void RetargetExportsCategory(const std::string& oldCategory,
                              const std::string& newCategory) {
     if (oldCategory.empty() || oldCategory == newCategory) return;

@@ -206,7 +206,7 @@
   "opt.radial.auto_target": "@ Auto-Ziel",
   "opt.radial.item_new": "neu",
   "opt.radial.item_new_tip": "Seit dem Export dieses Rads zur Kategorie hinzugefügt.",
-  "opt.radial.removed_note": "Nicht mehr in der Kategorie (wird beim Speichern entfernt):",
+  "opt.radial.removed_note": "Seit dem Export aus der Kategorie entfernt (wird verworfen, falls im Rad enthalten):",
   "opt.radial.capacity": "Enthalten:",
   "opt.radial.auto_split": "Automatisch auf mehrere Räder aufteilen",
   "opt.radial.over_cap": "Zu viele Einträge - wähle weniger aus oder aktiviere die automatische Aufteilung.",

@@ -56,6 +56,12 @@ bool RenameGroup(const std::string& group, const std::string& newName);
 // persist).
 bool RemoveGroup(const std::string& group);
 
+// One-time migration: backfill the drift snapshot (emot3_source_refs) into any staged
+// pack that lacks one (written before snapshots existed), using the current category as
+// the baseline. Idempotent. Call once at AddonLoad after LoadRadialExports so every
+// wheel uses the precise snapshot drift path instead of the old lenient fallback.
+void MigrateRadialSnapshots();
+
 // A favorites category was renamed: update the emot3_source_category marker of every
 // staged pack that pointed at the old name, so exported wheels stay linked to it
 // (drift/edit keep working). The marker is emot3-only, so deployed copies need no

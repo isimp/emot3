@@ -209,7 +209,7 @@
   "opt.radial.auto_target": "@ auto-target",
   "opt.radial.item_new": "new",
   "opt.radial.item_new_tip": "Added to the category since this wheel was exported.",
-  "opt.radial.removed_note": "No longer in the category (will be dropped on save):",
+  "opt.radial.removed_note": "Left the category since export (dropped if they were in the wheel):",
   "opt.radial.capacity": "Included:",
   "opt.radial.auto_split": "Auto-split into multiple wheels",
   "opt.radial.over_cap": "Over capacity - pick fewer items or enable auto-split.",
