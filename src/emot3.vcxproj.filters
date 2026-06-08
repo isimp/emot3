@@ -67,6 +67,7 @@
     <ClCompile Include="data\Favorites.cpp">      <Filter>data</Filter></ClCompile>
     <ClCompile Include="data\QuickbarPresets.cpp"><Filter>data</Filter></ClCompile>
     <ClCompile Include="data\Settings.cpp">       <Filter>data</Filter></ClCompile>
+    <ClCompile Include="data\Usage.cpp">          <Filter>data</Filter></ClCompile>
     <ClCompile Include="ui\Cells.cpp">            <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\IconBrowse.cpp">       <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\Icons.cpp">            <Filter>ui</Filter></ClCompile>
@@ -122,6 +123,7 @@
     <ClInclude Include="data\Favorites.h">   <Filter>data</Filter></ClInclude>
     <ClInclude Include="data\QuickbarPresets.h"><Filter>data</Filter></ClInclude>
     <ClInclude Include="data\Settings.h">    <Filter>data</Filter></ClInclude>
+    <ClInclude Include="data\Usage.h">       <Filter>data</Filter></ClInclude>
     <ClInclude Include="ui\Cells.h">         <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\IconBrowse.h">    <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\Icons.h">         <Filter>ui</Filter></ClInclude>

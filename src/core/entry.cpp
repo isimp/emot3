@@ -27,6 +27,7 @@
 #include "EmoteData.h"
 #include "MeMotes.h"     // /me-motes domain (load/save lifecycle, see data/MeMotes.h)
 #include "Favorites.h"
+#include "Usage.h"        // usage log load/prune/save (Recently/Frequently used)
 #include "MainPanel.h"
 #include "NexusShortcut.h"
 #include "Quickbar.h"
@@ -120,6 +121,22 @@ static void OnKeybind(const char* identifier, bool isRelease) {
     }
 }
 
+// Predicate for usage::PruneDead — is (type, id) still in its catalog? Locks the
+// right catalog mutex (PruneDead calls this WITHOUT holding the usage mutex, so
+// the lock order stays catalog-only here). Returns true (keep) when the catalog
+// is empty — it may be temporarily unloaded (e.g. a failed emotes.json), and we
+// must not wipe usage history that a later re-seed would make valid again.
+static bool UsageRefLive(EFavoriteRefType type, const std::string& id) {
+    if (type == EFavoriteRefType::Emote) {
+        std::lock_guard<std::mutex> lk(g_EmotesMutex);
+        if (g_Emotes.empty()) return true;
+        return FindEmote(id) != nullptr;
+    }
+    std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+    if (g_MeMotes.empty()) return true;
+    return FindMeMote(id) != nullptr;
+}
+
 // ---- Addon load / unload ----------------------------------------------
 
 // Build flavor, derived from the two additive gating macros, logged at load so a
@@ -194,6 +211,10 @@ void AddonLoad(AddonAPI* aApi) {
         // is created (and seeded with the included defaults) lazily by
         // LoadQuickbarPresets below, the first time it's missing.
         g_PresetsDir = std::string(addonDir) + "\\presets";
+
+        // Usage log (Recently/Frequently used) — its own file, written often, so
+        // it's kept out of settings.json. See data/Usage.h.
+        g_UsageJsonPath = std::string(addonDir) + "\\usage.json";
 
 #ifdef EMOT3_PLUS
         // +plus settings live in their own plus.json (never touched by a base
@@ -320,6 +341,12 @@ void AddonLoad(AddonAPI* aApi) {
     // ids are kept so re-seeding the catalog restores them.
     ReconcileFavoritesWithCatalog();
 
+    // Usage log (Recently/Frequently used). Load after both catalogs so PruneDead
+    // can drop refs that no longer resolve (re-entrant-safe; statics re-init in
+    // Load). Prune is per-type catalog-empty-guarded inside UsageRefLive.
+    usage::Load(g_UsageJsonPath);
+    usage::PruneDead(&UsageRefLive);
+
     // New-bundled-emote notifier: diff the embedded table against the user's
     // snapshot and stage the first-run-style prompt (opened by MainPanel's
     // AddonRender) when warranted. Logic + setting gating live in one place so
@@ -407,8 +434,10 @@ void AddonUnload() {
 #endif
     // Persist any pending debounced writes + ride-along nav state, then join the
     // writer thread. Always writes settings (nav state marks nothing dirty, so this
-    // is its guaranteed persist point). Replaces the old direct SaveSettings here.
+    // is its guaranteed persist point); catalogs flush if dirty. Replaces the old
+    // direct SaveSettings here.
     FlushSavesBlocking();
+    usage::Flush();  // usage.json — its own unload-only file (not in the scheduler)
 
     // Give in-flight workers up to ~500 ms to drain. SendOrFillEmote
     // tops out at ~250-400 ms per emote; IconBrowse blocks on the

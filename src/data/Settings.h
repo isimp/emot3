@@ -192,6 +192,12 @@ struct Settings {
     // Library always shows the /me-motes section when /me-motes exist; this
     // toggle only gates the Quickbar's category-cycle inclusion.
     bool                          QuickbarShowMeMotesCategory     = false;
+    // Synthetic usage categories (see data/Usage.h). Quickbar-only — they're
+    // non-editable by nature (derived from a usage log), so there's no Library
+    // section. Recently used = last distinct emotes/me-motes; Frequently used =
+    // by frequency over the bounded log. Opt-in like the other built-ins.
+    bool                          QuickbarShowRecentlyUsedCategory = false;
+    bool                          QuickbarShowFrequentCategory     = false;
     // When the mouse wheel cycles the active category (see EWheelCycle).
     // Defaults to OverBar - cycling when hovering the category bar is what
     // most users intuitively expect, while the icon list still scrolls.

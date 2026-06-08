@@ -1,6 +1,7 @@
 #include "OptionsMeMotes.h"
 
 #include "Favorites.h"   // RemoveRefFromCategories on delete
+#include "Usage.h"        // usage::RemoveRef on delete (Recently/Frequently used)
 #include "Globals.h"
 #include "SaveScheduler.h"  // RequestSave (debounced, off-thread /me-mote writes)
 #include "I18n.h"        // L(), TooltipText
@@ -814,6 +815,7 @@ void RenderMeMotesTab() {
     // shift mid-loop.
     if (!deleteId.empty()) {
         DeleteMeMote(deleteId);      // erase + favorites cascade + persist + dirty
+        usage::RemoveRef(EFavoriteRefType::MeMote, deleteId);  // drop it from Recently/Frequently used
         s_rowOpen.erase(deleteId);   // UI-only: drop this row's expand + edit-buffer state
         s_rowBufs.erase(deleteId);
     }
