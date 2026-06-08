@@ -323,36 +323,54 @@ void RenderWizard() {
     // Items (bordered scroll child). When split, each included row gets a page combo.
     ImGui::Spacing();
     ImGui::TextUnformatted(L("opt.radial.items_label"));
-    ImGui::BeginChild("##radialitems", ImVec2(0, 220), true);
-    const float thumb = ImGui::GetFontSize() * 1.4f;
-    for (size_t i = 0; i < s_wizItems.size(); ++i) {
-        WizItem& w = s_wizItems[i];
-        ImGui::PushID((int)i);
-        ImGui::Checkbox("##inc", &w.include);
-        ImGui::SameLine();
-        DrawThumb(w, thumb);
-        ImGui::SameLine();
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(Ellipsize(w.name, split ? 180.0f : 240.0f).c_str());
-        if (w.autoTarget) {
+    // A borderless table keeps the columns aligned: item (stretch) + a fixed-width
+    // wheel-assignment combo, so the selectors line up instead of floating after each
+    // variable-width name. The wheel column only exists when the export is split.
+    const float thumb   = ImGui::GetFontSize() * 1.4f;
+    const int   itemCols = split ? 2 : 1;
+    const ImGuiTableFlags tflags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_PadOuterX;
+    if (ImGui::BeginTable("##radialitems", itemCols, tflags, ImVec2(0, 220))) {
+        ImGui::TableSetupColumn("##item", ImGuiTableColumnFlags_WidthStretch);
+        if (split)
+            ImGui::TableSetupColumn("##wheel", ImGuiTableColumnFlags_WidthFixed,
+                                    ImGui::GetFontSize() * 6.5f);
+        for (size_t i = 0; i < s_wizItems.size(); ++i) {
+            WizItem& w = s_wizItems[i];
+            ImGui::PushID((int)i);
+            ImGui::TableNextRow();
+
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Checkbox("##inc", &w.include);
             ImGui::SameLine();
-            ImGui::TextColored(kAmber, "%s", L("opt.radial.auto_target"));
-        }
-        if (split && w.include) {
+            DrawThumb(w, thumb);
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(64.0f);
-            std::string cur = std::string(L("opt.radial.page_col")) + " " + std::to_string(w.page);
-            if (ImGui::BeginCombo("##pg", cur.c_str())) {
-                for (int p = 1; p <= s_wizPageCount; ++p) {
-                    std::string lbl = std::string(L("opt.radial.page_col")) + " " + std::to_string(p);
-                    if (ImGui::Selectable(lbl.c_str(), w.page == p)) w.page = p;
-                }
-                ImGui::EndCombo();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(w.name.c_str());  // table clips to the column
+            if (w.autoTarget) {
+                ImGui::SameLine();
+                ImGui::TextColored(kAmber, "%s", L("opt.radial.auto_target"));
             }
+
+            if (split) {
+                ImGui::TableSetColumnIndex(1);
+                if (w.include) {
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    std::string cur = std::string(L("opt.radial.page_col")) + " " +
+                                      std::to_string(w.page);
+                    if (ImGui::BeginCombo("##pg", cur.c_str())) {
+                        for (int p = 1; p <= s_wizPageCount; ++p) {
+                            std::string lbl = std::string(L("opt.radial.page_col")) + " " +
+                                              std::to_string(p);
+                            if (ImGui::Selectable(lbl.c_str(), w.page == p)) w.page = p;
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
+            }
+            ImGui::PopID();
         }
-        ImGui::PopID();
+        ImGui::EndTable();
     }
-    ImGui::EndChild();
 
     // Pages controls: stepper + auto-fill + per-page fill readout.
     bool anyOver = false, anyEmpty = false;
@@ -530,17 +548,22 @@ void RenderRadialTab() {
     if (ImGui::SmallButton(L("opt.radial.copy_path")))
         ImGui::SetClipboardText(g_RadialsDir.c_str());
 
-    // 3. Create — any favorites category, any number of times (a category can back
-    // several wheels, e.g. an auto-split or curated subsets; Edit reconfigures each).
+    // 3. Create — one export per category. Splitting is handled inside the export
+    // (pages), so an already-exported category is reconfigured via Edit, not re-added.
     OptionsSection(L("opt.radial.sec_create"));
     ImGui::TextUnformatted(L("opt.radial.create_label"));
     {
+        std::vector<std::string> exported = ExportedSourceCategories();
         std::vector<std::string> avail;
-        for (const auto& fc : g_Settings.FavoriteCategories) avail.push_back(fc.Name);
+        for (const auto& fc : g_Settings.FavoriteCategories)
+            if (std::find(exported.begin(), exported.end(), fc.Name) == exported.end())
+                avail.push_back(fc.Name);
 
         static int s_sel = 0;
-        if (avail.empty()) {
+        if (g_Settings.FavoriteCategories.empty()) {
             ImGui::TextDisabled("%s", L("opt.radial.no_categories"));
+        } else if (avail.empty()) {
+            ImGui::TextDisabled("%s", L("opt.radial.all_exported"));
         } else {
             if (s_sel >= (int)avail.size()) s_sel = 0;
             ImGui::SetNextItemWidth(220.0f);

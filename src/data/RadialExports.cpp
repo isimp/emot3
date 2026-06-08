@@ -147,6 +147,18 @@ std::vector<RadialExport> WheelsInGroup(const std::string& group) {
     return out;
 }
 
+std::vector<std::string> ExportedSourceCategories() {
+    std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+    std::vector<std::string> out;
+    for (const auto& w : g_RadialExports) {
+        if (w.SourceCategory.empty()) continue;
+        bool dup = false;
+        for (const auto& s : out) if (s == w.SourceCategory) { dup = true; break; }
+        if (!dup) out.push_back(w.SourceCategory);
+    }
+    return out;
+}
+
 std::vector<std::string> RadialWheelsContaining(EFavoriteRefType type,
                                                 const std::string& id) {
     std::lock_guard<std::mutex> lk(g_RadialExportsMutex);

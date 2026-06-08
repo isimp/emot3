@@ -91,6 +91,10 @@ void LoadRadialExports();
 // All packs belonging to one logical export, sorted by Page. Empty if none.
 std::vector<RadialExport> WheelsInGroup(const std::string& group);
 
+// Distinct favorites-category names that already have an export (so the Create combo
+// can hide them - one export per category; reconfigure an existing one via Edit).
+std::vector<std::string> ExportedSourceCategories();
+
 // Names of the logical export(s) referencing (type,id) in ANY variant, DEDUPED by
 // group (so a split that holds the ref on two pages counts once) — drives the catalog
 // editors' "active via radial 'X'" note. Empty when none.
