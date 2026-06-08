@@ -126,6 +126,7 @@ bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
                    const std::string& baseName,
                    const std::string& sourceCategory, const std::string& group,
                    int page, bool partial,
+                   const std::vector<std::string>& sourceRefs,
                    const std::vector<RadialItemRef>& items,
                    const RadialWheelOptions& opt) {
     if (g_RadialsDir.empty()) return false;
@@ -147,18 +148,10 @@ bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
     j["emot3_page"]            = page;                                   // 1-based page index
     j["emot3_name"]            = baseName;                               // logical export name (no "(N)")
     if (partial) j["emot3_partial"] = true;                              // subset (informational)
-    // Snapshot the source category's current members so drift can detect later
-    // add/remove even for a subset wheel.
-    {
-        json srefs = json::array();
-        for (const auto& fc : g_Settings.FavoriteCategories)
-            if (fc.Name == sourceCategory) {
-                for (const auto& ref : fc.Refs)
-                    srefs.push_back(std::to_string((int)ref.Type) + ":" + ref.Id);
-                break;
-            }
-        j["emot3_source_refs"] = std::move(srefs);
-    }
+    // Snapshot of the source category's members at the time the wheel's CONTENT was
+    // set (export/edit). Drift compares the live category to this. Rename passes the
+    // existing snapshot through unchanged, so renaming never silently clears drift.
+    j["emot3_source_refs"] = json(sourceRefs);
     if (opt.Scale != 1.0f)       j["Scale"]               = opt.Scale;      // user-changed only
     if (opt.IconScale != 1.0f)   j["IconScale"]           = opt.IconScale;
     if (opt.ShowItemNameTooltip) j["ShowItemNameTooltip"] = true;
@@ -230,6 +223,18 @@ std::string AllocGroupSlug(const std::string& name, const std::string& exclude =
         });
 }
 
+// The source category's current member keys ("<type>:<id>"), for the drift snapshot.
+std::vector<std::string> CaptureCategoryRefs(const std::string& category) {
+    std::vector<std::string> out;
+    for (const auto& fc : g_Settings.FavoriteCategories)
+        if (fc.Name == category) {
+            for (const auto& ref : fc.Refs)
+                out.push_back(std::to_string((int)ref.Type) + ":" + ref.Id);
+            break;
+        }
+    return out;
+}
+
 // Is `pages`' union a full 1:1 default mirror of the category? If not it's a subset
 // (drift judged leniently). Counts the distinct refs across all pages.
 bool ComputePartial(const std::string& category,
@@ -253,6 +258,8 @@ RadialExportResult WriteGroupPages(const std::string& group, const std::string& 
                                    const RadialWheelOptions& options, bool partial) {
     RadialExportResult res;
     const bool multi = pages.size() > 1;
+    // Export/edit re-snapshots the category as the new drift baseline.
+    const std::vector<std::string> srefs = CaptureCategoryRefs(category);
     std::vector<int>         reservedIds;
     std::vector<std::string> reservedSlugs;
     for (size_t p = 0; p < pages.size(); ++p) {
@@ -263,7 +270,7 @@ RadialExportResult WriteGroupPages(const std::string& group, const std::string& 
         const std::string name    = multi ? baseName + " (" + std::to_string(page) + ")"
                                           : baseName;
         if (!WriteOneWheel(slug, id, name, baseName, category, group, page, partial,
-                           pages[p], options)) {
+                           srefs, pages[p], options)) {
             res.error = "write failed";
             break;
         }
@@ -325,8 +332,10 @@ bool RenameGroup(const std::string& group, const std::string& newName) {
     for (const auto& pg : pagesIn) {
         const std::string name = multi ? newName + " (" + std::to_string(pg.Page) + ")"
                                        : newName;
+        // Pass the EXISTING snapshot through (pg.SourceRefs) so a rename never resets
+        // the drift baseline - only export/edit re-snapshot.
         if (!WriteOneWheel(pg.Slug, pg.Id, name, newName, pg.SourceCategory, group,
-                           pg.Page, pg.Partial, pg.Items, pg.Options))
+                           pg.Page, pg.Partial, pg.SourceRefs, pg.Items, pg.Options))
             ok = false;
     }
     LoadRadialExports();  // refs unchanged -> no SyncEmoteBinds needed

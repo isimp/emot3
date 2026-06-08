@@ -808,7 +808,10 @@ void RenderRadialTab() {
 
 #ifdef EMOT3_PLUS
                 // +plus: how the staged wheel compares to the copy in RadialMenus' folder.
-                if (s_rmDetected && !parseErr) {
+                // Suppressed while the category has drifted - "Category changed" is the
+                // headline then (and the staged pack is itself stale until you Edit), so
+                // showing "RadialMenus: up to date" alongside would read as contradictory.
+                if (s_rmDetected && !parseErr && sourceExists && !drift) {
                     auto it = s_syncState.find(group);
                     RadialSyncState ss = (it != s_syncState.end()) ? it->second
                                                                    : RadialSyncState::NotDeployed;
