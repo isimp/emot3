@@ -848,6 +848,8 @@ void RenderMeMotesTab() {
                 variantCheckbox(EMeMoteVariant::You,     "opt.mm.variant_you",     ky, hasYou);
                 ImGui::SameLine();
                 variantCheckbox(EMeMoteVariant::All,     "opt.mm.variant_all",     ka, hasAll);
+                // Already bound for any radial wheel it's in (no key needed).
+                RadialMembershipNote(EFavoriteRefType::MeMote, id);
             }
 
             ImGui::EndTable();

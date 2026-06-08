@@ -313,9 +313,21 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
     }).detach();
 }
 
+// Route a gated-send refusal to the right surface. InWindow keeps the existing
+// in-window overlay (a click while the panel is open); Alert uses Nexus' SendAlert
+// (a bind / RadialMenus wheel Invoke, where emot3's window is usually closed so the
+// overlay wouldn't be seen). Falls back to ShowFeedback if SendAlert is unavailable.
+static void EmitSendRefusal(const char* key, EFeedbackSink sink) {
+    if (sink == EFeedbackSink::Alert && APIDefs && APIDefs->UI.SendAlert)
+        APIDefs->UI.SendAlert(L(key));
+    else
+        ShowFeedback(L(key));
+}
+
 } // namespace
 
-void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, bool fromKeybind) {
+void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, bool fromKeybind,
+                     EFeedbackSink sink) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
     if (!APIDefs) return;
     std::string cmd = e.Command;
@@ -343,7 +355,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, bool fromKeyb
     if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/checkHeld,
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("Emote skipped (%s): %s", skipKey, cmd.c_str());
-        ShowFeedback(L(skipKey));
+        EmitSendRefusal(skipKey, sink);
         return;
     }
 
@@ -363,7 +375,8 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, bool fromKeyb
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
 }
 
-void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, bool fromKeybind) {
+void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, bool fromKeybind,
+                      EFeedbackSink sink) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
     if (!APIDefs) return;
 
@@ -403,7 +416,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, bool fromKeybind)
     if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/checkHeld,
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("/me-mote skipped (%s): %s", skipKey, cmd.c_str());
-        ShowFeedback(L(skipKey));
+        EmitSendRefusal(skipKey, sink);
         return;
     }
 

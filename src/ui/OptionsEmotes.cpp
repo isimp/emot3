@@ -671,6 +671,8 @@ void RenderEmotesTab() {
                     bool kbBefore = e.UserKeybind;
                     flowCheckbox("opt.em.keybind", &e.UserKeybind, nullptr, /*Off*/0);
                     if (e.UserKeybind != kbBefore) keybindEdited = true;
+                    // Already bound for any radial wheel it's in (no key needed).
+                    RadialMembershipNote(EFavoriteRefType::Emote, e.Id);
                 }
 
                 // ---- Icon ----

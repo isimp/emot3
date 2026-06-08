@@ -318,9 +318,11 @@
     <ClInclude Include="ui\Feedback.h" />
     <ClInclude Include="core\EmoteAction.h" />
     <ClInclude Include="core\EmoteBinds.h" />
+    <ClInclude Include="core\RadialExport.h" />
     <ClInclude Include="core\Globals.h" />
     <ClInclude Include="plus\QuickbarWheel.h" />
     <ClInclude Include="plus\SendSuppress.h" />
+    <ClInclude Include="plus\RadialDeploy.h" />
     <ClInclude Include="core\I18n.h" />
     <ClInclude Include="core\Keybinds.h" />
     <ClInclude Include="core\Logging.h" />
@@ -332,11 +334,13 @@
     <ClInclude Include="data\QuickbarPresets.h" />
     <ClInclude Include="data\Settings.h" />
     <ClInclude Include="data\Usage.h" />
+    <ClInclude Include="data\RadialExports.h" />
     <ClInclude Include="resources\Resources.h" />
     <ClInclude Include="ui\Cells.h" />
     <ClInclude Include="ui\IconBrowse.h" />
     <ClInclude Include="ui\IconPicker.h" />
     <ClInclude Include="ui\OptionsMeMotes.h" />
+    <ClInclude Include="ui\OptionsRadial.h" />
     <ClInclude Include="core\StringUtil.h" />
     <ClInclude Include="core\WinEncoding.h" />
     <ClInclude Include="core\AtomicFile.h" />
@@ -382,10 +386,12 @@
     <ClCompile Include="ui\Feedback.cpp" />
     <ClCompile Include="core\EmoteAction.cpp" />
     <ClCompile Include="core\EmoteBinds.cpp" />
+    <ClCompile Include="core\RadialExport.cpp" />
     <ClCompile Include="core\entry.cpp" />
     <ClCompile Include="core\Globals.cpp" />
     <ClCompile Include="plus\QuickbarWheel.cpp" />
     <ClCompile Include="plus\SendSuppress.cpp" />
+    <ClCompile Include="plus\RadialDeploy.cpp" />
     <ClCompile Include="core\I18n.cpp" />
     <ClCompile Include="core\Logging.cpp" />
     <ClCompile Include="core\WinEncoding.cpp" />
@@ -399,6 +405,7 @@
     <ClCompile Include="data\QuickbarPresets.cpp" />
     <ClCompile Include="data\Settings.cpp" />
     <ClCompile Include="data\Usage.cpp" />
+    <ClCompile Include="data\RadialExports.cpp" />
     <ClCompile Include="generated\ResourcesGenerated.cpp" />
     <ClCompile Include="resources\Resources.cpp" />
     <ClCompile Include="ui\Cells.cpp" />
@@ -416,6 +423,7 @@
     <ClCompile Include="ui\OptionsQuickbar.cpp" />
     <ClCompile Include="ui\OptionsEmotes.cpp" />
     <ClCompile Include="ui\OptionsMeMotes.cpp" />
+    <ClCompile Include="ui\OptionsRadial.cpp" />
     <ClCompile Include="ui\OptionsUnlocks.cpp" />
     <ClCompile Include="ui\Quickbar.cpp" />
     <ClCompile Include="ui\TextCache.cpp" />

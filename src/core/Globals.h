@@ -35,6 +35,7 @@ extern std::string g_MeMotesJsonPath; // me_motes.json (/me-motes; see data/MeMo
 extern std::string g_IconsDir;        // icons/ (local PNG overrides)
 extern std::string g_PresetsDir;      // presets/ (one JSON per Quickbar preset)
 extern std::string g_UsageJsonPath;   // usage.json (Recently/Frequently used log; see data/Usage.h)
+extern std::string g_RadialsDir;      // radials/ (one subfolder per exported RadialMenus wheel; see data/RadialExports.h)
 
 // --- Cross-module flags ------------------------------------------------
 

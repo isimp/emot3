@@ -1,5 +1,9 @@
 #pragma once
 
+#include <string>
+
+enum class EFavoriteRefType;  // data/Settings.h (RadialMembershipNote param)
+
 // Shared helpers + per-tab entry points for the Options module. The Options
 // panel is split across Options.cpp (the AddonOptions dispatcher + lifecycle)
 // and OptionsGeneral / OptionsQuickbar / OptionsEmotes / OptionsUnlocks.cpp
@@ -48,6 +52,13 @@ bool PlusDisabledCheckbox(const char* labelKey, bool* state, bool enabled,
 // Muted section header + hairline that groups a tab's controls ("Layout",
 // "Window", "Look", ...) without the weight of a CollapsingHeader.
 void OptionsSection(const char* title);
+
+// Inline "- active via radial 'X'" note for the catalog editors' keybind row. When
+// (type,id) is referenced by >= 1 staged radial wheel the entry is already bound for
+// the wheel without a key, so we say so (SameLine TextDisabled + tooltip) rather than
+// nagging the user to enable a personal hotkey they don't need. No-op when the entry
+// is in no wheel. Shared so the Emote and /me-mote editors render it identically.
+void RadialMembershipNote(EFavoriteRefType type, const std::string& id);
 
 // The four Options tabs, one per TU, invoked by AddonOptions() in Options.cpp.
 void RenderGeneralOptionsTab();

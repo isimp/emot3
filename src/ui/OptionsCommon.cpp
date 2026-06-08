@@ -2,7 +2,9 @@
 
 #include "Globals.h"    // g_SettingsPath
 #include "I18n.h"       // L
-#include "Settings.h"   // SaveSettings
+#include "Settings.h"   // SaveSettings, EFavoriteRefType
+#include "RadialExports.h"  // RadialWheelsContaining (the "via radial" note)
+#include "Layout.h"     // Ellipsize (truncate long wheel names in the note)
 #include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "PlusSettings.h" // SavePlusSettings (+plus toggles; empty in base builds)
 #include "Logging.h"    // LOG_TRACE (setting-change audit trail)
@@ -11,6 +13,7 @@
 #include "imgui/imgui_internal.h"  // PushItemFlag / ImGuiItemFlags_Disabled
 
 #include <string>
+#include <vector>
 
 namespace {
 // Compose "<labelKey>.on" / "<labelKey>.off" for the On/Off tooltip overloads.
@@ -129,4 +132,19 @@ void OptionsSection(const char* title) {
     ImGui::Spacing();
     ImGui::TextDisabled("%s", title);
     ImGui::Separator();
+}
+
+void RadialMembershipNote(EFavoriteRefType type, const std::string& id) {
+    std::vector<std::string> wheels = RadialWheelsContaining(type, id);
+    if (wheels.empty()) return;
+    ImGui::SameLine();
+    std::string note;
+    if (wheels.size() == 1)
+        note = std::string(L("opt.radial.via_one")) + " '" +
+               Ellipsize(wheels[0], 160.0f) + "'";
+    else
+        note = std::string(L("opt.radial.via_many")) + " (" +
+               std::to_string(wheels.size()) + ")";
+    ImGui::TextDisabled("- %s", note.c_str());
+    if (ImGui::IsItemHovered()) TooltipText("opt.radial.via_tip");
 }
