@@ -509,7 +509,11 @@ void SaveMeMotesJson(const std::string& path) {
 
     // Hand-rolled writer (mirrors SaveEmotesJson) so the on-disk layout is
     // controlled: per-/me-mote keys in a logical order, aliases inline.
-    auto quoted = [](const std::string& v) { return json(v).dump(); };
+    // error_handler_t::replace: invalid UTF-8 (e.g. an ANSI-codepage filename in
+    // IconPath) becomes U+FFFD instead of THROWING and crashing the host.
+    auto quoted = [](const std::string& v) {
+        return json(v).dump(-1, ' ', false, json::error_handler_t::replace);
+    };
 
     f << "{\n";
     f << "  \"version\": 1,\n";

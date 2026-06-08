@@ -138,6 +138,15 @@ void ScanFolderTextures() {
             // (illegal in Windows names), so `name` is always a safe relative leaf.
             // Guard anyway against an exotic name; skip anything weird.
             if (name.find_first_of("\\/:") != std::string::npos) continue;
+            // Skip names that aren't valid UTF-8 - the ANSI Win32 enumeration
+            // (FindFirstFileA) returns CP1252 bytes for non-ASCII filenames, and
+            // storing such a name as an IconPath would feed invalid UTF-8 to the
+            // JSON writer. Don't echo the raw bytes into the log (a generic note).
+            if (!IsValidUtf8(name)) {
+                LOG_WARNING("Icon picker: skipping a file with a non-ASCII/non-UTF-8 "
+                            "name; rename it to ASCII to use it as an icon");
+                continue;
+            }
 
             if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
                 // Skip the UI-overrides subfolder at the top level only.

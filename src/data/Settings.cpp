@@ -561,7 +561,10 @@ void SaveSettings(const std::string& path) {
     // .dump() returns the properly-quoted JSON form including the
     // outer quotes. Saves reimplementing escape rules.
     auto quoted = [](const std::string& v) {
-        return json(v).dump();
+        // replace (not strict): invalid UTF-8 -> U+FFFD instead of a throw that
+        // would terminate the host. Settings strings are normally UTF-8 (ImGui
+        // input), but a hand-edited file or odd value must never crash the save.
+        return json(v).dump(-1, ' ', false, json::error_handler_t::replace);
     };
     auto B = [](bool v) { return v ? "true" : "false"; };
 

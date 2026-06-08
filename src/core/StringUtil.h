@@ -107,3 +107,34 @@ inline std::string MakeUniqueSlug(const std::string& base, TakenFn isTaken) {
     }
     return base;  // pathological; effectively unreachable
 }
+
+// True if `s` is well-formed UTF-8 - the encoding JSON serialization (nlohmann
+// json.dump THROWS on invalid UTF-8) and ImGui expect. The ANSI Win32 APIs
+// (FindFirstFileA) return filenames in the system codepage (e.g. CP1252), whose
+// high bytes are NOT valid UTF-8; validate before such a string reaches a JSON
+// writer or is stored. Rejects overlong forms, UTF-16 surrogates, and >U+10FFFF.
+inline bool IsValidUtf8(const std::string& s) {
+    size_t i = 0, n = s.size();
+    while (i < n) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < 0x80) { ++i; continue; }                 // ASCII
+        size_t extra;
+        unsigned char lo = 0x80, hi = 0xBF;              // 1st-continuation range
+        if      ((c & 0xE0) == 0xC0) { if (c < 0xC2) return false; extra = 1; }        // 2-byte (no overlong)
+        else if ((c & 0xF0) == 0xE0) { extra = 2; if (c == 0xE0) lo = 0xA0;            // 3-byte
+                                                  if (c == 0xED) hi = 0x9F; }          //   (no overlong / surrogate)
+        else if ((c & 0xF8) == 0xF0) { if (c > 0xF4) return false; extra = 3;          // 4-byte
+                                       if (c == 0xF0) lo = 0x90;                        //   (no overlong)
+                                       if (c == 0xF4) hi = 0x8F; }                      //   (<= U+10FFFF)
+        else return false;                               // invalid lead byte
+        if (i + extra >= n) return false;                // truncated
+        for (size_t k = 1; k <= extra; ++k) {
+            unsigned char cc = (unsigned char)s[i + k];
+            unsigned char l = (k == 1) ? lo : 0x80;
+            unsigned char h = (k == 1) ? hi : 0xBF;
+            if (cc < l || cc > h) return false;
+        }
+        i += extra + 1;
+    }
+    return true;
+}

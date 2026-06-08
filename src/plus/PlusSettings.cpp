@@ -49,7 +49,7 @@ void SavePlusSettings() {
     nlohmann::json j;
     j["qb_click_through_wheel"] = g_PlusSettings.QbClickThroughWheel;
     j["swallow_input_on_send"]  = g_PlusSettings.SwallowInputOnSend;
-    f << j.dump(2) << "\n";
+    f << j.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) << "\n";
 }
 
 #endif  // EMOT3_PLUS

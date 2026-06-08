@@ -475,7 +475,12 @@ void SaveEmotesJson(const std::string& path) {
     // layout is controlled: per-emote keys in a logical, stable order instead of
     // nlohmann's alphabetical default, and the aliases array stays inline. We
     // still lean on nlohmann for string escaping via json(v).dump().
-    auto quoted = [](const std::string& v) { return json(v).dump(); };
+    // error_handler_t::replace: a string with invalid UTF-8 (e.g. an ANSI-codepage
+    // filename picked into IconPath) yields U+FFFD instead of THROWING - an
+    // uncaught dump() exception here would terminate the game.
+    auto quoted = [](const std::string& v) {
+        return json(v).dump(-1, ' ', false, json::error_handler_t::replace);
+    };
     auto B = [](bool v) { return v ? "true" : "false"; };
 
     f << "{\n";

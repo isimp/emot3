@@ -56,6 +56,12 @@ std::string SanitizeIconPath(const std::string& raw, bool* outChanged) {
     // 1. Empty -> empty.
     if (raw.empty()) return mark(std::string());
 
+    // 1b. Reject non-UTF-8 (e.g. an ANSI-codepage filename from a Win32 file
+    //     enumeration): storing it would make the JSON writer emit replacement
+    //     chars (and it would never resolve), so drop it -> the resolution chain
+    //     falls back to the default icon. Keeps invalid UTF-8 out of the catalog.
+    if (!IsValidUtf8(raw)) return mark(std::string());
+
     // 2. Bundled refs pass through untouched. Their validity is checked
     //    later by ParseBundledIconRef (stale bucket/name falls through to
     //    the regular resolution chain). The prefix check at byte 0 makes

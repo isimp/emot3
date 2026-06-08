@@ -299,7 +299,7 @@ bool WriteQuickbarPreset(QuickbarPreset& p) {
             LOG_WARNING("preset: cannot open %s for writing", full.c_str());
             return false;
         }
-        f << PresetToJson(p).dump(2) << "\n";
+        f << PresetToJson(p).dump(2, ' ', false, json::error_handler_t::replace) << "\n";
     } catch (const std::exception& e) {
         LOG_WARNING("preset: write failed for %s: %s", full.c_str(), e.what());
         return false;
