@@ -1,4 +1,5 @@
 #include "Resources.h"
+#include "StringUtil.h"  // ToLower (shared helper)
 
 #define NOMINMAX
 #include <Windows.h>
@@ -49,7 +50,7 @@ int LookupBundledResource(const BundledIcon* table, int count,
     // stems in the same shape.
     std::string key = command;
     if (!key.empty() && key.front() == '/') key.erase(0, 1);
-    for (auto& c : key) c = (char)std::tolower((unsigned char)c);
+    key = ToLower(key);
     for (int i = 0; i < count; ++i) {
         if (table[i].command && key == table[i].command)
             return table[i].resourceId;
@@ -73,8 +74,7 @@ bool TryLoadBundledIconBytes(const BundledIcon* table, int count,
 int LookupBundledData(const BundledData* table, int count,
                       const std::string& name) {
     if (!table || count <= 0) return 0;
-    std::string key = name;
-    for (auto& c : key) c = (char)std::tolower((unsigned char)c);
+    std::string key = ToLower(name);
     for (int i = 0; i < count; ++i) {
         if (table[i].name && key == table[i].name)
             return table[i].resourceId;

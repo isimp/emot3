@@ -9,13 +9,6 @@
 #include <mutex>
 #include <unordered_set>
 
-std::string TrimName(std::string s) {
-    auto isws = [](char c) { return c == ' ' || c == '\t'; };
-    while (!s.empty() && isws(s.front())) s.erase(s.begin());
-    while (!s.empty() && isws(s.back()))  s.pop_back();
-    return s;
-}
-
 namespace {
 // One-liner: does this ref match (type, id)? Used by every helper below;
 // keeps the comparison consistent and the std::remove_if lambdas terse.

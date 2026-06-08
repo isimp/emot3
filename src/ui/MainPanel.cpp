@@ -10,7 +10,9 @@
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
 #include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
+#include "StringUtil.h"       // TrimWhitespace (new-category entry)
 #include "Icons.h"
+#include "IconDrawing.h"      // DrawStarIcon / DrawPaperclipIcon / DrawCollapseArrow
 #include "IconCacheConfig.h"  // g_IconCache.poolBudgetMB (dev pool-budget readout)
 #include "Layout.h"
 #include "Cells.h"
@@ -962,7 +964,7 @@ void AddonRender() {
 
         // ---- Pinned header: "+ Category" bar (stays put when scrolling) ----
         static char newCatBuf[64] = {};
-        std::string trimmedNewCat = TrimName(newCatBuf);
+        std::string trimmedNewCat = TrimWhitespace(newCatBuf);
         bool        newCatInvalid = !trimmedNewCat.empty() &&
                                     CategoryNameExists(trimmedNewCat);
 

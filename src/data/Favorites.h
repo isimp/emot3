@@ -1,14 +1,11 @@
 #pragma once
 
-// Favorites + categories + the small string-trim helper shared between
-// the main panel category bar and the Options favorites editor. Pure data
-// manipulation against g_Settings.FavoriteCategories — no rendering.
+// Favorites + categories. Pure data manipulation against
+// g_Settings.FavoriteCategories — no rendering. (Name trimming now lives in
+// the shared core/StringUtil.h TrimWhitespace.)
 
 #include <string>
 #include "Settings.h"   // EFavoriteRefType for the type-tagged ref API
-
-// Trim leading/trailing spaces and tabs from a category/emote name.
-std::string TrimName(std::string s);
 
 // Generic, type-tagged API. Favorites mix Emote-typed refs and /me-mote-typed
 // refs in the same FavoriteCategory.Refs vector; every lookup keys on the

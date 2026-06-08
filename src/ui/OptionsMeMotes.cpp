@@ -7,6 +7,7 @@
 #include "IconPicker.h"  // OpenIconPicker ("Library..." button)
 #include "Layout.h"      // PushDestructiveButtonStyles, PushInvalidInputStyle, DrawInvalidInputBorder, Ellipsize
 #include "Logging.h"
+#include "StringUtil.h"  // TrimWhitespace (shared helper)
 #include "MeMotes.h"
 #include "OptionsCommon.h"   // OptionsSection
 #include "Profiling.h"   // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
@@ -113,14 +114,6 @@ void Seed(RowBuffer& rb, const MeMote& m) {
     rb.initialized = true;
 }
 
-// Trim ASCII whitespace.
-std::string Trim(std::string s) {
-    auto isws = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
-    while (!s.empty() && isws(s.front())) s.erase(s.begin());
-    while (!s.empty() && isws(s.back()))  s.pop_back();
-    return s;
-}
-
 // Split an alias buffer on whitespace + comma, trim each token, drop empties,
 // dedupe (first-wins). Mirrors the OptionsEmotes alias parser exactly minus
 // the per-token NormalizeEmoteCommand pass (which adds a leading slash —
@@ -130,7 +123,7 @@ std::vector<std::string> ParseAliases(const std::string& buf) {
     std::vector<std::string> out;
     std::string tok;
     auto flush = [&]() {
-        std::string t = Trim(tok);
+        std::string t = TrimWhitespace(tok);
         tok.clear();
         if (t.empty()) return;
         if (std::find(out.begin(), out.end(), t) == out.end()) out.push_back(std::move(t));
@@ -192,7 +185,7 @@ bool FieldRow(const char* labelKey, const char* hintKey, const char* idSuffix,
     ImGui::TextUnformatted(L(labelKey));
     ImGui::TableSetColumnIndex(1);
 
-    std::string trimmed = Trim(buf);
+    std::string trimmed = TrimWhitespace(buf);
     bool dirty   = (trimmed != stored);
     bool invalid = required && trimmed.empty();
 
@@ -328,7 +321,7 @@ void RenderMeMotesTab() {
     static char s_newIdBuf[64] = {};
     std::string rawNew   = s_newIdBuf;
     std::string normNew  = NormalizeMeMoteId(rawNew);
-    bool newHasInput = !Trim(rawNew).empty();
+    bool newHasInput = !TrimWhitespace(rawNew).empty();
 
     bool newIdDup = false;
     if (newHasInput && !normNew.empty()) {

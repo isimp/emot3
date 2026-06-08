@@ -8,6 +8,7 @@
 #include "EmoteData.h"
 #include "EmoteAction.h"
 #include "Favorites.h"
+#include "StringUtil.h"     // TrimWhitespace / IsAbsolutePath (shared helpers)
 #include "Icons.h"          // ResolveIconPath for icon-source status
 #include "Layout.h"         // ToggleButton, PushHighContrastButtonStyles
 #include "IconBrowse.h"
@@ -115,9 +116,7 @@ static std::string DescribeIconSource(const Emote& e) {
     //    picked) or somewhere arbitrary on disk (absolute path).
     if (!e.IconPath.empty()) {
         const std::string& p = e.IconPath;
-        bool isAbs = (p.size() >= 3 && p[1] == ':' &&
-                      (p[2] == '\\' || p[2] == '/')) ||
-                     (p.size() >= 2 && p[0] == '\\' && p[1] == '\\');
+        bool isAbs = IsAbsolutePath(p);
 
         std::string resolved = ResolveIconPath(e);
         DWORD attr = GetFileAttributesA(resolved.c_str());
@@ -188,7 +187,7 @@ void RenderEmotesTab() {
     // every command ingress - here, the per-row edit below, and emotes.json
     // load - is identical; derive the stable id from the normalized stem.
     std::string rawNew = newCmdBuf;
-    std::string trimmedNew = TrimName(rawNew);
+    std::string trimmedNew = TrimWhitespace(rawNew);
     std::string normalizedNew = NormalizeEmoteCommand(trimmedNew);
     std::string newId = normalizedNew.size() > 1 ? normalizedNew.substr(1)
                                                  : std::string();
@@ -498,7 +497,7 @@ void RenderEmotesTab() {
                 ImGui::AlignTextToFramePadding();
                 ImGui::TextUnformatted(L("opt.em.lbl_command"));
                 ImGui::TableSetColumnIndex(1);
-                std::string trimmedCmd = TrimName(rb.command);
+                std::string trimmedCmd = TrimWhitespace(rb.command);
                 bool cmdDirty = (trimmedCmd != e.Command);
                 char cmdBuf[64];
                 strncpy_s(cmdBuf, sizeof(cmdBuf), rb.command.c_str(), _TRUNCATE);
@@ -536,7 +535,7 @@ void RenderEmotesTab() {
                 ImGui::AlignTextToFramePadding();
                 ImGui::TextUnformatted(L("opt.em.lbl_name"));
                 ImGui::TableSetColumnIndex(1);
-                std::string trimmedName = TrimName(rb.name);
+                std::string trimmedName = TrimWhitespace(rb.name);
                 bool nameDirty   = (trimmedName != e.Name);
                 bool nameInvalid = nameDirty && (trimmedName.empty() ||
                                                  sharesValue(nameCounts, trimmedName,

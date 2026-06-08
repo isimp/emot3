@@ -4,6 +4,7 @@
 #include "MeMotes.h"      // MeMote struct for ResolveMeMoteIconPath
 #include "Settings.h"     // g_Settings.UseAIIconFallback (AI fallback gate)
 #include "Resources.h"    // LookupBundledResource + kOfficialIcons / kAIIcons / kMeMoteAIIcons
+#include "StringUtil.h"   // ToLower / IsAbsolutePath (shared helpers)
 
 #include "imgui/imgui.h"
 #include "IconCacheConfig.h"   // g_IconCache.maxIconDim (user-icon dimension cap)
@@ -22,12 +23,6 @@
 #include "Profiling.h"   // PROFILE_SCOPE on the cold texture-load branch
 
 namespace {
-// Lowercase a copy (ASCII).
-std::string ToLowerStr(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return (char)std::tolower(c); });
-    return s;
-}
 // Tag prefix per bundled table - disambiguates official vs emote-AI vs
 // me-mote-AI, which can share a name with DIFFERENT art (must not collide).
 const char* BundledTagPrefix(const BundledIcon* tbl) {
@@ -63,7 +58,7 @@ ResolvedIcon MakeDiskIcon(const std::string& path) {
     std::snprintf(suf, sizeof suf, ":%llx:%llx", mtime, size);
     r.from = ResolvedIcon::From::DiskFile;
     r.path = path;
-    r.key  = std::string("EMOT3IC_f:") + ToLowerStr(path) + suf;
+    r.key  = std::string("EMOT3IC_f:") + ToLower(path) + suf;
     return r;
 }
 }  // namespace
@@ -82,7 +77,7 @@ ResolvedIcon MakeBundledResolved(const BundledIcon* tbl, int count, const std::s
     // bundled:official:wave ref - matching LookupBundledResource's normalization.
     std::string stem = name;
     if (!stem.empty() && stem.front() == '/') stem.erase(0, 1);
-    r.key   = std::string("EMOT3IC_") + BundledTagPrefix(tbl) + ToLowerStr(stem);
+    r.key   = std::string("EMOT3IC_") + BundledTagPrefix(tbl) + ToLower(stem);
     return r;
 }
 ResolvedIcon MakeFileResolved(const std::string& fullPath) { return MakeDiskIcon(fullPath); }
@@ -95,13 +90,9 @@ std::string ResolveIconPath(const Emote& e) {
         // German catalog's "/verbeugen" must still resolve to "bow.png".
         std::string base = e.Id;
         if (!base.empty() && base.front() == '/') base.erase(0, 1);
-        std::transform(base.begin(), base.end(), base.begin(),
-                       [](unsigned char c){ return (char)std::tolower(c); });
-        p = base + ".png";
+        p = ToLower(base) + ".png";
     }
-    bool isAbs = (p.size() >= 3 && p[1] == ':' &&
-                  (p[2] == '\\' || p[2] == '/')) ||
-                 (p.size() >= 2 && p[0] == '\\' && p[1] == '\\');
+    bool isAbs = IsAbsolutePath(p);
     if (isAbs) return p;
     if (g_IconsDir.empty()) return p;
     return g_IconsDir + "\\" + p;
@@ -179,9 +170,7 @@ std::string SanitizeIconPath(const std::string& raw, bool* outChanged) {
     // 4. Absolute paths -> rejected. Drive-letter "X:\..." and UNC
     //    "\\server\share\..." both. After this rule + the leading-strip
     //    below, anything that survives is a path RELATIVE to g_IconsDir.
-    bool isAbs = (s.size() >= 3 && s[1] == ':' &&
-                  (s[2] == '\\' || s[2] == '/')) ||
-                 (s.size() >= 2 && s[0] == '\\' && s[1] == '\\');
+    bool isAbs = IsAbsolutePath(s);
     if (isAbs) return mark(std::string());
 
     while (!s.empty() && s.front() == '\\') s.erase(s.begin());
@@ -282,13 +271,9 @@ std::string ResolveMeMoteIconPath(const MeMote& m) {
         // is a filename, joined to g_IconsDir below.
         std::string base = m.Id;
         if (!base.empty() && base.front() == '/') base.erase(0, 1);
-        std::transform(base.begin(), base.end(), base.begin(),
-                       [](unsigned char c) { return (char)std::tolower(c); });
-        p = base + ".png";
+        p = ToLower(base) + ".png";
     }
-    bool isAbs = (p.size() >= 3 && p[1] == ':' &&
-                  (p[2] == '\\' || p[2] == '/')) ||
-                 (p.size() >= 2 && p[0] == '\\' && p[1] == '\\');
+    bool isAbs = IsAbsolutePath(p);
     if (isAbs) return p;
     if (g_IconsDir.empty()) return p;
     return g_IconsDir + "\\" + p;
@@ -631,129 +616,8 @@ bool IconFileWithinCap(const std::string& path) {
     return ProbeIconFile(path, w, h) == IconProbe::Ok;
 }
 
-// All UI icons (star / paperclip / lock / target_dot) are now sourced
-// from bundled PNGs in resources/ui/, loaded into Nexus' texture cache
-// at addon load time (see LoadUiIconOverrides). The hand-drawn
-// fallbacks that used to live here have been removed: the bundle is
-// shipped with the DLL so it's always available, and a missing PNG
-// would now indicate a build problem rather than a normal case worth
-// catching. If a texture isn't present, we draw nothing rather than
-// falling back to an inferior look - the absence is more obvious and
-// the build problem gets noticed instead of papered over.
-
-void DrawStarIcon(ImVec2 c, float r, ImU32 col) {
-    Texture* tex = APIDefs ? APIDefs->Textures.Get("EMOT3_UI_STAR") : nullptr;
-    if (!tex || !tex->Resource) return;
-    int alpha = (col >> IM_COL32_A_SHIFT) & 0xFF;
-    ImGui::GetWindowDrawList()->AddImage((ImTextureID)tex->Resource,
-        ImVec2(c.x - r, c.y - r),
-        ImVec2(c.x + r, c.y + r),
-        ImVec2(0, 0), ImVec2(1, 1),
-        IM_COL32(255, 255, 255, alpha));
-}
-
-void DrawPaperclipIcon(ImVec2 c, float r, ImU32 col) {
-    Texture* tex = APIDefs ? APIDefs->Textures.Get("EMOT3_UI_PAPERCLIP") : nullptr;
-    if (!tex || !tex->Resource) return;
-    int alpha = (col >> IM_COL32_A_SHIFT) & 0xFF;
-    ImGui::GetWindowDrawList()->AddImage((ImTextureID)tex->Resource,
-        ImVec2(c.x - r, c.y - r),
-        ImVec2(c.x + r, c.y + r),
-        ImVec2(0, 0), ImVec2(1, 1),
-        IM_COL32(255, 255, 255, alpha));
-}
-
-void DrawCollapseArrow(ImVec2 c, float r, bool collapsed, ImU32 col) {
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    if (collapsed) {
-        // Right-pointing (>): content is hidden.
-        dl->AddTriangleFilled(ImVec2(c.x - r * 0.5f, c.y - r),
-                              ImVec2(c.x - r * 0.5f, c.y + r),
-                              ImVec2(c.x + r * 0.7f, c.y), col);
-    } else {
-        // Down-pointing (v): content is shown.
-        dl->AddTriangleFilled(ImVec2(c.x - r, c.y - r * 0.5f),
-                              ImVec2(c.x + r, c.y - r * 0.5f),
-                              ImVec2(c.x, c.y + r * 0.7f), col);
-    }
-}
-
-void DrawTrashIcon(ImVec2 c, float r, ImU32 col, ImDrawList* dl) {
-    if (!dl) dl = ImGui::GetWindowDrawList();
-    float w = r * 1.5f, h = r * 1.8f;
-    float t = std::max(1.f, r * 0.18f);     // stroke thickness
-    ImVec2 b0(c.x - w * 0.5f, c.y - h * 0.30f);   // bin body top-left
-    ImVec2 b1(c.x + w * 0.5f, c.y + h * 0.55f);   // bin body bottom-right
-    dl->AddRect(b0, b1, col, 1.5f, 0, t);                                   // body
-    float lidY = b0.y - t * 1.2f;
-    dl->AddLine(ImVec2(c.x - w * 0.66f, lidY), ImVec2(c.x + w * 0.66f, lidY), col, t);  // lid
-    dl->AddLine(ImVec2(c.x - r * 0.30f, lidY - t * 1.8f),
-                ImVec2(c.x + r * 0.30f, lidY - t * 1.8f), col, t);          // handle
-    dl->AddLine(ImVec2(c.x - w * 0.16f, b0.y + t * 1.5f),
-                ImVec2(c.x - w * 0.16f, b1.y - t * 1.5f), col, t);          // ribs
-    dl->AddLine(ImVec2(c.x + w * 0.16f, b0.y + t * 1.5f),
-                ImVec2(c.x + w * 0.16f, b1.y - t * 1.5f), col, t);
-}
-
-void DrawLockOverlay() {
-    Texture* tex = APIDefs ? APIDefs->Textures.Get("EMOT3_UI_LOCK") : nullptr;
-    if (!tex || !tex->Resource) return;
-    ImVec2 imin = ImGui::GetItemRectMin();
-    ImVec2 imax = ImGui::GetItemRectMax();
-    float w = imax.x - imin.x;
-    float h = imax.y - imin.y;
-    if (w < 8.f || h < 8.f) return;
-    ImVec2 center((imin.x + imax.x) * 0.5f, (imin.y + imax.y) * 0.5f);
-    float sz = std::min(w, h) * 0.55f;
-    ImGui::GetWindowDrawList()->AddImage((ImTextureID)tex->Resource,
-        ImVec2(center.x - sz * 0.5f, center.y - sz * 0.5f),
-        ImVec2(center.x + sz * 0.5f, center.y + sz * 0.5f));
-}
-
-void DrawTargetableDot(float dotSz, float alphaMul) {
-    Texture* tex = APIDefs ? APIDefs->Textures.Get("EMOT3_UI_TARGET") : nullptr;
-    if (!tex || !tex->Resource) return;
-    if (dotSz < 4.f) return;  // below this it's an unreadable speck - skip
-
-    // dotSz is computed by the caller (RenderEmoteCell) from a per-mode
-    // reference, so the dot looks the same size in every view mode and tracks
-    // the icon-scale slider. The dot is anchored to the top-right corner of
-    // the last submitted item (the emote button).
-    //
-    // Pad is the gap from the item's top/right edge: a fraction of the dot,
-    // with a small floor so the dot never hugs the border at small sizes (the
-    // old fraction-only pad glued tiny dots to the corner).
-    ImVec2 imin = ImGui::GetItemRectMin();
-    ImVec2 imax = ImGui::GetItemRectMax();
-    float pad = std::max(2.5f, dotSz * 0.3f);
-
-    ImVec2 mn(imax.x - dotSz - pad, imin.y + pad);
-    ImVec2 mx(mn.x + dotSz, mn.y + dotSz);
-    int a = (int)(255 * alphaMul);
-    ImGui::GetWindowDrawList()->AddImage((ImTextureID)tex->Resource, mn, mx,
-                 ImVec2(0, 0), ImVec2(1, 1),
-                 IM_COL32(255, 255, 255, a));
-}
-
-void DrawMeMoteIndicator(float indSz, float alphaMul) {
-    // /me-motes and IsTargetable are mutually exclusive (the Emote-only
-    // target dot draws via DrawTargetableDot above, which never runs on a
-    // /me-mote cell), so the two indicators share the same top-right anchor.
-    // Sourced from the bundled (or user-overridden) UI icon "me_mote_dot.png"
-    // - drop a PNG under addons/emot3/icons/ui/ to replace it, same path as
-    // every other UI override (see entry.cpp's icons/ui/README.txt).
-    Texture* tex = APIDefs ? APIDefs->Textures.Get("EMOT3_UI_ME_MOTE") : nullptr;
-    if (!tex || !tex->Resource) return;
-    if (indSz < 4.f) return;
-
-    ImVec2 imin = ImGui::GetItemRectMin();
-    ImVec2 imax = ImGui::GetItemRectMax();
-    float pad = std::max(2.5f, indSz * 0.3f);
-
-    ImVec2 mn(imax.x - indSz - pad, imin.y + pad);
-    ImVec2 mx(mn.x + indSz, mn.y + indSz);
-    int a = (int)(255 * alphaMul);
-    ImGui::GetWindowDrawList()->AddImage((ImTextureID)tex->Resource, mn, mx,
-                 ImVec2(0, 0), ImVec2(1, 1),
-                 IM_COL32(255, 255, 255, a));
-}
+// The UI-decoration draw helpers (DrawStarIcon / DrawPaperclipIcon /
+// DrawCollapseArrow / DrawTrashIcon / DrawLockOverlay / DrawTargetableDot /
+// DrawMeMoteIndicator) moved to ui/IconDrawing.{h,cpp}. They were pure ImGui
+// drawing over the EMOT3_UI_* textures with no tie to this file's resolution /
+// texture-cache core.
