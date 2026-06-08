@@ -34,6 +34,109 @@ bool IsRadialMenusInstalled() {
 
 #ifdef EMOT3_PLUS
 
+#include <nlohmann/json.hpp>
+#include <set>
+
+namespace {
+
+using json = nlohmann::json;
+
+bool ReadFileBytes(const std::string& p, std::string& out) {
+    std::ifstream f(p, std::ios::binary);
+    if (!f.is_open()) return false;
+    out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    return true;
+}
+
+bool ParseJson(const std::string& text, json& out) {
+    out = json::parse(text, nullptr, /*allow_exceptions=*/false);
+    return !out.is_discarded();
+}
+
+// emot3's "content fingerprint": the set of bound emote/me-mote identifiers a pack
+// fires (Items[].Actions[].Identifier), order-independent. This is the ONLY thing the
+// sync status compares - everything else in the pack (Scale, SelectionMode, color,
+// position, ...) is RadialMenus' to own once the wheel is deployed.
+std::set<std::string> PackIdentifierSet(const json& j) {
+    std::set<std::string> ids;
+    auto items = j.find("Items");
+    if (items == j.end() || !items->is_array()) return ids;
+    for (const auto& it : *items) {
+        auto acts = it.find("Actions");
+        if (acts == it.end() || !acts->is_array()) continue;
+        for (const auto& a : *acts) {
+            auto id = a.find("Identifier");
+            if (id != a.end() && id->is_string()) ids.insert(id->get<std::string>());
+        }
+    }
+    return ids;
+}
+
+// Keys emot3 authoritatively owns in a deployed pack. On a re-deploy these are taken
+// from the staged pack; EVERY other key (RadialMenus presentation: Scale, IconScale,
+// SelectionMode, HoverTimeout, InnerRadius, colors, position, ItemRotation, ... plus
+// any key RadialMenus adds that we don't know about) is preserved from the deployed
+// copy, so the user's in-RadialMenus customization survives a content re-sync.
+const char* const kEmot3OwnedKeys[] = {
+    "ID", "Name", "FormatRevision", "Items",
+    "emot3_source_category", "emot3_gate", "emot3_group", "emot3_page",
+    "emot3_name", "emot3_partial", "emot3_source_refs",
+};
+
+// Merge-deploy one staged pack into RadialMenus. First deploy (no parseable deployed
+// pack) copies the staged pack verbatim (the wizard's presentation defaults go through).
+// Re-deploy starts from the DEPLOYED json and overwrites only the emot3-owned keys, so
+// RadialMenus presentation is kept. Returns true on success.
+bool MergeDeployPack(const std::string& stagedPath, const std::string& deployedPath) {
+    std::string stagedText;
+    if (!ReadFileBytes(stagedPath, stagedText)) return false;  // nothing staged
+
+    json staged;
+    if (!ParseJson(stagedText, staged) || !staged.is_object())  // staged unreadable
+        return CopyFileA(stagedPath.c_str(), deployedPath.c_str(), FALSE) != 0;
+
+    std::string deployedText;
+    json dep;
+    const bool haveDep = ReadFileBytes(deployedPath, deployedText) &&
+                         ParseJson(deployedText, dep) && dep.is_object();
+    if (!haveDep)  // first deploy: staged pack verbatim (incl. wizard presentation)
+        return CopyFileA(stagedPath.c_str(), deployedPath.c_str(), FALSE) != 0;
+
+    for (const char* k : kEmot3OwnedKeys) {
+        auto sv = staged.find(k);
+        if (sv != staged.end()) dep[k] = *sv;
+        else                    dep.erase(k);
+    }
+    std::string body;
+    try { body = dep.dump(2, ' ', false, json::error_handler_t::replace) + "\n"; }
+    catch (const std::exception&) { return false; }
+    std::ofstream f(deployedPath, std::ios::binary | std::ios::trunc);
+    if (!f.is_open()) return false;
+    f.write(body.data(), (std::streamsize)body.size());
+    return f.good();
+}
+
+// Copy every emot3_<slug>_* icon for one slug from staged into RadialMenus' icons.
+int CopySlugIcons(const std::string& srcIcons, const std::string& dstIcons,
+                  const std::string& slug) {
+    int n = 0;
+    std::string pattern = srcIcons + "\\emot3_" + slug + "_*";
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            std::string fn = fd.cFileName;
+            if (CopyFileA((srcIcons + "\\" + fn).c_str(),
+                          (dstIcons + "\\" + fn).c_str(), FALSE)) ++n;
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    return n;
+}
+
+}  // namespace
+
 RadialDeployResult DeployToRadialMenus() {
     RadialDeployResult res;
     res.available = true;
@@ -50,10 +153,13 @@ RadialDeployResult DeployToRadialMenus() {
     CreateDirectoryA(dstPacks.c_str(), nullptr);
     CreateDirectoryA(dstIcons.c_str(), nullptr);
 
-    // The staged layout already mirrors RadialMenus (radials/packs + radials/icons),
-    // so deploy is just two flat folder copies (everything is slug-named, so nothing
-    // collides in RadialMenus' shared folders).
-    auto copyDir = [](const std::string& srcDir, const std::string& dstDir) -> int {
+    const std::string srcPacks = RadialPacksDir();
+    const std::string srcIcons = RadialIconsDir();
+
+    // Packs are MERGE-deployed (keep each deployed wheel's RadialMenus presentation,
+    // overwrite only the emote content) so a bulk re-deploy doesn't wipe the user's
+    // in-RadialMenus customizations. Icons are emot3-owned content - a flat copy.
+    auto copyIcons = [&](const std::string& srcDir, const std::string& dstDir) -> int {
         int n = 0;
         std::string pattern = srcDir + "\\*";
         WIN32_FIND_DATAA fd;
@@ -72,8 +178,22 @@ RadialDeployResult DeployToRadialMenus() {
         }
         return n;
     };
-    res.packs = copyDir(RadialPacksDir(), dstPacks);
-    res.icons = copyDir(RadialIconsDir(), dstIcons);
+    // Merge each staged pack (*.json) in turn.
+    {
+        std::string pattern = srcPacks + "\\*.json";
+        WIN32_FIND_DATAA fd;
+        HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+                std::string fn = fd.cFileName;
+                if (MergeDeployPack(srcPacks + "\\" + fn, dstPacks + "\\" + fn)) ++res.packs;
+                else LOG_WARNING("radials: deploy failed to merge %s", fn.c_str());
+            } while (FindNextFileA(h, &fd));
+            FindClose(h);
+        }
+    }
+    res.icons = copyIcons(srcIcons, dstIcons);
 
     res.ok = res.packs > 0;
     if (!res.ok && res.error.empty()) res.error = "no wheels to deploy";
@@ -126,20 +246,11 @@ int DeployGroupToRadialMenus(const std::vector<std::string>& slugs) {
     int n = 0;
     for (const auto& slug : slugs) {
         if (slug.empty()) continue;
-        if (CopyFileA((srcPacks + "\\" + slug + ".json").c_str(),
-                      (dstPacks + "\\" + slug + ".json").c_str(), FALSE)) ++n;
-        std::string pattern = srcIcons + "\\emot3_" + slug + "_*";
-        WIN32_FIND_DATAA fd;
-        HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
-        if (h != INVALID_HANDLE_VALUE) {
-            do {
-                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-                std::string fn = fd.cFileName;
-                if (CopyFileA((srcIcons + "\\" + fn).c_str(),
-                              (dstIcons + "\\" + fn).c_str(), FALSE)) ++n;
-            } while (FindNextFileA(h, &fd));
-            FindClose(h);
-        }
+        // Merge the pack (keep RadialMenus presentation, overwrite only emot3 content),
+        // then refresh the slug's icons (emot3-owned).
+        if (MergeDeployPack(srcPacks + "\\" + slug + ".json",
+                            dstPacks + "\\" + slug + ".json")) ++n;
+        n += CopySlugIcons(srcIcons, dstIcons, slug);
     }
     LOG_INFO("radials: synced %d file(s) to RadialMenus", n);
     return n;
@@ -150,20 +261,21 @@ RadialSyncState RadialMenusSyncState(const std::vector<std::string>& slugs) {
     if (rmDir.empty() || slugs.empty()) return RadialSyncState::NotDeployed;
     const std::string stagedDir = RadialPacksDir();
     const std::string rmPacks   = rmDir + "\\packs";
-    auto readFile = [](const std::string& p, std::string& out) -> bool {
-        std::ifstream f(p, std::ios::binary);
-        if (!f.is_open()) return false;
-        out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-        return true;
-    };
     int deployed = 0, diff = 0;
     for (const auto& slug : slugs) {
-        std::string dep;
-        if (!readFile(rmPacks + "\\" + slug + ".json", dep)) continue;  // not deployed
+        std::string depText;
+        if (!ReadFileBytes(rmPacks + "\\" + slug + ".json", depText)) continue;  // not deployed
         ++deployed;
-        std::string staged;
-        readFile(stagedDir + "\\" + slug + ".json", staged);
-        if (dep != staged) ++diff;
+        std::string stagedText;
+        json dep, staged;
+        const bool depOk    = ParseJson(depText, dep);
+        const bool stagedOk = ReadFileBytes(stagedDir + "\\" + slug + ".json", stagedText) &&
+                              ParseJson(stagedText, staged);
+        // Compare ONLY the emote/me-mote content (PackIdentifierSet), so the user's
+        // RadialMenus presentation tweaks never read as out of date. Treat a parse
+        // failure on either side as differing (safest - prompts a re-sync).
+        if (!depOk || !stagedOk || PackIdentifierSet(dep) != PackIdentifierSet(staged))
+            ++diff;
     }
     if (deployed == 0)                                  return RadialSyncState::NotDeployed;
     if (diff > 0 || deployed != (int)slugs.size())      return RadialSyncState::OutOfDate;

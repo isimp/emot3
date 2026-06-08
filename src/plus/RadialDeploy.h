@@ -58,12 +58,19 @@ bool RadialMenusHasPack(const std::string& slug);
 // touching another addon's folder is a +plus-only action.
 int RemoveFromRadialMenus(const std::vector<std::string>& slugs);
 
-// +plus: (re)copy just the given page slugs' pack + icons into RadialMenus,
-// overwriting. Returns files copied. Used by the per-wheel Sync button. Base: no-op (0).
+// +plus: (re)deploy the given page slugs' pack + icons into RadialMenus. The pack is
+// MERGE-deployed: a first deploy writes emot3's staged pack whole (wizard presentation
+// included); a re-deploy keeps the deployed wheel's RadialMenus presentation (Scale,
+// SelectionMode, color, position, ... and any key we don't know about) and overwrites
+// only the emot3-owned content (the emote items + emot3_* markers + ID/Name). Icons are
+// emot3-owned content and overwritten. Returns files written. Used by the per-wheel
+// Sync button. Base: no-op (0).
 int DeployGroupToRadialMenus(const std::vector<std::string>& slugs);
 
-// +plus: compare the given group's staged packs to the deployed copies in RadialMenus
-// (byte compare of each <slug>.json). Drives the per-wheel sync status. Base build:
-// always NotDeployed (it never deploys). Reads files - call from the cached status
-// refresh, not per frame.
+// +plus: how the given group's deployed wheels compare to the staged copies. Compares
+// ONLY the emote/me-mote CONTENT each wheel fires (the set of bound identifiers,
+// order-independent) - NOT presentation. So customizing a wheel inside RadialMenus
+// (scale, selection mode, color, position, ...) never reads as out of date; only adding/
+// removing/swapping an emote in emot3 does. Base build: always NotDeployed (never
+// deploys). Reads + parses files - call from the cached status refresh, not per frame.
 RadialSyncState RadialMenusSyncState(const std::vector<std::string>& slugs);
