@@ -119,8 +119,13 @@ json BuildItem(const std::string& itemName, const std::string& identifier,
 
 // Write radials/packs/<slug>.json + radials/icons/emot3_<slug>_* for one wheel
 // (the shared packs/ + icons/ layout that mirrors RadialMenus).
+// `name` is the per-page pack Name shown in RadialMenus ("Greetings (1)"); `baseName`
+// is the logical export name ("Greetings") stored in emot3_name so the grouped UI can
+// recover it without parsing the "(N)" suffix.
 bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
-                   const std::string& sourceCategory, bool partial,
+                   const std::string& baseName,
+                   const std::string& sourceCategory, const std::string& group,
+                   int page, bool partial,
                    const std::vector<RadialItemRef>& items,
                    const RadialWheelOptions& opt) {
     if (g_RadialsDir.empty()) return false;
@@ -138,7 +143,10 @@ bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
     j["SelectionMode"]         = opt.SelectionMode;                        // required: default None -> no commit path
     j["emot3_source_category"] = sourceCategory;                          // drift marker
     j["emot3_gate"]            = opt.GateByState;                         // recover the gate toggle on rescan
-    if (partial) j["emot3_partial"] = true;                              // subset / split: judge drift leniently
+    j["emot3_group"]           = group;                                  // shared across a split's pages
+    j["emot3_page"]            = page;                                   // 1-based page index
+    j["emot3_name"]            = baseName;                               // logical export name (no "(N)")
+    if (partial) j["emot3_partial"] = true;                              // subset: judge drift leniently
     if (opt.Scale != 1.0f)       j["Scale"]               = opt.Scale;      // user-changed only
     if (opt.IconScale != 1.0f)   j["IconScale"]           = opt.IconScale;
     if (opt.ShowItemNameTooltip) j["ShowItemNameTooltip"] = true;
@@ -188,10 +196,10 @@ bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
     return true;
 }
 
-// Allocate a unique slug from a name, skipping packs already on disk and slugs already
-// reserved in this batch.
-std::string AllocSlug(const std::string& name, const std::vector<std::string>& reserved) {
-    std::string base = SanitizeFilename(name, "wheel");
+// Allocate a unique page slug, skipping packs on disk and slugs reserved in this
+// batch (page slugs are <group> for one page, <group>_<n> for a split).
+std::string AllocSlug(const std::string& desired, const std::vector<std::string>& reserved) {
+    std::string base = SanitizeFilename(desired, "wheel");
     return MakeUniqueSlug(base, [&](const std::string& s) {
         if (RadialSlugInUse(s)) return true;
         for (const auto& r : reserved) if (r == s) return true;
@@ -199,52 +207,51 @@ std::string AllocSlug(const std::string& name, const std::vector<std::string>& r
     });
 }
 
-}  // namespace
+// Allocate a unique GROUP id from a name (free as both a group and a pack stem).
+// `exclude` (the group being renamed) is treated as free, so a rename that re-slugs
+// to the same id keeps it.
+std::string AllocGroupSlug(const std::string& name, const std::string& exclude = "") {
+    return MakeUniqueSlug(SanitizeFilename(name, "wheel"),
+        [&](const std::string& s) {
+            if (s == exclude) return false;
+            return RadialGroupInUse(s) || RadialSlugInUse(s);
+        });
+}
 
-RadialExportResult ExportCategoryAsWheels(const std::string& sourceCategory,
-                                          const std::string& baseName,
-                                          const std::vector<RadialItemRef>& items,
-                                          const RadialWheelOptions& options,
-                                          bool autoSplit) {
-    RadialExportResult res;
-    if (g_RadialsDir.empty()) { res.error = "radials dir unset"; return res; }
-    const int cap = CapacityFor(options);
-
-    // Is this a full mirror of the category, or a deliberate subset? Full = exactly
-    // one item per category ref, all Default variant. Anything else (fewer items, a
-    // non-Default /me-mote variant, a duplicate, or an auto-split below) is partial,
-    // which the status drift-check then judges leniently.
+// Is `pages`' union a full 1:1 default mirror of the category? If not it's a subset
+// (drift judged leniently). Counts the distinct refs across all pages.
+bool ComputePartial(const std::string& category,
+                    const std::vector<std::vector<RadialItemRef>>& pages) {
     int fullCount = 0;
     for (const auto& fc : g_Settings.FavoriteCategories)
-        if (fc.Name == sourceCategory) { fullCount = (int)fc.Refs.size(); break; }
-    bool partialSel = ((int)items.size() != fullCount);
-    if (!partialSel)
-        for (const auto& it : items)
-            if (it.Variant != EMeMoteVariant::Default) { partialSel = true; break; }
-
-    // Partition into wheels: split into cap-sized chunks when over capacity and
-    // autoSplit, else a single (defensively truncated) wheel.
-    std::vector<std::vector<RadialItemRef>> chunks;
-    if (autoSplit && (int)items.size() > cap) {
-        for (size_t i = 0; i < items.size(); i += cap)
-            chunks.emplace_back(items.begin() + i,
-                                items.begin() + std::min(items.size(), i + (size_t)cap));
-    } else {
-        std::vector<RadialItemRef> one = items;
-        if ((int)one.size() > cap) one.resize(cap);  // defensive; wizard prevents this
-        chunks.push_back(std::move(one));
+        if (fc.Name == category) { fullCount = (int)fc.Refs.size(); break; }
+    size_t total = 0;
+    for (const auto& pg : pages) {
+        total += pg.size();
+        for (const auto& it : pg)
+            if (it.Variant != EMeMoteVariant::Default) return true;  // non-default variant
     }
+    return (int)total != fullCount;
+}
 
-    const bool multi = chunks.size() > 1;
+// Write all pages of a group `group` (already allocated/free). Rescans + binds.
+RadialExportResult WriteGroupPages(const std::string& group, const std::string& baseName,
+                                   const std::string& category,
+                                   const std::vector<std::vector<RadialItemRef>>& pages,
+                                   const RadialWheelOptions& options, bool partial) {
+    RadialExportResult res;
+    const bool multi = pages.size() > 1;
     std::vector<int>         reservedIds;
     std::vector<std::string> reservedSlugs;
-    for (size_t ci = 0; ci < chunks.size(); ++ci) {
-        const std::string name = multi ? baseName + " (" + std::to_string(ci + 1) + ")"
-                                       : baseName;
-        const std::string slug = AllocSlug(name, reservedSlugs);
-        const int         id   = NextFreeRadialId(reservedIds);
-        const bool        partial = multi || partialSel;  // each split piece is partial too
-        if (!WriteOneWheel(slug, id, name, sourceCategory, partial, chunks[ci], options)) {
+    for (size_t p = 0; p < pages.size(); ++p) {
+        const int page = (int)p + 1;
+        const std::string desired = multi ? group + "_" + std::to_string(page) : group;
+        const std::string slug    = AllocSlug(desired, reservedSlugs);
+        const int         id      = NextFreeRadialId(reservedIds);
+        const std::string name    = multi ? baseName + " (" + std::to_string(page) + ")"
+                                          : baseName;
+        if (!WriteOneWheel(slug, id, name, baseName, category, group, page, partial,
+                           pages[p], options)) {
             res.error = "write failed";
             break;
         }
@@ -254,59 +261,65 @@ RadialExportResult ExportCategoryAsWheels(const std::string& sourceCategory,
         res.names.push_back(std::string(kRadialPackNamePrefix) + name);
         ++res.wheelsWritten;
     }
-
-    LoadRadialExports();  // rescan to pick up the new subfolder(s)
+    LoadRadialExports();  // rescan to pick up the new packs
     SyncEmoteBinds();     // register the new wheel refs' binds
-    res.ok = res.wheelsWritten > 0 && res.error.empty();
+    res.ok = res.wheelsWritten == (int)pages.size() && res.error.empty();
     return res;
 }
 
-bool ReExportWheel(const std::string& slug, int id, const std::string& name,
-                   const std::string& sourceCategory, bool partial,
-                   const std::vector<RadialItemRef>& items,
-                   const RadialWheelOptions& options) {
-    // Clear stale pack + icons (a removed ref's icon would otherwise linger), then
-    // rewrite from scratch under the same slug + id.
-    RemoveRadialFiles(slug);
-    bool ok = WriteOneWheel(slug, id, name, sourceCategory, partial, items, options);
-    LoadRadialExports();
-    SyncEmoteBinds();
-    return ok;
+}  // namespace
+
+RadialExportResult ExportGroup(const std::string& sourceCategory,
+                               const std::string& baseName,
+                               const std::vector<std::vector<RadialItemRef>>& pages,
+                               const RadialWheelOptions& options) {
+    RadialExportResult res;
+    if (g_RadialsDir.empty() || pages.empty()) { res.error = "nothing to export"; return res; }
+    const bool partial = ComputePartial(sourceCategory, pages);
+    const std::string group = AllocGroupSlug(baseName);
+    return WriteGroupPages(group, baseName, sourceCategory, pages, options, partial);
 }
 
-bool RenameWheel(const std::string& oldSlug, const std::string& newName) {
-    // Snapshot the existing wheel from the in-memory record.
-    RadialExport w;
-    bool found = false;
-    {
-        std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
-        for (const auto& e : g_RadialExports)
-            if (e.Slug == oldSlug) { w = e; found = true; break; }
+RadialExportResult EditGroup(const std::string& group, const std::string& sourceCategory,
+                             const std::string& baseName,
+                             const std::vector<std::vector<RadialItemRef>>& pages,
+                             const RadialWheelOptions& options) {
+    RadialExportResult res;
+    if (g_RadialsDir.empty() || group.empty() || pages.empty()) {
+        res.error = "nothing to export";
+        return res;
     }
-    if (!found) return false;
-
-    const std::string newSlug = MakeUniqueSlug(
-        SanitizeFilename(newName, "wheel"),
-        [&](const std::string& s) { return s != oldSlug && RadialSlugInUse(s); });
-
-    if (newSlug == oldSlug) {
-        // Same slug -> rewrite the pack Name in place (refs unchanged, no bind sync).
-        bool ok = WriteOneWheel(oldSlug, w.Id, newName, w.SourceCategory, w.Partial,
-                                w.Items, w.Options);
-        LoadRadialExports();
-        return ok;
-    }
-    bool ok = WriteOneWheel(newSlug, w.Id, newName, w.SourceCategory, w.Partial,
-                            w.Items, w.Options);
-    if (ok) RemoveRadialFiles(oldSlug);
-    LoadRadialExports();
-    SyncEmoteBinds();
-    return ok;
+    const bool partial = ComputePartial(sourceCategory, pages);
+    // Clear the group's current packs + icons, then rewrite fresh under the same group
+    // (page menu ids reassigned). RemoveRadialGroup reads the page set in memory, so do
+    // it before the rescan inside WriteGroupPages.
+    RemoveRadialGroup(group);
+    return WriteGroupPages(group, baseName, sourceCategory, pages, options, partial);
 }
 
-bool RemoveWheel(const std::string& slug) {
-    bool ok = RemoveRadialFiles(slug);
+bool RenameGroup(const std::string& group, const std::string& newName) {
+    // Snapshot the group's pages from the in-memory record (sorted by page).
+    std::vector<RadialExport> pagesIn = WheelsInGroup(group);
+    if (pagesIn.empty()) return false;
+
+    std::vector<std::vector<RadialItemRef>> pages;
+    for (const auto& pg : pagesIn) pages.push_back(pg.Items);
+    const RadialWheelOptions opts = pagesIn.front().Options;
+    const std::string category    = pagesIn.front().SourceCategory;
+    const bool partial            = pagesIn.front().Partial;
+
+    // Re-slug (keeping the same id if the new name slugs to it), free the old packs,
+    // then write fresh under the new group/name. Remove-before-write so a re-slug to
+    // the SAME id reuses its now-free page slugs (like EditGroup).
+    const std::string newGroup = AllocGroupSlug(newName, group);
+    RemoveRadialGroup(group);
+    RadialExportResult res = WriteGroupPages(newGroup, newName, category, pages, opts, partial);
+    return res.ok;
+}
+
+bool RemoveGroup(const std::string& group) {
+    bool ok = RemoveRadialGroup(group);
     LoadRadialExports();
-    SyncEmoteBinds();  // drop the wheel's radial-only binds (user binds persist)
+    SyncEmoteBinds();  // drop the group's radial-only binds (personal binds persist)
     return ok;
 }

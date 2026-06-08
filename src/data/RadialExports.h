@@ -51,17 +51,21 @@ struct RadialWheelOptions {
     bool  GateByState         = true;   // write per-item Visibility can't-emote conditions
 };
 
-// One exported wheel == one radials/<Slug>/ subfolder. Rebuilt by scanning, so
-// there's no separate persistence of this struct.
+// One PACK == one entry here (the scan stays flat). A logical export is a GROUP of
+// one or more pages that share `Group`; the UI/ops aggregate by Group. Rebuilt by
+// scanning, so there's no separate persistence of this struct.
 struct RadialExport {
-    std::string Slug;            // subfolder name == pack file stem
+    std::string Slug;            // pack file stem (radials/packs/<Slug>.json)
     std::string Name;            // user-facing name (pack "Name" minus the "emot3: " prefix)
     std::string SourceCategory;  // emot3_source_category marker (favorites category of origin)
+    std::string Group;           // emot3_group marker - shared across a split's pages
+                                 // (defaults to Slug for a single-page / hand-made pack)
+    int         Page = 1;        // emot3_page - 1-based page index within the group
     int         Id = 0;          // RadialMenus menu ID (>= 90001)
     RadialWheelOptions          Options;
     std::vector<RadialItemRef>  Items;
-    bool        Partial    = false;  // a deliberate subset / auto-split (not a full mirror of
-                                     // the category) - drift is judged leniently for these
+    bool        Partial    = false;  // a deliberate subset (not a full mirror of the
+                                     // category) - drift is judged leniently for these
     bool        ParseError = false;  // pack present but unreadable (shown as a broken row)
 };
 
@@ -84,23 +88,29 @@ std::string RadialIconsDir();
 // is set) and after any mutation. Tolerant of missing/malformed packs.
 void LoadRadialExports();
 
-// Favorites categories that already have >= 1 exported wheel (so the wizard's
-// category combo can hide them). Case-sensitive on SourceCategory.
-std::vector<std::string> ExportedSourceCategories();
+// All packs belonging to one logical export, sorted by Page. Empty if none.
+std::vector<RadialExport> WheelsInGroup(const std::string& group);
 
-// Names of the wheel(s) referencing (type,id) in ANY variant — drives the catalog
+// Names of the logical export(s) referencing (type,id) in ANY variant, DEDUPED by
+// group (so a split that holds the ref on two pages counts once) — drives the catalog
 // editors' "active via radial 'X'" note. Empty when none.
 std::vector<std::string> RadialWheelsContaining(EFavoriteRefType type,
                                                 const std::string& id);
 
-// Lowest unused menu ID >= 90001 across current wheels, also skipping any ids in
-// `alsoReserved` (for assigning several ids in one multi-wheel split).
+// Lowest unused menu ID >= 90001 across current packs, also skipping any ids in
+// `alsoReserved` (for assigning several page ids in one export).
 int NextFreeRadialId(const std::vector<int>& alsoReserved);
 
-// True if a radials/<slug>/ subfolder already exists (slug-uniqueness probe).
+// True if a pack with this stem already exists (page-slug uniqueness probe).
 bool RadialSlugInUse(const std::string& slug);
+// True if any pack already uses this group id (group-slug uniqueness probe).
+bool RadialGroupInUse(const std::string& group);
 
-// Delete a wheel's staged files: radials/packs/<slug>.json + every
+// Delete one pack's staged files: radials/packs/<slug>.json + every
 // radials/icons/emot3_<slug>_* PNG (the slug-prefixed naming makes this exact). Pure
 // filesystem; the caller rescans + re-syncs binds. Missing files count as success.
 bool RemoveRadialFiles(const std::string& slug);
+
+// Delete every pack in a logical export (all pages, each via RemoveRadialFiles),
+// reading the page set from g_RadialExports. Caller rescans + re-syncs binds.
+bool RemoveRadialGroup(const std::string& group);

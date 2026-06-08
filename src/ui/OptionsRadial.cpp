@@ -6,7 +6,7 @@
 #include "EmoteData.h"      // g_Emotes, g_EmotesMutex, FindEmote
 #include "MeMotes.h"        // g_MeMotes, g_MeMotesMutex, FindMeMote, EMeMoteVariant
 #include "RadialExports.h"  // record + read helpers
-#include "RadialExport.h"   // ExportCategoryAsWheels / ReExportWheel / RenameWheel / RemoveWheel
+#include "RadialExport.h"   // ExportGroup / EditGroup / RenameGroup / RemoveGroup
 #include "Icons.h"          // EnsureEmoteTexture / EnsureMeMoteTexture (wizard thumbnails)
 #include "Layout.h"         // Ellipsize, PushInvalidInputStyle / DrawInvalidInputBorder
 #include "RadialDeploy.h"   // IsRadialMenusInstalled / RadialMenusDir / DeployToRadialMenus
@@ -53,36 +53,59 @@ const ImVec4 kRed  (1.00f, 0.45f, 0.40f, 1.0f);
 struct WizItem {
     RadialItemRef ref;            // Type/Id/Variant
     bool          include = false;
+    int           page = 1;       // which wheel page this item lands on (1-based)
     bool          isMeMote = false;
     bool          autoTarget = false;   // emote @ auto-target hint
     std::string   name;                 // display name (variant suffix already applied)
 };
 bool                  s_wizActive = false;   // form is open (drives BeginPopupModal)
+bool                  s_wizOpenRequested = false;  // OpenPopup deferred to top-level scope
 int                   s_wizPhase  = 0;        // 0 = form, 1 = done
 std::string           s_wizCategory;
 char                  s_wizName[128] = {};
 std::vector<WizItem>  s_wizItems;
 RadialWheelOptions    s_wizOpt;
-bool                  s_wizAutoSplit = false;
+int                   s_wizPageCount = 1;     // number of wheel pages (split)
 RadialExportResult    s_wizResult;
-// Edit mode: when s_wizEditSlug is non-empty the wizard re-opens an EXISTING wheel
-// (seeded from its source category with its last selection + options) and writes
-// back in place; empty = creating a new wheel.
-std::string           s_wizEditSlug;
-int                   s_wizEditId = 0;
+// Edit mode: when s_wizEditGroup is non-empty the wizard re-opens an EXISTING logical
+// export (seeded from its category with its last selection + page layout + options)
+// and writes back under the same group; empty = creating a new one.
+std::string           s_wizEditGroup;
 
 // Inline deploy feedback (no Nexus toast for a routine in-tab action; see RenderRadialTab).
 std::string s_deployMsg;
 bool        s_deployOk = false;
 
-// rename inline edit
-std::string s_renameSlug;       // slug being renamed ("" = none)
+// rename inline edit (keyed on a group id; "" = none)
+std::string s_renameGroup;
 char        s_renameBuf[128] = {};
 
 int IncludedCount() {
     int n = 0;
     for (const auto& w : s_wizItems) if (w.include) ++n;
     return n;
+}
+int RadialCap() { return s_wizOpt.Small ? kRadialCapSmall : kRadialCapNormal; }
+
+// Count included items assigned to a given 1-based page.
+int PageCount(int page) {
+    int n = 0;
+    for (const auto& w : s_wizItems) if (w.include && w.page == page) ++n;
+    return n;
+}
+
+// Distribute included items across pages in order, filling each to capacity.
+void AutoFillPages() {
+    const int cap = RadialCap();
+    int idx = 0;
+    for (auto& w : s_wizItems) {
+        if (!w.include) continue;
+        w.page = (idx / cap) + 1;
+        ++idx;
+    }
+    int need = (idx + cap - 1) / cap;
+    if (need < 1) need = 1;
+    s_wizPageCount = std::max(s_wizPageCount, need);
 }
 
 // Tooltip for the item just submitted (keyed i18n).
@@ -155,43 +178,51 @@ void SeedWizardFromCategory(const std::string& category) {
     }
 }
 
-// Create a NEW wheel from a category (full default selection).
+// OpenPopup must run at the top-level ID scope (not inside a row's PushID), so the
+// entry points just set state + request; RenderRadialTab fires the actual OpenPopup.
+void RequestWizardOpen() { s_wizActive = true; s_wizOpenRequested = true; }
+
+// Create a NEW logical export from a category (full default selection, one page).
 void OpenWizard(const std::string& category) {
     s_wizOpt = RadialWheelOptions{};   // defaults (Normal, ReleaseOrClick, gate on, icon 0.8)
-    s_wizAutoSplit = false;
+    s_wizPageCount = 1;
     s_wizPhase = 0;
     s_wizResult = RadialExportResult{};
-    s_wizEditSlug.clear();
-    s_wizEditId = 0;
-    SeedWizardFromCategory(category);
+    s_wizEditGroup.clear();
+    SeedWizardFromCategory(category);     // all rows default page = 1
     std::snprintf(s_wizName, sizeof(s_wizName), "%s", category.c_str());
-    s_wizActive = true;
-    ImGui::OpenPopup("###radialwizard");
+    RequestWizardOpen();
 }
 
-// EDIT an existing wheel: re-open the same dialog seeded from its source category, with
-// the wheel's last selection (items + /me-mote variants) and options pre-applied, so the
-// user reconfigures and writes back in place. Seeding from the FULL category (not just
-// the wheel's subset) is what lets a split/subset wheel pull items back in.
-void OpenWizardForEdit(const RadialExport& w) {
-    s_wizOpt = w.Options;
-    s_wizAutoSplit = false;
+// EDIT an existing logical export (group): re-open the dialog seeded from its source
+// category, with the export's selection, per-item PAGE assignment, and options
+// pre-applied, so the user reconfigures and writes back under the same group. Seeding
+// from the FULL category (not just the export's subset) is what lets it pull items back.
+void OpenWizardForEdit(const std::string& group) {
+    std::vector<RadialExport> pages = WheelsInGroup(group);  // sorted by Page
+    if (pages.empty()) return;
+    s_wizOpt   = pages.front().Options;
     s_wizPhase = 0;
     s_wizResult = RadialExportResult{};
-    s_wizEditSlug = w.Slug;
-    s_wizEditId   = w.Id;
-    SeedWizardFromCategory(w.SourceCategory);
-    // Apply the wheel's selection: a row is checked iff (type,id,variant) is in w.Items.
+    s_wizEditGroup = group;
+    s_wizPageCount = (int)pages.size();
+    SeedWizardFromCategory(pages.front().SourceCategory);
+    // For each row, find which page holds its (type,id,variant); checked iff present.
     for (auto& row : s_wizItems) {
-        bool inWheel = false;
-        for (const auto& it : w.Items)
-            if (it.Type == row.ref.Type && it.Id == row.ref.Id &&
-                it.Variant == row.ref.Variant) { inWheel = true; break; }
-        row.include = inWheel;
+        row.include = false;
+        for (const auto& pg : pages) {
+            for (const auto& it : pg.Items)
+                if (it.Type == row.ref.Type && it.Id == row.ref.Id &&
+                    it.Variant == row.ref.Variant) {
+                    row.include = true;
+                    row.page    = pg.Page;
+                    break;
+                }
+            if (row.include) break;
+        }
     }
-    std::snprintf(s_wizName, sizeof(s_wizName), "%s", w.Name.c_str());
-    s_wizActive = true;
-    ImGui::OpenPopup("###radialwizard");
+    std::snprintf(s_wizName, sizeof(s_wizName), "%s", pages.front().Name.c_str());
+    RequestWizardOpen();
 }
 
 // Small icon thumbnail for a wizard row; falls back to a "(no icon)" tag.
@@ -219,7 +250,7 @@ void RenderWizard() {
                             ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(460, 320), ImVec2(720, 760));
 
-    const bool editing = !s_wizEditSlug.empty();
+    const bool editing = !s_wizEditGroup.empty();
     std::string title = std::string(L(editing ? "opt.radial.edit_title"
                                                : "opt.radial.wizard_title")) +
                         " '" + (editing ? std::string(s_wizName) : s_wizCategory) +
@@ -264,8 +295,20 @@ void RenderWizard() {
     }
 
     // ---- form ----
-    const int cap = s_wizOpt.Small ? kRadialCapSmall : kRadialCapNormal;
+    const int cap = RadialCap();
     const int included = IncludedCount();
+
+    // Keep page count feasible: at least ceil(included/cap), never more pages than
+    // items. Clamp each item into the valid page range (e.g. after a Pages "-").
+    const int minPages = std::max(1, (included + cap - 1) / cap);
+    const int maxPages = std::max(minPages, included);
+    if (s_wizPageCount < minPages) s_wizPageCount = minPages;
+    if (s_wizPageCount > maxPages) s_wizPageCount = maxPages;
+    for (auto& w : s_wizItems) {
+        if (w.page < 1) w.page = 1;
+        if (w.page > s_wizPageCount) w.page = s_wizPageCount;
+    }
+    const bool split = s_wizPageCount > 1;
 
     // Wheel name (validated non-empty)
     ImGui::TextUnformatted(L("opt.radial.name_label"));
@@ -275,7 +318,7 @@ void RenderWizard() {
     ImGui::InputText("##radialname", s_wizName, sizeof(s_wizName));
     if (nameEmpty) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
 
-    // Items (bordered scroll child)
+    // Items (bordered scroll child). When split, each included row gets a page combo.
     ImGui::Spacing();
     ImGui::TextUnformatted(L("opt.radial.items_label"));
     ImGui::BeginChild("##radialitems", ImVec2(0, 220), true);
@@ -288,28 +331,59 @@ void RenderWizard() {
         DrawThumb(w, thumb);
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(Ellipsize(w.name, 240.0f).c_str());
+        ImGui::TextUnformatted(Ellipsize(w.name, split ? 180.0f : 240.0f).c_str());
         if (w.autoTarget) {
             ImGui::SameLine();
             ImGui::TextColored(kAmber, "%s", L("opt.radial.auto_target"));
+        }
+        if (split && w.include) {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(64.0f);
+            std::string cur = std::string(L("opt.radial.page_col")) + " " + std::to_string(w.page);
+            if (ImGui::BeginCombo("##pg", cur.c_str())) {
+                for (int p = 1; p <= s_wizPageCount; ++p) {
+                    std::string lbl = std::string(L("opt.radial.page_col")) + " " + std::to_string(p);
+                    if (ImGui::Selectable(lbl.c_str(), w.page == p)) w.page = p;
+                }
+                ImGui::EndCombo();
+            }
         }
         ImGui::PopID();
     }
     ImGui::EndChild();
 
-    // Capacity readout + split / count warnings
+    // Pages controls: stepper + auto-fill + per-page fill readout.
+    bool anyOver = false, anyEmpty = false;
     {
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "%d / %d", included, cap);
-        bool over = included > cap;
-        ImGui::TextColored(over ? kAmber : ImGui::GetStyleColorVec4(ImGuiCol_Text),
-                           "%s %s", L("opt.radial.capacity"), buf);
-        if (over) {
-            ImGui::SameLine();
-            ImGui::Checkbox(L("opt.radial.auto_split"), &s_wizAutoSplit);
-            if (!s_wizAutoSplit)
-                ImGui::TextColored(kAmber, "%s", L("opt.radial.over_cap"));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(L("opt.radial.pages"));
+        ImGui::SameLine();
+        if (s_wizPageCount <= minPages) BeginDisabledCompat();
+        if (ImGui::Button("-##pages") && s_wizPageCount > minPages) {
+            --s_wizPageCount;
+            for (auto& w : s_wizItems) if (w.page > s_wizPageCount) w.page = s_wizPageCount;
         }
+        if (s_wizPageCount <= minPages) EndDisabledCompat();
+        ImGui::SameLine();
+        ImGui::Text("%d", s_wizPageCount);
+        ImGui::SameLine();
+        if (s_wizPageCount >= maxPages) BeginDisabledCompat();
+        if (ImGui::Button("+##pages") && s_wizPageCount < maxPages) ++s_wizPageCount;
+        if (s_wizPageCount >= maxPages) EndDisabledCompat();
+        ImGui::SameLine();
+        if (ImGui::Button(L("opt.radial.autofill"))) AutoFillPages();
+
+        for (int p = 1; p <= s_wizPageCount; ++p) {
+            const int c = PageCount(p);
+            const bool bad = (c > cap) || (c == 0);
+            if (bad) anyOver  = anyOver  || c > cap;
+            if (c == 0) anyEmpty = true;
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), L("opt.radial.page_fill"), p, c, cap);
+            ImGui::TextColored(bad ? kAmber : ImGui::GetStyleColorVec4(ImGuiCol_Text),
+                               "%s", buf);
+        }
+        if (anyOver)  ImGui::TextColored(kAmber, "%s", L("opt.radial.page_over"));
         if (included == 1) ImGui::TextColored(kAmber, "%s", L("opt.radial.warn_one"));
         if (included == 0) ImGui::TextColored(kRed,   "%s", L("opt.radial.warn_zero"));
     }
@@ -359,8 +433,7 @@ void RenderWizard() {
     // Buttons (bottom-right)
     ImGui::Spacing();
     ImGui::Separator();
-    const bool canExport = !nameEmpty && included >= 1 &&
-                           (included <= cap || s_wizAutoSplit);
+    const bool canExport = !nameEmpty && included >= 1 && !anyOver && !anyEmpty;
     RightAlignButtons(120.0f, 2);
     if (ImGui::Button(L("common.cancel"), ImVec2(120, 0))) {
         s_wizActive = false;
@@ -370,34 +443,13 @@ void RenderWizard() {
     if (!canExport) BeginDisabledCompat();
     const char* exportLbl = editing ? L("common.save") : L("opt.radial.export_confirm");
     if (ImGui::Button(exportLbl, ImVec2(120, 0)) && canExport) {
-        std::vector<RadialItemRef> items;
-        for (const auto& w : s_wizItems) if (w.include) items.push_back(w.ref);
-        const bool willSplit = s_wizAutoSplit && (int)items.size() > cap;
-        if (editing && !willSplit) {
-            // In-place single-wheel edit: keep this wheel's slug + id. Partial when it
-            // isn't a 1:1 default mirror of the category (matches ExportCategoryAsWheels).
-            int catCount = 0;
-            for (const auto& fc : g_Settings.FavoriteCategories)
-                if (fc.Name == s_wizCategory) { catCount = (int)fc.Refs.size(); break; }
-            bool partial = ((int)items.size() != catCount);
-            if (!partial)
-                for (const auto& it : items)
-                    if (it.Variant != EMeMoteVariant::Default) { partial = true; break; }
-            bool ok = ReExportWheel(s_wizEditSlug, s_wizEditId, s_wizName, s_wizCategory,
-                                    partial, items, s_wizOpt);
-            s_wizResult = RadialExportResult{};
-            s_wizResult.ok = ok;
-            s_wizResult.wheelsWritten = ok ? 1 : 0;
-            if (ok) {
-                s_wizResult.ids.push_back(s_wizEditId);
-                s_wizResult.names.push_back(std::string(kRadialPackNamePrefix) + s_wizName);
-            }
-        } else {
-            // New export, or an edit that grew past capacity -> replace with a (split) set.
-            if (editing) RemoveWheel(s_wizEditSlug);
-            s_wizResult = ExportCategoryAsWheels(s_wizCategory, s_wizName, items, s_wizOpt,
-                                                 s_wizAutoSplit);
-        }
+        // Partition included items into pages by their assigned page number.
+        std::vector<std::vector<RadialItemRef>> pages(s_wizPageCount);
+        for (const auto& w : s_wizItems)
+            if (w.include) pages[w.page - 1].push_back(w.ref);
+        if (editing) s_wizResult = EditGroup(s_wizEditGroup, s_wizCategory, s_wizName,
+                                             pages, s_wizOpt);
+        else         s_wizResult = ExportGroup(s_wizCategory, s_wizName, pages, s_wizOpt);
         RefreshStatus();
         s_wizPhase = 1;  // -> done panel (modal stays open)
     }
@@ -406,44 +458,50 @@ void RenderWizard() {
     ImGui::EndPopup();
 }
 
-// Rebuild a wheel's ref list from its current source category (for Re-export),
-// preserving the variant of refs already in the wheel; new /me-mote refs default.
-std::vector<RadialItemRef> ResnapshotCategory(const RadialExport& w) {
-    std::vector<RadialItemRef> out;
-    const FavoriteCategory* cat = nullptr;
-    for (const auto& fc : g_Settings.FavoriteCategories)
-        if (fc.Name == w.SourceCategory) { cat = &fc; break; }
-    if (!cat) return out;
-    for (const auto& ref : cat->Refs) {
-        RadialItemRef r;
-        r.Type = ref.Type;
-        r.Id   = ref.Id;
-        r.Variant = EMeMoteVariant::Default;
-        for (const auto& old : w.Items)
-            if (old.Type == ref.Type && old.Id == ref.Id) { r.Variant = old.Variant; break; }
-        out.push_back(std::move(r));
-    }
-    return out;
-}
-
-// Is (type,id) still present in this wheel's source category?
-bool CategoryHasRef(const RadialExport& w, const RadialItemRef& r) {
+// Is (type,id) still present in `category`?
+bool CategoryHasRefId(const std::string& category, EFavoriteRefType type,
+                      const std::string& id) {
     for (const auto& fc : g_Settings.FavoriteCategories) {
-        if (fc.Name != w.SourceCategory) continue;
+        if (fc.Name != category) continue;
         for (const auto& ref : fc.Refs)
-            if (ref.Type == r.Type && ref.Id == r.Id) return true;
+            if (ref.Type == type && ref.Id == id) return true;
         return false;
     }
     return false;
 }
 
-// Does re-exporting this wheel change it? Full wheels must match a fresh category
-// snapshot exactly; partial (subset / auto-split) wheels only drift when one of
-// their refs left the category (additions / order don't matter - the subset is
-// deliberate). Caller guarantees the source category exists.
-bool WheelDrift(const RadialExport& w) {
-    if (!w.Partial) return w.Items != ResnapshotCategory(w);
-    for (const auto& it : w.Items) if (!CategoryHasRef(w, it)) return true;
+// Distinct count of a category's refs (each maps to one Default item in a full export).
+int CategoryRefCount(const std::string& category) {
+    for (const auto& fc : g_Settings.FavoriteCategories)
+        if (fc.Name == category) return (int)fc.Refs.size();
+    return 0;
+}
+
+// Would re-exporting this logical export change it? Aggregates the union of all the
+// group's page items vs the source category: a full export must still cover exactly
+// the category's default refs; a partial export only drifts when one of its refs left
+// the category (added / reordered items don't matter - the subset is deliberate).
+// Caller guarantees the source category exists.
+bool GroupDrift(const std::vector<RadialExport>& pages, const std::string& category,
+                bool partial) {
+    std::vector<RadialItemRef> items;  // union across pages (dedupe by type/id/variant)
+    for (const auto& pg : pages)
+        for (const auto& it : pg.Items) {
+            bool dup = false;
+            for (const auto& e : items) if (e == it) { dup = true; break; }
+            if (!dup) items.push_back(it);
+        }
+    if (partial) {
+        for (const auto& it : items)
+            if (!CategoryHasRefId(category, it.Type, it.Id)) return true;
+        return false;
+    }
+    // Full: item set must equal the category's default refs (order-independent).
+    if ((int)items.size() != CategoryRefCount(category)) return true;
+    for (const auto& it : items) {
+        if (it.Variant != EMeMoteVariant::Default) return true;
+        if (!CategoryHasRefId(category, it.Type, it.Id)) return true;
+    }
     return false;
 }
 
@@ -497,31 +555,52 @@ void RenderRadialTab() {
     // 4. Exported wheels
     OptionsSection(L("opt.radial.sec_wheels"));
     {
-        std::vector<RadialExport> wheels;
-        { std::lock_guard<std::mutex> lk(g_RadialExportsMutex); wheels = g_RadialExports; }
-        if (wheels.empty()) {
+        std::vector<RadialExport> all;
+        { std::lock_guard<std::mutex> lk(g_RadialExportsMutex); all = g_RadialExports; }
+        if (all.empty()) {
             ImGui::TextDisabled("%s", L("opt.radial.none_yet"));
         } else {
-            for (const auto& w : wheels) {
-                ImGui::PushID(w.Slug.c_str());
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(Ellipsize(w.Name, 180.0f).c_str());
-                ImGui::SameLine();
-                ImGui::TextDisabled("(%s, %d)", w.SourceCategory.c_str(), (int)w.Items.size());
+            // One row per logical export: collect group ids in first-seen order
+            // (g_RadialExports is sorted by Name), then render each group's pages as one.
+            std::vector<std::string> groups;
+            for (const auto& w : all) {
+                bool seen = false;
+                for (const auto& g : groups) if (g == w.Group) { seen = true; break; }
+                if (!seen) groups.push_back(w.Group);
+            }
+            for (const auto& group : groups) {
+                std::vector<RadialExport> pages;
+                for (const auto& w : all) if (w.Group == group) pages.push_back(w);
+                std::sort(pages.begin(), pages.end(),
+                          [](const RadialExport& a, const RadialExport& b) { return a.Page < b.Page; });
+                const RadialExport& head = pages.front();
+                int  totalItems = 0;
+                bool parseErr   = false;
+                for (const auto& pg : pages) { totalItems += (int)pg.Items.size(); parseErr = parseErr || pg.ParseError; }
 
-                // status
+                ImGui::PushID(group.c_str());
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(Ellipsize(head.Name, 180.0f).c_str());
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s)", head.SourceCategory.c_str());
+                ImGui::SameLine();
+                {
+                    char buf[64];
+                    std::snprintf(buf, sizeof(buf), L("opt.radial.page_count"),
+                                  totalItems, (int)pages.size());
+                    ImGui::TextDisabled("%s", buf);
+                }
+
+                // status (computed on the group's aggregate)
                 bool sourceExists = false;
                 for (const auto& fc : g_Settings.FavoriteCategories)
-                    if (fc.Name == w.SourceCategory) { sourceExists = true; break; }
-                // Drift = re-exporting would change this wheel (see WheelDrift:
-                // exact match for full wheels, lenient "a ref left the category" for
-                // partial/subset/split wheels). Only when the category still exists.
+                    if (fc.Name == head.SourceCategory) { sourceExists = true; break; }
                 bool drift = false;
-                if (sourceExists && !w.ParseError)
-                    drift = WheelDrift(w);
+                if (sourceExists && !parseErr)
+                    drift = GroupDrift(pages, head.SourceCategory, head.Partial);
 
                 ImGui::SameLine();
-                if (w.ParseError) {
+                if (parseErr) {
                     ImGui::TextColored(kRed, "%s", L("opt.radial.st_broken"));
                 } else if (!sourceExists) {
                     ImGui::TextColored(kRed, "%s", L("opt.radial.st_source_missing"));
@@ -535,23 +614,22 @@ void RenderRadialTab() {
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.st_in_sync_tip"));
                 }
 
-                // actions — Edit re-opens the wizard pre-filled (selection + options),
-                // so updating a wheel always goes through the same dialog as creating one.
-                if (sourceExists && !w.ParseError) {
-                    if (ImGui::SmallButton(L("opt.radial.edit"))) OpenWizardForEdit(w);
+                // actions — Edit re-opens the wizard pre-filled for the whole export.
+                if (sourceExists && !parseErr) {
+                    if (ImGui::SmallButton(L("opt.radial.edit"))) OpenWizardForEdit(group);
                     ImGui::SameLine();
                 }
                 if (ImGui::SmallButton(L("opt.radial.rename"))) {
-                    s_renameSlug = w.Slug;
-                    std::snprintf(s_renameBuf, sizeof(s_renameBuf), "%s", w.Name.c_str());
+                    s_renameGroup = group;
+                    std::snprintf(s_renameBuf, sizeof(s_renameBuf), "%s", head.Name.c_str());
                     ImGui::OpenPopup("##radialrename");
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton(L("opt.radial.remove")))
                     ImGui::OpenPopup("##radialremove");
 
-                // rename popup (now with an explicit Cancel)
-                if (s_renameSlug == w.Slug && ImGui::BeginPopup("##radialrename")) {
+                // rename popup (with an explicit Cancel)
+                if (s_renameGroup == group && ImGui::BeginPopup("##radialrename")) {
                     ImGui::TextUnformatted(L("opt.radial.rename"));
                     bool empty = (s_renameBuf[0] == '\0');
                     if (empty) PushInvalidInputStyle();
@@ -562,11 +640,11 @@ void RenderRadialTab() {
                     bool save = (enter || ImGui::Button(L("common.save"))) && !empty;
                     ImGui::SameLine();
                     if (ImGui::Button(L("common.cancel"))) {
-                        s_renameSlug.clear();
+                        s_renameGroup.clear();
                         ImGui::CloseCurrentPopup();
                     } else if (save) {
-                        RenameWheel(w.Slug, s_renameBuf);
-                        s_renameSlug.clear();
+                        RenameGroup(group, s_renameBuf);
+                        s_renameGroup.clear();
                         ImGui::CloseCurrentPopup();
                     }
                     ImGui::EndPopup();
@@ -585,7 +663,7 @@ void RenderRadialTab() {
                     ImGui::Spacing();
                     bool removed = false;
                     if (ImGui::Button(L("opt.radial.remove"), ImVec2(110, 0))) {
-                        RemoveWheel(w.Slug);   // the row vanishing is the feedback
+                        RemoveGroup(group);   // the row vanishing is the feedback
                         removed = true;
                         ImGui::CloseCurrentPopup();
                     }
@@ -633,6 +711,9 @@ void RenderRadialTab() {
 #endif
     }
 
-    // wizard (rendered unconditionally so OpenPopup from Create works)
+    // Fire the deferred OpenPopup at the top-level ID scope (the Create/Edit buttons
+    // can't, since Edit lives inside a per-row PushID — that mismatch was the
+    // "Edit does nothing" bug). Then render the wizard.
+    if (s_wizOpenRequested) { ImGui::OpenPopup("###radialwizard"); s_wizOpenRequested = false; }
     if (s_wizActive) RenderWizard();
 }

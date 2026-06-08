@@ -11,6 +11,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 using json = nlohmann::json;
@@ -53,11 +54,18 @@ bool ReadPack(const std::string& packPath, RadialExport& w) {
     w.Id             = j.value("ID", 0);
     w.SourceCategory = j.value("emot3_source_category", std::string());
     w.Partial        = j.value("emot3_partial", false);
+    w.Group          = j.value("emot3_group", w.Slug);  // legacy/hand-made -> own group
+    w.Page           = j.value("emot3_page", 1);
 
-    std::string packName = j.value("Name", std::string());
-    const size_t pfx = std::strlen(kRadialPackNamePrefix);
-    w.Name = (packName.rfind(kRadialPackNamePrefix, 0) == 0) ? packName.substr(pfx)
-                                                             : packName;
+    // Logical export name: prefer the emot3_name marker; fall back to the pack "Name"
+    // minus the "emot3: " prefix (legacy / hand-made packs).
+    w.Name = j.value("emot3_name", std::string());
+    if (w.Name.empty()) {
+        std::string packName = j.value("Name", std::string());
+        const size_t pfx = std::strlen(kRadialPackNamePrefix);
+        w.Name = (packName.rfind(kRadialPackNamePrefix, 0) == 0) ? packName.substr(pfx)
+                                                                 : packName;
+    }
     if (w.Name.empty()) w.Name = w.Slug;
 
     // Native RadialMenus options (recoverable directly); emot3-namespaced markers
@@ -129,11 +137,13 @@ void LoadRadialExports() {
     LOG_INFO("radials: loaded %d wheel(s)", (int)g_RadialExports.size());
 }
 
-std::vector<std::string> ExportedSourceCategories() {
+std::vector<RadialExport> WheelsInGroup(const std::string& group) {
     std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
-    std::vector<std::string> out;
+    std::vector<RadialExport> out;
     for (const auto& w : g_RadialExports)
-        if (!w.SourceCategory.empty()) out.push_back(w.SourceCategory);
+        if (w.Group == group) out.push_back(w);
+    std::sort(out.begin(), out.end(),
+              [](const RadialExport& a, const RadialExport& b) { return a.Page < b.Page; });
     return out;
 }
 
@@ -141,9 +151,13 @@ std::vector<std::string> RadialWheelsContaining(EFavoriteRefType type,
                                                 const std::string& id) {
     std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
     std::vector<std::string> out;
+    std::unordered_set<std::string> seenGroups;  // one entry per logical export
     for (const auto& w : g_RadialExports) {
         for (const auto& it : w.Items) {
-            if (it.Type == type && it.Id == id) { out.push_back(w.Name); break; }
+            if (it.Type == type && it.Id == id) {
+                if (seenGroups.insert(w.Group).second) out.push_back(w.Name);
+                break;
+            }
         }
     }
     return out;
@@ -165,6 +179,13 @@ bool RadialSlugInUse(const std::string& slug) {
     if (g_RadialsDir.empty() || slug.empty()) return false;
     std::string pack = RadialPacksDir() + "\\" + slug + ".json";
     return GetFileAttributesA(pack.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+bool RadialGroupInUse(const std::string& group) {
+    if (group.empty()) return false;
+    std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+    for (const auto& w : g_RadialExports) if (w.Group == group) return true;
+    return false;
 }
 
 bool RemoveRadialFiles(const std::string& slug) {
@@ -192,5 +213,20 @@ bool RemoveRadialFiles(const std::string& slug) {
         FindClose(h);
     }
     LOG_INFO("radials: removed staged files for wheel %s", slug.c_str());
+    return ok;
+}
+
+bool RemoveRadialGroup(const std::string& group) {
+    if (group.empty()) return false;
+    // Snapshot the group's page slugs under the lock; delete files outside it
+    // (RemoveRadialFiles takes no lock).
+    std::vector<std::string> slugs;
+    {
+        std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+        for (const auto& w : g_RadialExports)
+            if (w.Group == group) slugs.push_back(w.Slug);
+    }
+    bool ok = true;
+    for (const auto& s : slugs) if (!RemoveRadialFiles(s)) ok = false;
     return ok;
 }
