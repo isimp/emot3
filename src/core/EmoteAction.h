@@ -22,19 +22,16 @@ enum class EFeedbackSink { InWindow, Alert };
 //   useTarget — appends " @" when the emote is targetable (caller decides;
 //               the function double-checks IsTargetable defensively).
 //   useSync   — appends " *" unconditionally.
-//   fromKeybind — the call fired from this entry's OWN personal keybind (not a
-//               panel click), so the held trigger key is intended; skip the
-//               held-printable-key garble/movement guard (same posture as the
-//               +plus swallow). Pass FALSE for a radial-only invoke (an entry
-//               bound solely to drive a RadialMenus wheel): there the held key is
-//               the wheel-open key, so keeping the guard refuses + alerts rather
-//               than letting a printable wheel key garble the command. See
-//               OnEmoteBind, which derives this from UserKeybind / the /me-mote
-//               variant's Keybind flag.
+//   sink      — where a gated-send refusal is shown (in-window overlay for a click;
+//               Nexus SendAlert for a keybind / radial Invoke, since the window is
+//               usually closed then).
+// The held-printable-key / movement guard ALWAYS applies (unless the +plus input
+// swallow is active): a keybind or radial invoke fires only when no bare printable
+// key is held, exactly like a panel click - holding the trigger key through the
+// injection would garble the command, so we refuse instead.
 // Whether the input is auto-submitted (Enter at the end) or left for the
 // user to finish is controlled by g_Settings.SendOnClick.
 void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync,
-                     bool fromKeybind = false,
                      EFeedbackSink sink = EFeedbackSink::InWindow);
 
 // EMeMoteVariant (Default / You / All) is defined in data/MeMotes.h (its
@@ -53,10 +50,9 @@ enum class EMeMoteVariant;
 //
 // GW2's @ token doesn't substitute inside /me text and its * sync token also
 // doesn't work — verified in-game — so the /me-mote send path is targetless
-// and unsync'd by construction. `fromKeybind` — see SendOrFillEmote (skips the
-// held-key garble/movement guard since the bind's trigger key is held at fire).
+// and unsync'd by construction. The held-key/movement guard applies as in
+// SendOrFillEmote; `sink` routes a refusal to the overlay or SendAlert.
 void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant,
-                      bool fromKeybind = false,
                       EFeedbackSink sink = EFeedbackSink::InWindow);
 
 // A *transient* reason the send would be refused RIGHT NOW that can clear on its

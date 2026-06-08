@@ -51,17 +51,11 @@ void OnEmoteBind(const char* identifier, bool isRelease) {
         }
         // Honor the live "send on target" setting, exactly like a panel click.
         const bool autoTarget = copy.IsTargetable && g_Settings.SendTargetableOnTarget;
-        // Only skip the held-key gate when the user gave this emote its OWN keybind
-        // (the held key is then the intended trigger). When the bind exists ONLY to
-        // drive a radial (UserKeybind off), the held key is RadialMenus' wheel-open
-        // key - if it's printable, letting it through garbles the injected command
-        // ("unknown command"). So keep the gate, which refuses + alerts instead (and
-        // the +plus swallow still makes it fire cleanly when enabled).
-        const bool personalBind = copy.UserKeybind;
-        // Alert sink: a bind / RadialMenus Invoke fires with emot3's window usually
-        // closed, so a refusal goes to Nexus' SendAlert, not the in-window overlay.
-        SendOrFillEmote(copy, autoTarget, /*useSync=*/false, /*fromKeybind=*/personalBind,
-                        EFeedbackSink::Alert);
+        // The held-key/movement gate applies (like a click): a bind/wheel-hotkey that's a
+        // bare printable key, held at fire, is refused (would garble) - so binds want a
+        // non-printable key or a modifier combo, or the +plus swallow. Alert sink: the
+        // window is usually closed on a bind/radial fire, so a refusal uses SendAlert.
+        SendOrFillEmote(copy, autoTarget, /*useSync=*/false, EFeedbackSink::Alert);
         return;
     }
 
@@ -81,12 +75,8 @@ void OnEmoteBind(const char* identifier, bool isRelease) {
             if (!m) return;
             copy = *m;
         }
-        // Same posture as emotes: skip the held-key gate only when THIS variant has
-        // its own personal keybind; a radial-only invoke keeps the gate (see above).
-        const bool personalBind = (variant == EMeMoteVariant::You) ? copy.KeybindYou
-                                : (variant == EMeMoteVariant::All) ? copy.KeybindAll
-                                                                   : copy.KeybindDefault;
-        SendOrFillMeMote(copy, variant, /*fromKeybind=*/personalBind, EFeedbackSink::Alert);
+        // Same posture as emotes: the held-key/movement gate applies (see above).
+        SendOrFillMeMote(copy, variant, EFeedbackSink::Alert);
         return;
     }
 }

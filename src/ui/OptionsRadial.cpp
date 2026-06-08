@@ -542,15 +542,29 @@ void RenderWizard() {
             s_wizOpt.Small = (typeIdx == 1);
         ItemTip("opt.radial.opt_type_tip");
 
-        // SelectionMode: Click=1 / Release=2 / ReleaseOrClick=3
-        const char* sels[3] = { L("opt.radial.sel_click"), L("opt.radial.sel_release"),
-                                L("opt.radial.sel_release_or_click") };
-        int selIdx = (s_wizOpt.SelectionMode >= 1 && s_wizOpt.SelectionMode <= 3)
-                         ? s_wizOpt.SelectionMode - 1 : 2;
+        // SelectionMode combo. Index<->RadialMenus int via an explicit map
+        // (Click=1 / Release=2 / ReleaseOrClick=3 / Hover=4) - never assumes order.
+        // See RadialExport.cpp for the verified enum.
+        const char* sels[4] = { L("opt.radial.sel_click"), L("opt.radial.sel_release"),
+                                L("opt.radial.sel_release_or_click"), L("opt.radial.sel_hover") };
+        const int   selVals[4] = { 1, 2, 3, 4 };
+        int selIdx = 1;  // default -> Release
+        for (int i = 0; i < 4; ++i) if (selVals[i] == s_wizOpt.SelectionMode) { selIdx = i; break; }
         ImGui::SetNextItemWidth(180.0f);
-        if (ImGui::Combo(L("opt.radial.opt_selmode"), &selIdx, sels, 3))
-            s_wizOpt.SelectionMode = selIdx + 1;
+        if (ImGui::Combo(L("opt.radial.opt_selmode"), &selIdx, sels, 4))
+            s_wizOpt.SelectionMode = selVals[selIdx];
         ItemTip("opt.radial.opt_selmode_tip");
+        // Flavor-aware limitation note: in base, a held bare printable key garbles the
+        // injected command, so Click (commits with the wheel hotkey still held) only works
+        // if that hotkey carries a modifier; Release and Hover commit with no key down.
+        // +plus's input swallow lets Click work too - a lighter caveat there.
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
+#ifdef EMOT3_PLUS
+        ImGui::TextColored(kAmber, "%s", L("opt.radial.sel_limit_plus"));
+#else
+        ImGui::TextColored(kAmber, "%s", L("opt.radial.sel_limit"));
+#endif
+        ImGui::PopTextWrapPos();
 
         SliderWithReset(L("opt.radial.opt_scale"), &s_wizOpt.Scale, 0.5f, 2.0f,
                         1.0f, "opt.radial.opt_scale_tip");

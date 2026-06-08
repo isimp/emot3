@@ -44,7 +44,8 @@ inline bool operator!=(const RadialItemRef& a, const RadialItemRef& b) { return 
 // Curated RadialMenus wheel options, stored in (and recovered from) the pack.
 struct RadialWheelOptions {
     bool  Small               = false;  // menu Type: false = Normal, true = Small
-    int   SelectionMode       = 3;      // RadialMenus selection mode int (see RadialExport.cpp)
+    int   SelectionMode       = 2;      // RadialMenus selection mode int (see RadialExport.cpp);
+                                        // default Release - safe in base (no printable key held at commit)
     float Scale               = 1.0f;
     float IconScale           = 0.8f;   // 0.8 reads better than RadialMenus' 1.0 default
     bool  ShowItemNameTooltip = false;

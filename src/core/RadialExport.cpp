@@ -33,8 +33,18 @@ namespace {
 // format knowledge lives in THIS file so a format change is a one-file fix.
 // ============================================================================
 constexpr int      kFormatRevision   = 2;   // required: omit -> rev-1 migration mangles IsMounted=-1
-constexpr int      kMenuTypeNormal   = 1;   // EMenuType: None=0, Normal=1, Small=2
-constexpr int      kMenuTypeSmall    = 2;   // (verify against RadialMenus source on update)
+constexpr int      kMenuTypeNormal   = 1;   // ERadialType: None=0, Normal=1, Small=2 (verified vs source)
+constexpr int      kMenuTypeSmall    = 2;
+// ESelectionMode: None=0, Click=1, Release=2, ReleaseOrClick=3, Hover=4, Escape=5, SingleItem=6
+// (verified vs GW2-RadialMenus source). Base build defaults to Release: Click commits while
+// the wheel hotkey is still held - a bare printable key garbles the injected command - whereas
+// Release (key let go first) and Hover (mouse, no key) commit with no key down. See OptionsRadial.
+constexpr int      kSelClick         = 1;
+constexpr int      kSelRelease       = 2;
+constexpr int      kSelReleaseOrClick = 3;
+constexpr int      kSelHover         = 4;
+constexpr int      kHoverTimeoutMs   = 250; // ms a hover must dwell before it commits (Hover mode);
+                                            // RadialMenus' JSON default is 0 (hair-trigger), 250 is calmer
 constexpr int      kActionTypeBind   = 1;   // action Type: InputBind
 constexpr int      kIconTypeFile     = 1;   // IconType: File
 constexpr int      kIconTypeNone     = 0;   // IconType: None -> letter-fallback items
@@ -141,7 +151,12 @@ bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
     j["ID"]                    = id;                                       // required
     j["Name"]                  = std::string(kRadialPackNamePrefix) + name; // required
     j["Type"]                  = opt.Small ? kMenuTypeSmall : kMenuTypeNormal;  // required: default None=0 -> 0 capacity
-    j["SelectionMode"]         = opt.SelectionMode;                        // required: default None -> no commit path
+    // Clamp to a known commit mode (None=0 has no commit path); unknown -> Release.
+    const int selMode = (opt.SelectionMode == kSelClick || opt.SelectionMode == kSelRelease ||
+                         opt.SelectionMode == kSelReleaseOrClick || opt.SelectionMode == kSelHover)
+                            ? opt.SelectionMode : kSelRelease;
+    j["SelectionMode"]         = selMode;                                  // required: default None -> no commit path
+    if (selMode == kSelHover) j["HoverTimeout"] = kHoverTimeoutMs;         // Hover needs a dwell time to commit
     j["emot3_source_category"] = sourceCategory;                          // drift marker
     j["emot3_gate"]            = opt.GateByState;                         // recover the gate toggle on rescan
     j["emot3_group"]           = group;                                  // shared across a split's pages
