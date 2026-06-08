@@ -56,6 +56,7 @@ struct WizItem {
     int           page = 1;       // which wheel page this item lands on (1-based)
     bool          isMeMote = false;
     bool          autoTarget = false;   // emote @ auto-target hint
+    bool          isNew = false;        // (edit) added to the category since export
     std::string   name;                 // display name (variant suffix already applied)
 };
 bool                  s_wizActive = false;   // form is open (drives BeginPopupModal)
@@ -64,6 +65,7 @@ int                   s_wizPhase  = 0;        // 0 = form, 1 = done
 std::string           s_wizCategory;
 char                  s_wizName[128] = {};
 std::vector<WizItem>  s_wizItems;
+std::vector<std::string> s_wizRemoved;  // (edit) refs that left the category, dropped
 RadialWheelOptions    s_wizOpt;
 int                   s_wizPageCount = 1;     // number of wheel pages (split)
 RadialExportResult    s_wizResult;
@@ -193,6 +195,7 @@ void OpenWizard(const std::string& category) {
     s_wizPhase = 0;
     s_wizResult = RadialExportResult{};
     s_wizEditGroup.clear();
+    s_wizRemoved.clear();
     SeedWizardFromCategory(category);     // all rows default page = 1
     std::snprintf(s_wizName, sizeof(s_wizName), "%s", category.c_str());
     RequestWizardOpen();
@@ -225,6 +228,57 @@ void OpenWizardForEdit(const std::string& group) {
             if (row.include) break;
         }
     }
+
+    // Surface what changed since export, so editing a drifted wheel is reviewable.
+    // Removed = a wheel item whose (type,id) is no longer a category row (left the
+    // category) - it can't be shown as a row, so list it. Computed for any export.
+    s_wizRemoved.clear();
+    auto inCategoryNow = [&](EFavoriteRefType t, const std::string& id) {
+        for (const auto& row : s_wizItems)
+            if (row.ref.Type == t && row.ref.Id == id) return true;
+        return false;
+    };
+    {
+        std::vector<std::string> seen;
+        auto keyOf = [](EFavoriteRefType t, const std::string& id) {
+            return std::to_string((int)t) + ":" + id;
+        };
+        for (const auto& pg : pages)
+            for (const auto& it : pg.Items) {
+                if (inCategoryNow(it.Type, it.Id)) continue;
+                std::string k = keyOf(it.Type, it.Id);
+                bool dup = false;
+                for (const auto& s : seen) if (s == k) { dup = true; break; }
+                if (dup) continue;
+                seen.push_back(k);
+                std::string nm;
+                if (it.Type == EFavoriteRefType::Emote) {
+                    std::lock_guard<std::mutex> lk(g_EmotesMutex);
+                    const Emote* e = FindEmote(it.Id);
+                    nm = (e && !e->Name.empty()) ? e->Name : it.Id;
+                } else {
+                    std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                    const MeMote* m = FindMeMote(it.Id);
+                    nm = (m && !m->Name.empty()) ? m->Name : it.Id;
+                }
+                s_wizRemoved.push_back(nm);
+            }
+    }
+    // New = a category entry not present in the wheel. Only flag for a FULL export
+    // (where the wheel was the whole category, so anything extra is genuinely added);
+    // a subset export deliberately omits entries, so "new" would be misleading.
+    if (!pages.front().Partial) {
+        for (auto& row : s_wizItems) {
+            bool wasInWheel = false;
+            for (const auto& pg : pages) {
+                for (const auto& it : pg.Items)
+                    if (it.Type == row.ref.Type && it.Id == row.ref.Id) { wasInWheel = true; break; }
+                if (wasInWheel) break;
+            }
+            row.isNew = !wasInWheel;
+        }
+    }
+
     std::snprintf(s_wizName, sizeof(s_wizName), "%s", pages.front().Name.c_str());
     RequestWizardOpen();
 }
@@ -348,6 +402,11 @@ void RenderWizard() {
             ImGui::SameLine();
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(w.name.c_str());  // table clips to the column
+            if (w.isNew) {
+                ImGui::SameLine();
+                ImGui::TextColored(kGreen, "(%s)", L("opt.radial.item_new"));
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.item_new_tip"));
+            }
             if (w.autoTarget) {
                 ImGui::SameLine();
                 ImGui::TextColored(kAmber, "%s", L("opt.radial.auto_target"));
@@ -372,6 +431,17 @@ void RenderWizard() {
             ImGui::PopID();
         }
         ImGui::EndTable();
+    }
+
+    // Entries that left the category since export (can't be shown as rows): listed so
+    // the user knows they'll be dropped on save.
+    if (!s_wizRemoved.empty()) {
+        std::string joined;
+        for (size_t i = 0; i < s_wizRemoved.size(); ++i)
+            joined += (i ? ", " : "") + s_wizRemoved[i];
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+        ImGui::TextColored(kAmber, "%s %s", L("opt.radial.removed_note"), joined.c_str());
+        ImGui::PopTextWrapPos();
     }
 
     // Pages controls: stepper + auto-fill + per-page fill readout.
