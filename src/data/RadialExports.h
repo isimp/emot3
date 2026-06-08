@@ -97,6 +97,11 @@ std::vector<RadialExport> WheelsInGroup(const std::string& group);
 std::vector<std::string> RadialWheelsContaining(EFavoriteRefType type,
                                                 const std::string& id);
 
+// True if a staged wheel references this EXACT (type,id,variant) — drives the catalog
+// keybind checkbox's mixed/"bound via radial only" state (per /me-mote variant).
+bool RadialContainsRef(EFavoriteRefType type, const std::string& id,
+                       EMeMoteVariant variant);
+
 // Lowest unused menu ID >= 90001 across current packs, also skipping any ids in
 // `alsoReserved` (for assigning several page ids in one export).
 int NextFreeRadialId(const std::vector<int>& alsoReserved);

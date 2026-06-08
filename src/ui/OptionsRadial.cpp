@@ -678,12 +678,23 @@ void RenderRadialTab() {
         }
     }
 
-    // 5. Apply — +plus deploys with one click; base build hints the manual copy.
-    OptionsSection(L("opt.radial.sec_apply"));
-    {
+    // 5. Apply (Deploy) — PLUS ONLY. The base build can't write into another addon's
+    // folder, so it has no Apply section; its intro explains the manual copy + reload.
 #ifdef EMOT3_PLUS
+    // Section header carries the Plus badge (this whole deploy convenience is +plus).
+    ImGui::Spacing();
+    ImGui::TextDisabled("%s", L("opt.radial.sec_apply"));
+    PlusBadge();
+    ImGui::Separator();
+    {
         std::vector<RadialExport> wheels;
         { std::lock_guard<std::mutex> lk(g_RadialExportsMutex); wheels = g_RadialExports; }
+
+        // Deploy overwrites same-named files in RadialMenus' folders, no backup.
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+        ImGui::TextColored(kAmber, "%s", L("opt.radial.deploy_warn"));
+        ImGui::PopTextWrapPos();
+
         char btn[64];
         std::snprintf(btn, sizeof(btn), L("opt.radial.deploy_btn"), (int)wheels.size());
         bool none = wheels.empty() || !s_rmDetected;
@@ -700,16 +711,11 @@ void RenderRadialTab() {
             s_deployMsg = msg;
         }
         if (none) EndDisabledCompat();
-        PlusBadge();  // tag the deploy convenience as an emot3 (Plus) feature
         if (!s_deployMsg.empty())
             ImGui::TextColored(s_deployOk ? kGreen : kRed, "%s", s_deployMsg.c_str());
         ImGui::TextWrapped("%s", L("opt.radial.reload_reminder"));
-#else
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-        ImGui::TextWrapped("%s", L("opt.radial.apply_hint"));
-        ImGui::PopTextWrapPos();
-#endif
     }
+#endif
 
     // Fire the deferred OpenPopup at the top-level ID scope (the Create/Edit buttons
     // can't, since Edit lives inside a per-row PushID — that mismatch was the

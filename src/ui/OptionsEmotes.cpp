@@ -16,6 +16,7 @@
 #include "IconBrowse.h"
 #include "IconPicker.h"     // OpenIconPicker ("Library..." button)
 #include "EmoteBinds.h"     // SyncEmoteBinds on a keybind toggle
+#include "RadialExports.h"  // RadialContainsRef (tri-state keybind checkbox)
 #include "NexusShortcut.h"  // ApplyNexusShortcut on settings changes
 #include "Resources.h"      // kOfficialIcons / kAIIcons for icon-source status
 #include "Profiling.h"      // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
@@ -639,7 +640,8 @@ void RenderEmotesTab() {
                     // onOff: -1 = prose tooltip from tipKey; 0/1 = On/Off
                     // tooltip from <labelKey>.on/.off, default Off (0) / On (1).
                     auto flowCheckbox = [&](const char* labelKey, bool* value,
-                                            const char* tipKey, int onOff) {
+                                            const char* tipKey, int onOff,
+                                            bool mixed = false) {
                         const char* lbl = L(labelKey);
                         float w = ImGui::GetFrameHeight() + st.ItemInnerSpacing.x +
                                   ImGui::CalcTextSize(lbl).x;
@@ -650,7 +652,13 @@ void RenderEmotesTab() {
                         } else {
                             used = w;  // wrap to a new line in this cell
                         }
+                        // Tri-state: a dash (mixed) when the bind exists ONLY because a
+                        // radial references it (value off). Clicking promotes it to a
+                        // personal keybind (value on).
+                        const bool pushMixed = mixed && !*value;
+                        if (pushMixed) ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
                         if (ImGui::Checkbox(lbl, value)) emoteEdited = true;
+                        if (pushMixed) ImGui::PopItemFlag();
                         if (ImGui::IsItemHovered()) {
                             if (onOff < 0) {
                                 TooltipText(tipKey);
@@ -669,7 +677,9 @@ void RenderEmotesTab() {
                     // Opt-in Nexus keybind (also makes it radial-exportable).
                     // Snapshot to detect the change so we re-sync the binds.
                     bool kbBefore = e.UserKeybind;
-                    flowCheckbox("opt.em.keybind", &e.UserKeybind, nullptr, /*Off*/0);
+                    const bool kbViaRadial =
+                        RadialContainsRef(EFavoriteRefType::Emote, e.Id, EMeMoteVariant::Default);
+                    flowCheckbox("opt.em.keybind", &e.UserKeybind, nullptr, /*Off*/0, kbViaRadial);
                     if (e.UserKeybind != kbBefore) keybindEdited = true;
                     // Radial-membership note; reads "also in" vs "active via" depending
                     // on whether this emote also has its own (personal) keybind.

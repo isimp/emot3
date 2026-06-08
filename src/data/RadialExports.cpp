@@ -163,6 +163,15 @@ std::vector<std::string> RadialWheelsContaining(EFavoriteRefType type,
     return out;
 }
 
+bool RadialContainsRef(EFavoriteRefType type, const std::string& id,
+                       EMeMoteVariant variant) {
+    std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+    for (const auto& w : g_RadialExports)
+        for (const auto& it : w.Items)
+            if (it.Type == type && it.Id == id && it.Variant == variant) return true;
+    return false;
+}
+
 int NextFreeRadialId(const std::vector<int>& alsoReserved) {
     std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
     int id = 90001;
