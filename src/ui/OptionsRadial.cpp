@@ -415,15 +415,23 @@ void RenderWizard() {
     ImGui::Spacing();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(L("opt.radial.items_label"));
+    // Right-align the select/deselect buttons to the row's right edge.
+    const char* selAllLbl   = L("opt.radial.select_all");
+    const char* deselAllLbl = L("opt.radial.deselect_all");
+    const ImGuiStyle& selStyle = ImGui::GetStyle();
+    const float selBtnsW = ImGui::CalcTextSize(selAllLbl).x + selStyle.FramePadding.x * 2.0f
+                         + ImGui::CalcTextSize(deselAllLbl).x + selStyle.FramePadding.x * 2.0f
+                         + selStyle.ItemSpacing.x;
     ImGui::SameLine();
-    if (ImGui::SmallButton(L("opt.radial.select_all"))) {
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - selBtnsW);
+    if (ImGui::SmallButton(selAllLbl)) {
         // Select all - but pass on /me-mote You/All variants (leave them as-is), so
         // "select all" yields the sensible default set (emotes + each Default body).
         for (auto& w : s_wizItems)
             if (!w.isMeMote || w.ref.Variant == EMeMoteVariant::Default) w.include = true;
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton(L("opt.radial.deselect_all"))) {
+    if (ImGui::SmallButton(deselAllLbl)) {
         for (auto& w : s_wizItems) w.include = false;
     }
     // A borderless table keeps the columns aligned: item (stretch) + a fixed-width
@@ -924,14 +932,8 @@ void RenderRadialTab() {
         }
     }
 
-    // No bulk-deploy section anymore: each wheel carries its own Sync button. Plus just
-    // keeps the standing reminder to reload + bind in RadialMenus after syncing.
-#ifdef EMOT3_PLUS
-    ImGui::Spacing();
-    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-    ImGui::TextDisabled("%s", L("opt.radial.reload_reminder"));
-    ImGui::PopTextWrapPos();
-#endif
+    // No bulk-deploy section anymore: each wheel carries its own Sync button (the
+    // per-wheel sync status already says when a reload/bind in RadialMenus is due).
 
     // Fire the deferred OpenPopup at the top-level ID scope (the Create/Edit buttons
     // can't, since Edit lives inside a per-row PushID — that mismatch was the

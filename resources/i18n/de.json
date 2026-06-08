@@ -197,7 +197,6 @@
   "opt.radial.sec_apply": "Anwenden",
   "opt.radial.apply_hint": "Kopiere alles aus radials\\packs in addons\\RadialMenus\\packs und alles aus radials\\icons in addons\\RadialMenus\\icons, dann klicke in RadialMenus auf 'Radials neu laden'.",
   "opt.radial.deploy_btn": "%d Rad/Räder übertragen",
-  "opt.radial.reload_reminder": "Klicke dann in RadialMenus auf 'Radials neu laden' und weise dort jedem Rad eine Taste zu.",
   "opt.radial.deploy_warn": "Bereitstellen überschreibt gleichnamige Dateien in den packs- und icons-Ordnern von RadialMenus. Es wird kein Backup erstellt.",
   "opt.radial.wizard_title": "Exportieren",
   "opt.radial.name_label": "Radname",
