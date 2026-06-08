@@ -5,6 +5,7 @@
 #include "Settings.h"     // g_Settings.UseAIIconFallback (AI fallback gate)
 #include "Resources.h"    // LookupBundledResource + kOfficialIcons / kAIIcons / kMeMoteAIIcons
 #include "StringUtil.h"   // ToLower / IsAbsolutePath (shared helpers)
+#include "WinEncoding.h"  // Utf8ToWide / Utf8ToAcp (Unicode icon paths)
 
 #include "imgui/imgui.h"
 #include "IconCacheConfig.h"   // g_IconCache.maxIconDim (user-icon dimension cap)
@@ -48,7 +49,7 @@ ResolvedIcon MakeDiskIcon(const std::string& path) {
     }
     unsigned long long mtime = 0, size = 0;
     WIN32_FILE_ATTRIBUTE_DATA fad;
-    if (GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &fad)) {
+    if (GetFileAttributesExW(Utf8ToWide(path).c_str(), GetFileExInfoStandard, &fad)) {
         mtime = ((unsigned long long)fad.ftLastWriteTime.dwHighDateTime << 32) |
                  (unsigned long long)fad.ftLastWriteTime.dwLowDateTime;
         size  = ((unsigned long long)fad.nFileSizeHigh << 32) |
@@ -120,7 +121,7 @@ IconSource ResolveIconSource(const Emote& e) {
     //      when IconPath is empty). The loader treats both the same; we only
     //      split them so the status line can name which it is.
     std::string path = ResolveIconPath(e);
-    DWORD attr = GetFileAttributesA(path.c_str());
+    DWORD attr = GetFileAttributesW(Utf8ToWide(path).c_str());
     if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
         return e.IconPath.empty() ? IconSource::FolderOverride : IconSource::Custom;
     // 3. Bundled official artwork (keyed on the English Id).
@@ -194,7 +195,7 @@ MeMoteIconSource ResolveMeMoteIconSource(const MeMote& m) {
     //      through to the bundled AI tier — same fallthrough behaviour
     //      ResolveIconSource has for emotes.
     std::string path = ResolveMeMoteIconPath(m);
-    DWORD attr = GetFileAttributesA(path.c_str());
+    DWORD attr = GetFileAttributesW(Utf8ToWide(path).c_str());
     if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
         return m.IconPath.empty() ? MeMoteIconSource::FolderOverride
                                   : MeMoteIconSource::Custom;
@@ -342,7 +343,15 @@ Texture* EnsureResolved(const ResolvedIcon& r) {
         if (TryLoadBundledIconBytes(r.table, r.count, r.name, data, size))
             APIDefs->Textures.GetOrCreateFromMemory(r.key.c_str(), const_cast<void*>(data), size);
     } else {  // DiskFile
-        APIDefs->Textures.GetOrCreateFromFile(r.key.c_str(), r.path.c_str());
+        // Nexus' GetOrCreateFromFile takes a const char* (no wide variant), so hand
+        // it the path in the system codepage. A name not representable there (lossy)
+        // can't be opened, so skip the load -> letter fallback (vs. a doomed/garbage
+        // texture entry). Our own stat/probe above used the wide path, so existence
+        // + header probe already succeeded for any Unicode name.
+        bool lossy = false;
+        const std::string acp = Utf8ToAcp(r.path, &lossy);
+        if (!lossy && !acp.empty())
+            APIDefs->Textures.GetOrCreateFromFile(r.key.c_str(), acp.c_str());
     }
     s_attemptedKeys.insert(r.key);
     return APIDefs->Textures.Get(r.key.c_str());  // may be null this frame if async
@@ -456,7 +465,8 @@ void ReconcileResidentPool() {
 // --- user-icon dimension cap (header-only, no decode) --------------------
 IconProbe ProbeIconFile(const std::string& path, int& outW, int& outH) {
     outW = 0; outH = 0;
-    std::ifstream f(path, std::ios::binary);
+    const std::wstring wpath = Utf8ToWide(path);   // wide open: any Unicode name
+    std::ifstream f(wpath.c_str(), std::ios::binary);
     if (!f.is_open()) return IconProbe::Unreadable;
     // A JPEG's SOF can sit behind a large EXIF/APPn block, so read a bounded
     // header window (PNG dims live in the first 24 bytes; this covers the vast
@@ -467,8 +477,16 @@ IconProbe ProbeIconFile(const std::string& path, int& outW, int& outH) {
     const size_t n = (size_t)f.gcount();
     b.resize(n);
 
-    auto be16 = [&](size_t i) -> int { return (b[i] << 8) | b[i + 1]; };
+    // Bounds-guarded big-endian reads: return 0 if the read would run past the
+    // buffer, so a truncated/malformed header can't OOB-read regardless of how the
+    // marker-walk below indexes (the preceding `if`s already keep callers in range;
+    // this is defense-in-depth against a future call site forgetting that).
+    auto be16 = [&](size_t i) -> int {
+        if (i + 1 >= b.size()) return 0;
+        return (b[i] << 8) | b[i + 1];
+    };
     auto be32 = [&](size_t i) -> uint32_t {
+        if (i + 3 >= b.size()) return 0;
         return ((uint32_t)b[i] << 24) | ((uint32_t)b[i + 1] << 16) |
                ((uint32_t)b[i + 2] << 8) | (uint32_t)b[i + 3];
     };

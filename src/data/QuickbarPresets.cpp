@@ -94,7 +94,7 @@ json PresetToJson(const QuickbarPreset& p) {
 QuickbarPreset ParsePresetJson(const json& j) {
     using namespace jsonutil;
     QuickbarPreset p;
-    p.Name = GetString(j, "name", std::string());
+    p.Name = TruncateUtf8(GetString(j, "name", std::string()), kMaxNameBytes);
 
     // Typed getters fall back to the struct default on a missing OR wrong-typed
     // key (and never throw out of the loader, unlike nlohmann's own .value()).

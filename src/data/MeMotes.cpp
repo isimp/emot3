@@ -366,7 +366,7 @@ bool LoadMeMotesJson(const std::string& path) {
         if (!item.is_object()) { ++skippedNonObj; changed = true; continue; }
         MeMote m;
         m.Id          = jsonutil::GetString(item, "id",       std::string());
-        m.Name        = jsonutil::GetString(item, "name",     std::string());
+        m.Name        = TruncateUtf8(jsonutil::GetString(item, "name", std::string()), kMaxNameBytes);
         // Sanitize IconPath at ingress: locks the value to addons/emot3/icons
         // (subfolders allowed; ui/ subfolder excluded) and passes bundled refs
         // through untouched. A hand-edit pointing outside the icons folder

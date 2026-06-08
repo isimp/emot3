@@ -138,3 +138,21 @@ inline bool IsValidUtf8(const std::string& s) {
     }
     return true;
 }
+
+// Truncate `s` to at most `maxBytes`, never splitting a UTF-8 multibyte sequence
+// (a char straddling the cut is dropped whole, so the result stays valid UTF-8).
+// For capping display/name fields at a byte budget without corrupting encoding.
+inline std::string TruncateUtf8(std::string s, size_t maxBytes) {
+    if (s.size() <= maxBytes) return s;
+    size_t cut = maxBytes;
+    // Back off any UTF-8 continuation byte (0b10xxxxxx) so we cut on a char start.
+    while (cut > 0 && ((unsigned char)s[cut] & 0xC0) == 0x80) --cut;
+    s.resize(cut);
+    return s;
+}
+
+// Byte budget for a stored display name (emote / me-mote / category / preset).
+// Matches the 64-byte ImGui input buffers; applied at JSON-load ingress to cap
+// hand-edited / programmatic values that bypass those buffers. (Plain `constexpr`
+// at namespace scope = internal linkage - no `inline` var, which needs C++17.)
+constexpr size_t kMaxNameBytes = 64;

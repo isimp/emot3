@@ -293,7 +293,7 @@ bool SanitizeSettings(Settings& s) {
     };
     std::unordered_set<std::string> seenRefs;
     for (auto& cat : s.FavoriteCategories) {
-        std::string nm = TrimWhitespace(cat.Name);
+        std::string nm = TruncateUtf8(TrimWhitespace(cat.Name), kMaxNameBytes);
         if (nm.empty()) nm = "Favorites";
         if (seenNames.count(nm)) {
             std::string base = nm;

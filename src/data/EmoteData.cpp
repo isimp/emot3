@@ -1,6 +1,7 @@
 #include "EmoteData.h"
 #include "IconPath.h"    // SanitizeIconPath (IconPath ingress heal) - data-layer, no ui/
 #include "JsonUtil.h"
+#include "StringUtil.h"  // TruncateUtf8 / kMaxNameBytes (name cap at load)
 #include "Logging.h"
 #include "Resources.h"   // kEmoteData bundled localization table
 #include "Settings.h"    // g_Settings.ManuallyUnlocked + SaveSettings (DeleteEmote cascade)
@@ -373,7 +374,7 @@ bool LoadEmotesJson(const std::string& path) {
         Emote e;
         e.Id           = jsonutil::GetString(item, "id",         std::string());
         e.Command      = jsonutil::GetString(item, "command",    std::string());
-        e.Name         = jsonutil::GetString(item, "name",       std::string());
+        e.Name         = TruncateUtf8(jsonutil::GetString(item, "name", std::string()), kMaxNameBytes);
         // Sanitize IconPath at ingress: locks the value to addons/emot3/icons
         // (subfolders allowed; ui/ subfolder excluded) and passes bundled refs
         // through untouched. A hand-edit pointing outside the icons folder
