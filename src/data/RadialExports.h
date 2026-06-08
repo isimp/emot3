@@ -35,6 +35,11 @@ struct RadialItemRef {
     EMeMoteVariant   Variant = EMeMoteVariant::Default;
 };
 
+inline bool operator==(const RadialItemRef& a, const RadialItemRef& b) {
+    return a.Type == b.Type && a.Id == b.Id && a.Variant == b.Variant;
+}
+inline bool operator!=(const RadialItemRef& a, const RadialItemRef& b) { return !(a == b); }
+
 // Curated RadialMenus wheel options, stored in (and recovered from) the pack.
 struct RadialWheelOptions {
     bool  Small               = false;  // menu Type: false = Normal, true = Small

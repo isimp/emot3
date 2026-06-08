@@ -386,11 +386,29 @@ void RenderRadialTab() {
                 bool sourceExists = false;
                 for (const auto& fc : g_Settings.FavoriteCategories)
                     if (fc.Name == w.SourceCategory) { sourceExists = true; break; }
+                // Drift = re-exporting would change this wheel: its stored refs no
+                // longer equal what a fresh snapshot of the source category yields
+                // (membership / order / a since-removed entry; also true for a subset
+                // or auto-split wheel, which diverge from the full category by design).
+                // Only computed when there's a category to compare against.
+                bool drift = false;
+                if (sourceExists && !w.ParseError)
+                    drift = (w.Items != ResnapshotCategory(w));
+
                 ImGui::SameLine();
-                if (w.ParseError)        ImGui::TextColored(kRed,   "%s", L("opt.radial.st_broken"));
-                else if (!sourceExists)  ImGui::TextColored(kRed,   "%s", L("opt.radial.st_source_missing"));
-                else if (!s_rmDetected)  ImGui::TextColored(kAmber, "%s", L("opt.radial.st_not_detected"));
-                else                     ImGui::TextColored(kGreen, "%s", L("opt.radial.st_in_sync"));
+                if (w.ParseError) {
+                    ImGui::TextColored(kRed, "%s", L("opt.radial.st_broken"));
+                } else if (!sourceExists) {
+                    ImGui::TextColored(kRed, "%s", L("opt.radial.st_source_missing"));
+                } else if (drift) {
+                    ImGui::TextColored(kAmber, "%s", L("opt.radial.st_changed"));
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.st_changed_tip"));
+                } else if (!s_rmDetected) {
+                    ImGui::TextColored(kAmber, "%s", L("opt.radial.st_not_detected"));
+                } else {
+                    ImGui::TextColored(kGreen, "%s", L("opt.radial.st_in_sync"));
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.st_in_sync_tip"));
+                }
 
                 // actions
                 if (sourceExists && !w.ParseError) {
