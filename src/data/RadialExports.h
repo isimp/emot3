@@ -45,7 +45,7 @@ struct RadialWheelOptions {
     bool  Small               = false;  // menu Type: false = Normal, true = Small
     int   SelectionMode       = 3;      // RadialMenus selection mode int (see RadialExport.cpp)
     float Scale               = 1.0f;
-    float IconScale           = 1.0f;
+    float IconScale           = 0.8f;   // 0.8 reads better than RadialMenus' 1.0 default
     bool  ShowItemNameTooltip = false;
     bool  GateByState         = true;   // write per-item Visibility can't-emote conditions
 };
@@ -59,6 +59,8 @@ struct RadialExport {
     int         Id = 0;          // RadialMenus menu ID (>= 90001)
     RadialWheelOptions          Options;
     std::vector<RadialItemRef>  Items;
+    bool        Partial    = false;  // a deliberate subset / auto-split (not a full mirror of
+                                     // the category) - drift is judged leniently for these
     bool        ParseError = false;  // pack present but unreadable (shown as a broken row)
 };
 

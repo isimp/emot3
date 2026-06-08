@@ -119,7 +119,7 @@ json BuildItem(const std::string& itemName, const std::string& identifier,
 
 // Write radials/<slug>/<slug>.json + radials/<slug>/icons/* for one wheel.
 bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
-                   const std::string& sourceCategory,
+                   const std::string& sourceCategory, bool partial,
                    const std::vector<RadialItemRef>& items,
                    const RadialWheelOptions& opt) {
     if (g_RadialsDir.empty()) return false;
@@ -137,6 +137,7 @@ bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
     j["SelectionMode"]         = opt.SelectionMode;                        // required: default None -> no commit path
     j["emot3_source_category"] = sourceCategory;                          // drift marker
     j["emot3_gate"]            = opt.GateByState;                         // recover the gate toggle on rescan
+    if (partial) j["emot3_partial"] = true;                              // subset / split: judge drift leniently
     if (opt.Scale != 1.0f)       j["Scale"]               = opt.Scale;      // user-changed only
     if (opt.IconScale != 1.0f)   j["IconScale"]           = opt.IconScale;
     if (opt.ShowItemNameTooltip) j["ShowItemNameTooltip"] = true;
@@ -208,6 +209,18 @@ RadialExportResult ExportCategoryAsWheels(const std::string& sourceCategory,
     if (g_RadialsDir.empty()) { res.error = "radials dir unset"; return res; }
     const int cap = CapacityFor(options);
 
+    // Is this a full mirror of the category, or a deliberate subset? Full = exactly
+    // one item per category ref, all Default variant. Anything else (fewer items, a
+    // non-Default /me-mote variant, a duplicate, or an auto-split below) is partial,
+    // which the status drift-check then judges leniently.
+    int fullCount = 0;
+    for (const auto& fc : g_Settings.FavoriteCategories)
+        if (fc.Name == sourceCategory) { fullCount = (int)fc.Refs.size(); break; }
+    bool partialSel = ((int)items.size() != fullCount);
+    if (!partialSel)
+        for (const auto& it : items)
+            if (it.Variant != EMeMoteVariant::Default) { partialSel = true; break; }
+
     // Partition into wheels: split into cap-sized chunks when over capacity and
     // autoSplit, else a single (defensively truncated) wheel.
     std::vector<std::vector<RadialItemRef>> chunks;
@@ -229,7 +242,8 @@ RadialExportResult ExportCategoryAsWheels(const std::string& sourceCategory,
                                        : baseName;
         const std::string slug = AllocSlug(name, reservedSlugs);
         const int         id   = NextFreeRadialId(reservedIds);
-        if (!WriteOneWheel(slug, id, name, sourceCategory, chunks[ci], options)) {
+        const bool        partial = multi || partialSel;  // each split piece is partial too
+        if (!WriteOneWheel(slug, id, name, sourceCategory, partial, chunks[ci], options)) {
             res.error = "write failed";
             break;
         }
@@ -247,13 +261,13 @@ RadialExportResult ExportCategoryAsWheels(const std::string& sourceCategory,
 }
 
 bool ReExportWheel(const std::string& slug, int id, const std::string& name,
-                   const std::string& sourceCategory,
+                   const std::string& sourceCategory, bool partial,
                    const std::vector<RadialItemRef>& items,
                    const RadialWheelOptions& options) {
     // Clear stale pack + icons (a removed ref's icon would otherwise linger), then
     // rewrite from scratch under the same slug + id.
     RemoveRadialDir(slug);
-    bool ok = WriteOneWheel(slug, id, name, sourceCategory, items, options);
+    bool ok = WriteOneWheel(slug, id, name, sourceCategory, partial, items, options);
     LoadRadialExports();
     SyncEmoteBinds();
     return ok;
@@ -276,11 +290,13 @@ bool RenameWheel(const std::string& oldSlug, const std::string& newName) {
 
     if (newSlug == oldSlug) {
         // Same slug -> rewrite the pack Name in place (refs unchanged, no bind sync).
-        bool ok = WriteOneWheel(oldSlug, w.Id, newName, w.SourceCategory, w.Items, w.Options);
+        bool ok = WriteOneWheel(oldSlug, w.Id, newName, w.SourceCategory, w.Partial,
+                                w.Items, w.Options);
         LoadRadialExports();
         return ok;
     }
-    bool ok = WriteOneWheel(newSlug, w.Id, newName, w.SourceCategory, w.Items, w.Options);
+    bool ok = WriteOneWheel(newSlug, w.Id, newName, w.SourceCategory, w.Partial,
+                            w.Items, w.Options);
     if (ok) RemoveRadialDir(oldSlug);
     LoadRadialExports();
     SyncEmoteBinds();

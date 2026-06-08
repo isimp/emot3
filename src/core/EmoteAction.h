@@ -22,12 +22,15 @@ enum class EFeedbackSink { InWindow, Alert };
 //   useTarget — appends " @" when the emote is targetable (caller decides;
 //               the function double-checks IsTargetable defensively).
 //   useSync   — appends " *" unconditionally.
-//   fromKeybind — the call originated from a Nexus InputBind (a per-emote
-//               keybind or a RadialMenus wheel item), NOT a panel click. The
-//               key used to trigger the bind is physically HELD at fire time,
-//               so it would trip the held-printable-key garble/movement guard
-//               and refuse the send; this skips that guard (the held key is the
-//               trigger, not movement) — same posture as the +plus swallow.
+//   fromKeybind — the call fired from this entry's OWN personal keybind (not a
+//               panel click), so the held trigger key is intended; skip the
+//               held-printable-key garble/movement guard (same posture as the
+//               +plus swallow). Pass FALSE for a radial-only invoke (an entry
+//               bound solely to drive a RadialMenus wheel): there the held key is
+//               the wheel-open key, so keeping the guard refuses + alerts rather
+//               than letting a printable wheel key garble the command. See
+//               OnEmoteBind, which derives this from UserKeybind / the /me-mote
+//               variant's Keybind flag.
 // Whether the input is auto-submitted (Enter at the end) or left for the
 // user to finish is controlled by g_Settings.SendOnClick.
 void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync,

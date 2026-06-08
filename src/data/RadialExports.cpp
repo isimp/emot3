@@ -68,6 +68,7 @@ bool ReadPack(const std::string& packPath, RadialExport& w) {
 
     w.Id             = j.value("ID", 0);
     w.SourceCategory = j.value("emot3_source_category", std::string());
+    w.Partial        = j.value("emot3_partial", false);
 
     std::string packName = j.value("Name", std::string());
     const size_t pfx = std::strlen(kRadialPackNamePrefix);

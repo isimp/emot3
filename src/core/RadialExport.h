@@ -43,7 +43,7 @@ RadialExportResult ExportCategoryAsWheels(const std::string& sourceCategory,
 // (re-snapshot the source category) and any options edit. Clears the wheel's stale
 // icons first. Rescans + SyncEmoteBinds.
 bool ReExportWheel(const std::string& slug, int id, const std::string& name,
-                   const std::string& sourceCategory,
+                   const std::string& sourceCategory, bool partial,
                    const std::vector<RadialItemRef>& items,
                    const RadialWheelOptions& options);
 

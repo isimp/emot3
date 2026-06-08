@@ -47,13 +47,15 @@ const ImVec4 kAmber(0.92f, 0.78f, 0.32f, 1.0f);
 const ImVec4 kRed  (1.00f, 0.45f, 0.40f, 1.0f);
 
 // ---- wizard state ---------------------------------------------------------
+// One selectable wizard row == one (ref, variant). Emotes contribute a single row;
+// a /me-mote contributes one row per non-empty variant (Default/You/All), so the
+// same /me-mote can be included in several states as distinct wheel items.
 struct WizItem {
-    RadialItemRef ref;            // Type/Id/Variant (variant editable for /me-motes)
-    bool          include = true;
+    RadialItemRef ref;            // Type/Id/Variant
+    bool          include = false;
     bool          isMeMote = false;
-    bool          hasYou = false, hasAll = false;  // gate the variant combo
-    bool          autoTarget = false;              // emote @ auto-target hint
-    std::string   name;
+    bool          autoTarget = false;   // emote @ auto-target hint
+    std::string   name;                 // display name (variant suffix already applied)
 };
 bool                  s_wizActive = false;   // form is open (drives BeginPopupModal)
 int                   s_wizPhase  = 0;        // 0 = form, 1 = done
@@ -74,6 +76,28 @@ int IncludedCount() {
     return n;
 }
 
+// Tooltip for the item just submitted (keyed i18n).
+void ItemTip(const char* tipKey) {
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L(tipKey));
+}
+
+// Float slider that resets to `def` on right-click (the established right-click-reset
+// idiom) and carries a tooltip.
+void SliderWithReset(const char* label, float* v, float lo, float hi, float def,
+                     const char* tipKey) {
+    ImGui::SetNextItemWidth(180.0f);
+    ImGui::SliderFloat(label, v, lo, hi, "%.2f");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L(tipKey));
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) *v = def;
+}
+
+// Right-align the cursor for a row of two buttons of width w each.
+void RightAlignButtons(float w, int count) {
+    float total = w * count + ImGui::GetStyle().ItemSpacing.x * (count - 1);
+    float avail = ImGui::GetContentRegionAvail().x;
+    if (avail > total) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
+}
+
 void OpenWizard(const std::string& category) {
     s_wizCategory = category;
     s_wizItems.clear();
@@ -85,28 +109,45 @@ void OpenWizard(const std::string& category) {
     // default wheel name = category name
     std::snprintf(s_wizName, sizeof(s_wizName), "%s", category.c_str());
 
-    // Snapshot the category's refs (in order). Resolve display name + per-type flags.
+    // Snapshot the category's refs (in order). Emotes -> one row; /me-motes -> one row
+    // per non-empty variant (Default on by default, You/All available but unchecked).
     for (const auto& fc : g_Settings.FavoriteCategories) {
         if (fc.Name != category) continue;
         for (const auto& ref : fc.Refs) {
-            WizItem w;
-            w.ref.Type = ref.Type;
-            w.ref.Id   = ref.Id;
-            w.ref.Variant = EMeMoteVariant::Default;
             if (ref.Type == EFavoriteRefType::Emote) {
+                WizItem w;
+                w.ref.Type = EFavoriteRefType::Emote;
+                w.ref.Id   = ref.Id;
+                w.ref.Variant = EMeMoteVariant::Default;
+                w.include  = true;
                 std::lock_guard<std::mutex> lk(g_EmotesMutex);
                 const Emote* e = FindEmote(ref.Id);
                 w.name = (e && !e->Name.empty()) ? e->Name : ref.Id;
                 w.autoTarget = e && e->IsTargetable && g_Settings.SendTargetableOnTarget;
+                s_wizItems.push_back(std::move(w));
             } else {
-                w.isMeMote = true;
-                std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-                const MeMote* m = FindMeMote(ref.Id);
-                w.name   = (m && !m->Name.empty()) ? m->Name : ref.Id;
-                w.hasYou = m && !m->TextYou.empty();
-                w.hasAll = m && !m->TextAll.empty();
+                std::string base; bool hasYou = false, hasAll = false;
+                {
+                    std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                    const MeMote* m = FindMeMote(ref.Id);
+                    base   = (m && !m->Name.empty()) ? m->Name : ref.Id;
+                    hasYou = m && !m->TextYou.empty();
+                    hasAll = m && !m->TextAll.empty();
+                }
+                auto pushVar = [&](EMeMoteVariant v, const char* suffix, bool inc) {
+                    WizItem w;
+                    w.isMeMote = true;
+                    w.ref.Type = EFavoriteRefType::MeMote;
+                    w.ref.Id   = ref.Id;
+                    w.ref.Variant = v;
+                    w.include  = inc;
+                    w.name     = base + suffix;
+                    s_wizItems.push_back(std::move(w));
+                };
+                pushVar(EMeMoteVariant::Default, "", true);
+                if (hasYou) pushVar(EMeMoteVariant::You, " (you)", false);
+                if (hasAll) pushVar(EMeMoteVariant::All, " (all)", false);
             }
-            s_wizItems.push_back(std::move(w));
         }
         break;
     }
@@ -149,19 +190,29 @@ void RenderWizard() {
         // ---- done panel ----
         ImGui::TextColored(kGreen, "%s", L("opt.radial.done_title"));
         ImGui::Spacing();
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+#ifdef EMOT3_PLUS
+        ImGui::TextWrapped("%s", L("opt.radial.done_next_plus"));
+#else
         ImGui::TextWrapped("%s", L("opt.radial.done_next"));
+#endif
         ImGui::PopTextWrapPos();
         ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
         for (size_t i = 0; i < s_wizResult.names.size(); ++i) {
-            ImGui::BulletText("%s  (KB_RADIAL%d)", s_wizResult.names[i].c_str(),
-                              i < s_wizResult.ids.size() ? s_wizResult.ids[i] : 0);
+            const int id = i < s_wizResult.ids.size() ? s_wizResult.ids[i] : 0;
+            ImGui::BulletText("%s", s_wizResult.names[i].c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("KB_RADIAL%d", id);
             ImGui::SameLine();
             std::string btn = std::string(L("opt.radial.copy_name")) + "##cn" + std::to_string(i);
             if (ImGui::SmallButton(btn.c_str()))
                 ImGui::SetClipboardText(s_wizResult.names[i].c_str());
         }
         ImGui::Spacing();
+        ImGui::Separator();
+        RightAlignButtons(120.0f, 1);
         if (ImGui::Button(L("common.close"), ImVec2(120, 0))) {
             s_wizActive = false;
             ImGui::CloseCurrentPopup();
@@ -195,25 +246,8 @@ void RenderWizard() {
         DrawThumb(w, thumb);
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(Ellipsize(w.name, 200.0f).c_str());
-        if (w.isMeMote) {
-            // variant combo (non-empty bodies only)
-            ImGui::SameLine();
-            const char* opts[3] = { L("opt.mm.variant_default"), L("opt.mm.variant_you"),
-                                    L("opt.mm.variant_all") };
-            int cur = (int)w.ref.Variant;
-            ImGui::SetNextItemWidth(110.0f);
-            if (ImGui::BeginCombo("##var", opts[cur])) {
-                for (int v = 0; v < 3; ++v) {
-                    bool enabled = (v == 0) || (v == 1 && w.hasYou) || (v == 2 && w.hasAll);
-                    if (!enabled) ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-                    if (ImGui::Selectable(opts[v], cur == v) && enabled)
-                        w.ref.Variant = (EMeMoteVariant)v;
-                    if (!enabled) ImGui::PopItemFlag();
-                }
-                ImGui::EndCombo();
-            }
-        } else if (w.autoTarget) {
+        ImGui::TextUnformatted(Ellipsize(w.name, 240.0f).c_str());
+        if (w.autoTarget) {
             ImGui::SameLine();
             ImGui::TextColored(kAmber, "%s", L("opt.radial.auto_target"));
         }
@@ -246,6 +280,7 @@ void RenderWizard() {
         ImGui::SetNextItemWidth(180.0f);
         if (ImGui::Combo(L("opt.radial.opt_type"), &typeIdx, types, 2))
             s_wizOpt.Small = (typeIdx == 1);
+        ItemTip("opt.radial.opt_type_tip");
 
         // SelectionMode: Click=1 / Release=2 / ReleaseOrClick=3
         const char* sels[3] = { L("opt.radial.sel_click"), L("opt.radial.sel_release"),
@@ -255,14 +290,16 @@ void RenderWizard() {
         ImGui::SetNextItemWidth(180.0f);
         if (ImGui::Combo(L("opt.radial.opt_selmode"), &selIdx, sels, 3))
             s_wizOpt.SelectionMode = selIdx + 1;
+        ItemTip("opt.radial.opt_selmode_tip");
 
-        ImGui::SetNextItemWidth(180.0f);
-        ImGui::SliderFloat(L("opt.radial.opt_scale"), &s_wizOpt.Scale, 0.5f, 2.0f, "%.2f");
-        ImGui::SetNextItemWidth(180.0f);
-        ImGui::SliderFloat(L("opt.radial.opt_iconscale"), &s_wizOpt.IconScale, 0.5f, 2.0f, "%.2f");
+        SliderWithReset(L("opt.radial.opt_scale"), &s_wizOpt.Scale, 0.5f, 2.0f,
+                        1.0f, "opt.radial.opt_scale_tip");
+        SliderWithReset(L("opt.radial.opt_iconscale"), &s_wizOpt.IconScale, 0.5f, 2.0f,
+                        0.8f, "opt.radial.opt_iconscale_tip");
         ImGui::Checkbox(L("opt.radial.opt_tooltip"), &s_wizOpt.ShowItemNameTooltip);
+        ItemTip("opt.radial.opt_tooltip_tip");
         ImGui::Checkbox(L("opt.radial.opt_gate"), &s_wizOpt.GateByState);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.gate_tip"));
+        ItemTip("opt.radial.gate_tip");
     }
 
     // Disclosure
@@ -277,22 +314,26 @@ void RenderWizard() {
         ImGui::TextColored(kAmber, "%s", L("opt.radial.rm_undetected_warn"));
     ImGui::PopTextWrapPos();
 
-    // Buttons
+    // Buttons (bottom-right)
     ImGui::Spacing();
+    ImGui::Separator();
+    const bool canExport = !nameEmpty && included >= 1 &&
+                           (included <= cap || s_wizAutoSplit);
+    RightAlignButtons(120.0f, 2);
     if (ImGui::Button(L("common.cancel"), ImVec2(120, 0))) {
         s_wizActive = false;
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
-    const bool canExport = !nameEmpty && included >= 1 &&
-                           (included <= cap || s_wizAutoSplit);
     if (!canExport) BeginDisabledCompat();
-    if (ImGui::Button(L("opt.radial.export_confirm"), ImVec2(140, 0)) && canExport) {
+    if (ImGui::Button(L("opt.radial.export_confirm"), ImVec2(120, 0)) && canExport) {
         std::vector<RadialItemRef> items;
         for (const auto& w : s_wizItems) if (w.include) items.push_back(w.ref);
         s_wizResult = ExportCategoryAsWheels(s_wizCategory, s_wizName, items, s_wizOpt,
                                              s_wizAutoSplit);
         RefreshStatus();
+        if (s_wizResult.ok && APIDefs && APIDefs->UI.SendAlert)
+            APIDefs->UI.SendAlert(L("opt.radial.alert_exported"));
         s_wizPhase = 1;  // -> done panel (modal stays open)
     }
     if (!canExport) EndDisabledCompat();
@@ -320,13 +361,48 @@ std::vector<RadialItemRef> ResnapshotCategory(const RadialExport& w) {
     return out;
 }
 
+// Is (type,id) still present in this wheel's source category?
+bool CategoryHasRef(const RadialExport& w, const RadialItemRef& r) {
+    for (const auto& fc : g_Settings.FavoriteCategories) {
+        if (fc.Name != w.SourceCategory) continue;
+        for (const auto& ref : fc.Refs)
+            if (ref.Type == r.Type && ref.Id == r.Id) return true;
+        return false;
+    }
+    return false;
+}
+
+// Does re-exporting this wheel change it? Full wheels must match a fresh category
+// snapshot exactly; partial (subset / auto-split) wheels only drift when one of
+// their refs left the category (additions / order don't matter - the subset is
+// deliberate). Caller guarantees the source category exists.
+bool WheelDrift(const RadialExport& w) {
+    if (!w.Partial) return w.Items != ResnapshotCategory(w);
+    for (const auto& it : w.Items) if (!CategoryHasRef(w, it)) return true;
+    return false;
+}
+
+// The item list a Re-export should write: a full wheel re-snapshots the whole
+// category; a partial wheel keeps its current items minus any that left the category
+// (preserving order + /me-mote variant), staying partial by design.
+std::vector<RadialItemRef> BuildReexportItems(const RadialExport& w) {
+    if (!w.Partial) return ResnapshotCategory(w);
+    std::vector<RadialItemRef> out;
+    for (const auto& it : w.Items) if (CategoryHasRef(w, it)) out.push_back(it);
+    return out;
+}
+
 }  // namespace
 
 void RenderRadialTab() {
     EnsureStatus();
 
-    // 1. Intro
+    // 1. Intro (base build omits the +plus deploy mention)
+#ifdef EMOT3_PLUS
+    ImGui::TextWrapped("%s", L("opt.radial.intro_plus"));
+#else
     ImGui::TextWrapped("%s", L("opt.radial.intro"));
+#endif
 
     // 2. Status
     OptionsSection(L("opt.radial.sec_status"));
@@ -386,14 +462,12 @@ void RenderRadialTab() {
                 bool sourceExists = false;
                 for (const auto& fc : g_Settings.FavoriteCategories)
                     if (fc.Name == w.SourceCategory) { sourceExists = true; break; }
-                // Drift = re-exporting would change this wheel: its stored refs no
-                // longer equal what a fresh snapshot of the source category yields
-                // (membership / order / a since-removed entry; also true for a subset
-                // or auto-split wheel, which diverge from the full category by design).
-                // Only computed when there's a category to compare against.
+                // Drift = re-exporting would change this wheel (see WheelDrift:
+                // exact match for full wheels, lenient "a ref left the category" for
+                // partial/subset/split wheels). Only when the category still exists.
                 bool drift = false;
                 if (sourceExists && !w.ParseError)
-                    drift = (w.Items != ResnapshotCategory(w));
+                    drift = WheelDrift(w);
 
                 ImGui::SameLine();
                 if (w.ParseError) {
@@ -413,9 +487,13 @@ void RenderRadialTab() {
                 // actions
                 if (sourceExists && !w.ParseError) {
                     if (ImGui::SmallButton(L("opt.radial.reexport"))) {
-                        std::vector<RadialItemRef> items = ResnapshotCategory(w);
-                        ReExportWheel(w.Slug, w.Id, w.Name, w.SourceCategory, items, w.Options);
+                        std::vector<RadialItemRef> items = BuildReexportItems(w);
+                        bool ok = ReExportWheel(w.Slug, w.Id, w.Name, w.SourceCategory,
+                                                w.Partial, items, w.Options);
                         RefreshStatus();
+                        if (APIDefs && APIDefs->UI.SendAlert)
+                            APIDefs->UI.SendAlert(L(ok ? "opt.radial.alert_reexported"
+                                                        : "opt.radial.alert_failed"));
                     }
                     ImGui::SameLine();
                 }
@@ -428,7 +506,7 @@ void RenderRadialTab() {
                 if (ImGui::SmallButton(L("opt.radial.remove")))
                     ImGui::OpenPopup("##radialremove");
 
-                // rename popup
+                // rename popup (now with an explicit Cancel)
                 if (s_renameSlug == w.Slug && ImGui::BeginPopup("##radialrename")) {
                     ImGui::TextUnformatted(L("opt.radial.rename"));
                     bool empty = (s_renameBuf[0] == '\0');
@@ -437,27 +515,44 @@ void RenderRadialTab() {
                     bool enter = ImGui::InputText("##rn", s_renameBuf, sizeof(s_renameBuf),
                                                   ImGuiInputTextFlags_EnterReturnsTrue);
                     if (empty) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
-                    if ((enter || ImGui::Button(L("common.save"))) && !empty) {
+                    bool save = (enter || ImGui::Button(L("common.save"))) && !empty;
+                    ImGui::SameLine();
+                    if (ImGui::Button(L("common.cancel"))) {
+                        s_renameSlug.clear();
+                        ImGui::CloseCurrentPopup();
+                    } else if (save) {
                         RenameWheel(w.Slug, s_renameBuf);
                         s_renameSlug.clear();
                         ImGui::CloseCurrentPopup();
                     }
                     ImGui::EndPopup();
                 }
-                // remove confirm
-                if (ImGui::BeginPopup("##radialremove")) {
+                // remove confirm — a proper modal (matches the destructive-action idiom)
+                {
+                    ImVec2 ds = ImGui::GetIO().DisplaySize;
+                    ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f),
+                                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+                }
+                if (ImGui::BeginPopupModal("##radialremove", nullptr,
+                                           ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 22.0f);
                     ImGui::TextWrapped("%s", L("opt.radial.remove_confirm"));
+                    ImGui::PopTextWrapPos();
+                    ImGui::Spacing();
+                    bool removed = false;
                     if (ImGui::Button(L("opt.radial.remove"), ImVec2(110, 0))) {
-                        RemoveWheel(w.Slug);
+                        bool ok = RemoveWheel(w.Slug);
+                        if (APIDefs && APIDefs->UI.SendAlert)
+                            APIDefs->UI.SendAlert(L(ok ? "opt.radial.alert_removed"
+                                                        : "opt.radial.alert_failed"));
+                        removed = true;
                         ImGui::CloseCurrentPopup();
-                        ImGui::EndPopup();
-                        ImGui::PopID();
-                        break;  // list mutated; rebuild next frame
                     }
                     ImGui::SameLine();
                     if (ImGui::Button(L("common.cancel"), ImVec2(110, 0)))
                         ImGui::CloseCurrentPopup();
                     ImGui::EndPopup();
+                    if (removed) { ImGui::PopID(); break; }  // list mutated; rebuild next frame
                 }
                 ImGui::PopID();
             }
@@ -477,6 +572,16 @@ void RenderRadialTab() {
         if (ImGui::Button(btn) && !none) {
             RadialDeployResult r = DeployToRadialMenus();
             if (r.ok) LOG_INFO("radials: deploy ok (%d packs, %d icons)", r.packs, r.icons);
+            if (APIDefs && APIDefs->UI.SendAlert) {
+                if (r.ok) {
+                    char msg[96];
+                    std::snprintf(msg, sizeof(msg), L("opt.radial.alert_deployed"),
+                                  r.packs, r.icons);
+                    APIDefs->UI.SendAlert(msg);
+                } else {
+                    APIDefs->UI.SendAlert(L("opt.radial.alert_failed"));
+                }
+            }
         }
         if (none) EndDisabledCompat();
         ImGui::TextWrapped("%s", L("opt.radial.reload_reminder"));
