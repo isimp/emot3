@@ -548,19 +548,32 @@ void RenderWizard() {
         ImGui::SameLine();
         if (ImGui::Button(L("opt.radial.autofill"))) AutoFillPages();
 
+        // Per-wheel readout + guidance, so EVERY wheel is explained - including extra
+        // and empty ones in a split (the old aggregate warnings keyed off the total
+        // count, so a split's one-item / empty page got no message of its own).
         for (int p = 1; p <= s_wizPageCount; ++p) {
-            const int c = PageCount(p);
-            const bool bad = (c > cap) || (c == 0);
-            if (bad) anyOver  = anyOver  || c > cap;
-            if (c == 0) anyEmpty = true;
-            char buf[64];
+            const int  c     = PageCount(p);
+            const bool over  = c > cap;
+            const bool empty = c == 0;
+            if (over)  anyOver  = true;
+            if (empty) anyEmpty = true;
+            char buf[160];
             std::snprintf(buf, sizeof(buf), L("opt.radial.page_fill"), p, c, cap);
-            ImGui::TextColored(bad ? kAmber : ImGui::GetStyleColorVec4(ImGuiCol_Text),
+            ImGui::TextColored((over || empty) ? kAmber : ImGui::GetStyleColorVec4(ImGuiCol_Text),
                                "%s", buf);
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+            if (empty) {
+                std::snprintf(buf, sizeof(buf), L("opt.radial.warn_zero"), p);
+                ImGui::TextColored(kRed, "%s", buf);
+            } else if (over) {
+                std::snprintf(buf, sizeof(buf), L("opt.radial.page_over"), p, c - cap);
+                ImGui::TextColored(kAmber, "%s", buf);
+            } else if (c == 1) {
+                std::snprintf(buf, sizeof(buf), L("opt.radial.warn_one"), p);
+                ImGui::TextColored(kAmber, "%s", buf);
+            }
+            ImGui::PopTextWrapPos();
         }
-        if (anyOver)  ImGui::TextColored(kAmber, "%s", L("opt.radial.page_over"));
-        if (included == 1) ImGui::TextColored(kAmber, "%s", L("opt.radial.warn_one"));
-        if (included == 0) ImGui::TextColored(kRed,   "%s", L("opt.radial.warn_zero"));
     }
 
     // Wheel options
