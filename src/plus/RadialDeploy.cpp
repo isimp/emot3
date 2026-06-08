@@ -4,6 +4,8 @@
 #include "RadialExports.h" // RadialPacksDir / RadialIconsDir (the staged layout)
 #include "Logging.h"
 
+#include <fstream>
+#include <iterator>
 #include <string>
 
 namespace {
@@ -143,6 +145,31 @@ int DeployGroupToRadialMenus(const std::vector<std::string>& slugs) {
     return n;
 }
 
+RadialSyncState RadialMenusSyncState(const std::vector<std::string>& slugs) {
+    const std::string rmDir = RadialMenusDir();
+    if (rmDir.empty() || slugs.empty()) return RadialSyncState::NotDeployed;
+    const std::string stagedDir = RadialPacksDir();
+    const std::string rmPacks   = rmDir + "\\packs";
+    auto readFile = [](const std::string& p, std::string& out) -> bool {
+        std::ifstream f(p, std::ios::binary);
+        if (!f.is_open()) return false;
+        out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+        return true;
+    };
+    int deployed = 0, diff = 0;
+    for (const auto& slug : slugs) {
+        std::string dep;
+        if (!readFile(rmPacks + "\\" + slug + ".json", dep)) continue;  // not deployed
+        ++deployed;
+        std::string staged;
+        readFile(stagedDir + "\\" + slug + ".json", staged);
+        if (dep != staged) ++diff;
+    }
+    if (deployed == 0)                                  return RadialSyncState::NotDeployed;
+    if (diff > 0 || deployed != (int)slugs.size())      return RadialSyncState::OutOfDate;
+    return RadialSyncState::InSync;
+}
+
 #else  // ---- base build: nothing outside emot3's own folder ----
 
 RadialDeployResult DeployToRadialMenus() {
@@ -153,5 +180,8 @@ RadialDeployResult DeployToRadialMenus() {
 bool RadialMenusHasPack(const std::string&) { return false; }
 int  RemoveFromRadialMenus(const std::vector<std::string>&) { return 0; }
 int  DeployGroupToRadialMenus(const std::vector<std::string>&) { return 0; }
+RadialSyncState RadialMenusSyncState(const std::vector<std::string>&) {
+    return RadialSyncState::NotDeployed;
+}
 
 #endif  // EMOT3_PLUS

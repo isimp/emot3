@@ -24,6 +24,7 @@ struct RadialExportResult {
     int                      wheelsWritten = 0;  // pages written
     std::vector<int>         ids;    // assigned menu ids (>= 90001), one per page
     std::vector<std::string> names;  // pack names ("emot3: <name>") for the KB_RADIAL hint
+    std::string              group;  // the logical export's group id (for a follow-up sync)
     std::string              error;  // non-empty on failure (short text)
 };
 

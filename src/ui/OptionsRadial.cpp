@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cstdio>
+#include <map>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -35,10 +36,26 @@ void EndDisabledCompat() {
     ImGui::PopItemFlag();
 }
 
-// ---- status cache (avoid a per-frame dir stat; refresh on entry + mutations) ----
+// ---- status cache (avoid per-frame disk I/O; refresh on entry + mutations) -------
 bool s_statusKnown = false;
 bool s_rmDetected  = false;
-void RefreshStatus() { s_rmDetected = IsRadialMenusInstalled(); s_statusKnown = true; }
+// +plus: per-group RadialMenus sync state, recomputed in RefreshStatus (reads files).
+std::map<std::string, RadialSyncState> s_syncState;
+void RefreshStatus() {
+    s_rmDetected = IsRadialMenusInstalled();
+    s_statusKnown = true;
+#ifdef EMOT3_PLUS
+    s_syncState.clear();
+    if (s_rmDetected) {
+        std::map<std::string, std::vector<std::string>> bySlug;
+        {
+            std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+            for (const auto& w : g_RadialExports) bySlug[w.Group].push_back(w.Slug);
+        }
+        for (const auto& kv : bySlug) s_syncState[kv.first] = RadialMenusSyncState(kv.second);
+    }
+#endif
+}
 void EnsureStatus()  { if (!s_statusKnown) RefreshStatus(); }
 
 // status colors (reuse the established palette)
@@ -69,6 +86,7 @@ std::vector<std::string> s_wizRemoved;  // (edit) refs that left the category, d
 RadialWheelOptions    s_wizOpt;
 int                   s_wizPageCount = 1;     // number of wheel pages (split)
 RadialExportResult    s_wizResult;
+bool                  s_wizDoneSynced = false;  // done panel: already pushed to RadialMenus
 // Edit mode: when s_wizEditGroup is non-empty the wizard re-opens an EXISTING logical
 // export (seeded from its category with its last selection + page layout + options)
 // and writes back under the same group; empty = creating a new one.
@@ -343,6 +361,25 @@ void RenderWizard() {
         }
         ImGui::Spacing();
         ImGui::Separator();
+#ifdef EMOT3_PLUS
+        // +plus: offer to push this wheel straight into RadialMenus from here (the
+        // click is the approval). Overwrites same-named files; reload radials after.
+        if (s_rmDetected && !s_wizResult.group.empty()) {
+            if (!s_wizDoneSynced) {
+                if (ImGui::Button(L("opt.radial.sync_now"))) {
+                    std::vector<std::string> slugs;
+                    for (const auto& w : WheelsInGroup(s_wizResult.group)) slugs.push_back(w.Slug);
+                    DeployGroupToRadialMenus(slugs);
+                    RefreshStatus();
+                    s_wizDoneSynced = true;
+                }
+                PlusBadge();
+            } else {
+                ImGui::TextColored(kGreen, "%s", L("opt.radial.synced_inline"));
+            }
+            ImGui::Spacing();
+        }
+#endif
         RightAlignButtons(120.0f, 1);
         if (ImGui::Button(L("common.close"), ImVec2(120, 0))) {
             s_wizActive = false;
@@ -543,6 +580,7 @@ void RenderWizard() {
                                              pages, s_wizOpt);
         else         s_wizResult = ExportGroup(s_wizCategory, s_wizName, pages, s_wizOpt);
         RefreshStatus();
+        s_wizDoneSynced = false;
         s_wizPhase = 1;  // -> done panel (modal stays open)
     }
     if (!canExport) EndDisabledCompat();
@@ -676,19 +714,13 @@ void RenderRadialTab() {
                 for (const auto& pg : pages) { totalItems += (int)pg.Items.size(); parseErr = parseErr || pg.ParseError; }
 
                 // This export's page slugs + whether any are deployed in RadialMenus
-                // (drives the +plus "also delete / sync" cross-addon paths).
+                // (drives the +plus delete / sync cross-addon paths).
                 std::vector<std::string> groupSlugs;
                 bool deployedInRM = false;
                 for (const auto& pg : pages) {
                     groupSlugs.push_back(pg.Slug);
                     if (RadialMenusHasPack(pg.Slug)) deployedInRM = true;
                 }
-                // After a rename, push the new name onto the deployed copy (+plus).
-                auto syncRenameToRM = [&]() {
-#ifdef EMOT3_PLUS
-                    if (deployedInRM) DeployGroupToRadialMenus(groupSlugs);
-#endif
-                };
 
                 ImGui::PushID(group.c_str());
                 ImGui::AlignTextToFramePadding();
@@ -702,12 +734,15 @@ void RenderRadialTab() {
                                                   ImGuiInputTextFlags_EnterReturnsTrue);
                     bool active = ImGui::IsItemActive();
                     if (empty) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
+                    // Rename only rewrites the staged pack; the deployed copy (if any)
+                    // becomes "out of date" and the user pushes it with the Sync button
+                    // (so a RadialMenus write stays an explicit, confirmed action).
                     if (enter && !empty) {
-                        RenameGroup(group, s_renameBuf); syncRenameToRM();
+                        RenameGroup(group, s_renameBuf); RefreshStatus();
                         s_renameGroup.clear();
                     } else if (!active && ImGui::IsItemDeactivated()) {
                         if (!empty && head.Name != s_renameBuf) {
-                            RenameGroup(group, s_renameBuf); syncRenameToRM();
+                            RenameGroup(group, s_renameBuf); RefreshStatus();
                         }
                         s_renameGroup.clear();
                     }
@@ -747,11 +782,39 @@ void RenderRadialTab() {
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.st_in_sync_tip"));
                 }
 
+#ifdef EMOT3_PLUS
+                // +plus: how the staged wheel compares to the copy in RadialMenus' folder.
+                if (s_rmDetected && !parseErr) {
+                    auto it = s_syncState.find(group);
+                    RadialSyncState ss = (it != s_syncState.end()) ? it->second
+                                                                   : RadialSyncState::NotDeployed;
+                    ImGui::SameLine();
+                    if (ss == RadialSyncState::InSync)
+                        ImGui::TextColored(kGreen, "%s", L("opt.radial.rm_synced"));
+                    else if (ss == RadialSyncState::OutOfDate)
+                        ImGui::TextColored(kAmber, "%s", L("opt.radial.rm_outofdate"));
+                    else
+                        ImGui::TextDisabled("%s", L("opt.radial.rm_notdeployed"));
+                }
+#endif
+
                 // actions — Edit re-opens the wizard pre-filled for the whole export.
                 if (sourceExists && !parseErr) {
                     if (ImGui::SmallButton(L("opt.radial.edit"))) OpenWizardForEdit(group);
                     ImGui::SameLine();
                 }
+#ifdef EMOT3_PLUS
+                // +plus: push this wheel's files into RadialMenus (overwrites). The click
+                // is the approval; deploy-all and remove keep their own confirms.
+                if (!parseErr && s_rmDetected) {
+                    if (ImGui::SmallButton(L("opt.radial.sync"))) {
+                        DeployGroupToRadialMenus(groupSlugs);
+                        RefreshStatus();
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.sync_tip"));
+                    ImGui::SameLine();
+                }
+#endif
                 if (ImGui::SmallButton(L("opt.radial.rename"))) {
                     // Begin inline rename (the InputText renders in place of the name
                     // at the top of the row next frame).

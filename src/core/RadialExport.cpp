@@ -277,7 +277,9 @@ RadialExportResult ExportGroup(const std::string& sourceCategory,
     if (g_RadialsDir.empty() || pages.empty()) { res.error = "nothing to export"; return res; }
     const bool partial = ComputePartial(sourceCategory, pages);
     const std::string group = AllocGroupSlug(baseName);
-    return WriteGroupPages(group, baseName, sourceCategory, pages, options, partial);
+    RadialExportResult r = WriteGroupPages(group, baseName, sourceCategory, pages, options, partial);
+    r.group = group;
+    return r;
 }
 
 RadialExportResult EditGroup(const std::string& group, const std::string& sourceCategory,
@@ -294,7 +296,9 @@ RadialExportResult EditGroup(const std::string& group, const std::string& source
     // (page menu ids reassigned). RemoveRadialGroup reads the page set in memory, so do
     // it before the rescan inside WriteGroupPages.
     RemoveRadialGroup(group);
-    return WriteGroupPages(group, baseName, sourceCategory, pages, options, partial);
+    RadialExportResult r = WriteGroupPages(group, baseName, sourceCategory, pages, options, partial);
+    r.group = group;
+    return r;
 }
 
 bool RenameGroup(const std::string& group, const std::string& newName) {

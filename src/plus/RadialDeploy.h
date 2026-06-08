@@ -35,6 +35,13 @@ struct RadialDeployResult {
     std::string error;              // short text on failure
 };
 
+// How a staged wheel's packs compare to what's deployed in RadialMenus.
+enum class RadialSyncState {
+    NotDeployed,  // none of the group's packs are in RadialMenus
+    OutOfDate,    // deployed, but a pack is missing or differs from the staged copy
+    InSync        // every staged pack is deployed and byte-identical
+};
+
 // +plus: copy every staged wheel's pack into addons/RadialMenus/packs and its icons
 // into addons/RadialMenus/icons (both are slug-named, so what lands in RadialMenus'
 // flat folders stays identifiable). Base build: inert stub returning available=false.
@@ -52,6 +59,11 @@ bool RadialMenusHasPack(const std::string& slug);
 int RemoveFromRadialMenus(const std::vector<std::string>& slugs);
 
 // +plus: (re)copy just the given page slugs' pack + icons into RadialMenus,
-// overwriting. Returns files copied. Used to push a rename's new name onto an
-// already-deployed wheel (same filenames). Base build: no-op (0).
+// overwriting. Returns files copied. Used by the per-wheel Sync button. Base: no-op (0).
 int DeployGroupToRadialMenus(const std::vector<std::string>& slugs);
+
+// +plus: compare the given group's staged packs to the deployed copies in RadialMenus
+// (byte compare of each <slug>.json). Drives the per-wheel sync status. Base build:
+// always NotDeployed (it never deploys). Reads files - call from the cached status
+// refresh, not per frame.
+RadialSyncState RadialMenusSyncState(const std::vector<std::string>& slugs);
