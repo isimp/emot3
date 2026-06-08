@@ -584,6 +584,7 @@ void RenderRadialTab() {
             }
         }
         if (none) EndDisabledCompat();
+        PlusBadge();  // tag the deploy convenience as an emot3 (Plus) feature
         ImGui::TextWrapped("%s", L("opt.radial.reload_reminder"));
 #else
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);

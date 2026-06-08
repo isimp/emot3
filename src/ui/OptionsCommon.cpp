@@ -75,16 +75,15 @@ bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
 }
 
 #ifdef EMOT3_PLUS
-namespace {
-// Gold "Plus" tag rendered on the same line, after a +plus setting's label, so it
-// visibly reads as an emot3 (Plus) feature in the Options UI. Same gold as the
-// update banner / chat-unbound warning. Hovering it explains the marker.
+// Gold "Plus" tag rendered on the same line, after a +plus control, so it visibly
+// reads as an emot3 (Plus) feature in the Options UI. Same gold as the update banner
+// / chat-unbound warning. Hovering it explains the marker. Exposed (declared in
+// OptionsCommon.h) so the RadialMenus Deploy button can tag itself too.
 void PlusBadge() {
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(0.85f, 0.75f, 0.35f, 1.0f), "Plus");
     if (ImGui::IsItemHovered()) TooltipText("opt.plus_badge");
 }
-}  // namespace
 
 bool PlusCheckbox(const char* labelKey, bool* state, bool defaultIsOn) {
     bool changed = ImGui::Checkbox(L(labelKey), state);

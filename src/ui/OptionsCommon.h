@@ -35,6 +35,11 @@ bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
                       bool defaultIsOn, const char* disabledTipKey);
 
 #ifdef EMOT3_PLUS
+// Gold "Plus" tag rendered SameLine after a control, marking it an emot3 (Plus)
+// feature (hover explains the marker). Used by the Plus* checkboxes below and by the
+// RadialMenus tab's Deploy button.
+void PlusBadge();
+
 // +plus settings checkboxes - same look as the g_Settings helpers above, but
 // backed by g_PlusSettings / SavePlusSettings (plus.json) instead of g_Settings.
 // Used for the two shipped input-swallow toggles (Quickbar wheel routing,
