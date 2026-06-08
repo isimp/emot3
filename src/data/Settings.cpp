@@ -1,6 +1,6 @@
 #include "Settings.h"
 #include "JsonUtil.h"
-#include "Favorites.h"   // TrimName, reused by the sanitize pass
+#include "StringUtil.h"  // TrimWhitespace, reused by the sanitize pass
 #include "I18n.h"        // AvailableUiLanguages, for UiLanguage validation
 #include "Logging.h"
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.settings"
@@ -293,7 +293,7 @@ bool SanitizeSettings(Settings& s) {
     };
     std::unordered_set<std::string> seenRefs;
     for (auto& cat : s.FavoriteCategories) {
-        std::string nm = TrimName(cat.Name);
+        std::string nm = TrimWhitespace(cat.Name);
         if (nm.empty()) nm = "Favorites";
         if (seenNames.count(nm)) {
             std::string base = nm;

@@ -334,9 +334,12 @@
     <ClInclude Include="ui\IconBrowse.h" />
     <ClInclude Include="ui\IconPicker.h" />
     <ClInclude Include="ui\OptionsMeMotes.h" />
+    <ClInclude Include="core\StringUtil.h" />
     <ClInclude Include="ui\Icons.h" />
+    <ClInclude Include="ui\IconDrawing.h" />
     <ClInclude Include="ui\Layout.h" />
     <ClInclude Include="ui\MainPanel.h" />
+    <ClInclude Include="ui\OwnedScroll.h" />
     <ClInclude Include="ui\NexusShortcut.h" />
     <ClInclude Include="ui\Options.h" />
     <ClInclude Include="ui\OptionsCommon.h" />
@@ -388,7 +391,9 @@
     <ClCompile Include="ui\IconBrowse.cpp" />
     <ClCompile Include="ui\IconPicker.cpp" />
     <ClCompile Include="ui\Icons.cpp" />
+    <ClCompile Include="ui\IconDrawing.cpp" />
     <ClCompile Include="ui\Layout.cpp" />
+    <ClCompile Include="ui\OwnedScroll.cpp" />
     <ClCompile Include="ui\MainPanel.cpp" />
     <ClCompile Include="ui\NexusShortcut.cpp" />
     <ClCompile Include="ui\Options.cpp" />

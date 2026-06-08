@@ -5,7 +5,7 @@
 #include "Settings.h"
 #include "PlusSettings.h"   // g_PlusSettings (wheel routing; empty in base builds)
 #include "QuickbarPresets.h"
-#include "Favorites.h"      // TrimName for the preset-name entry
+#include "StringUtil.h"     // TrimWhitespace for the preset-name entry
 #include "Layout.h"         // ToggleButton, PushInvalidInputStyle
 #include "Logging.h"        // LOG_TRACE / LOG_DEBUG (setting + auto-disable)
 #include "Profiling.h"      // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
@@ -133,7 +133,7 @@ static void RenderQuickbarPresetsSection() {
 
     // --- Inline name entry (New / Rename) ---
     if (s_mode != 0) {
-        std::string trimmed = TrimName(s_nameBuf);
+        std::string trimmed = TrimWhitespace(s_nameBuf);
         int  excludeIdx = s_mode == 2 ? s_sel : -1;
         bool empty   = trimmed.empty();
         bool dup     = !empty && QuickbarPresetNameExists(trimmed, excludeIdx);

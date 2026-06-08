@@ -3,6 +3,7 @@
 #include "Globals.h"   // g_PresetsDir, g_QbWin*/g_QbApply*/g_QbGeometryValid, Windows.h
 #include "Logging.h"
 #include "Resources.h" // kPresets bundled default-preset table
+#include "StringUtil.h" // ToLower (shared helper)
 
 #include <nlohmann/json.hpp>
 
@@ -18,11 +19,6 @@ using json = nlohmann::json;
 std::vector<QuickbarPreset> g_QuickbarPresets;
 
 namespace {
-
-std::string ToLower(std::string s) {
-    for (auto& c : s) c = (char)std::tolower((unsigned char)c);
-    return s;
-}
 
 std::string StemOf(const std::string& fn) {
     size_t dot = fn.find_last_of('.');

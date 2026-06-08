@@ -3,6 +3,7 @@
 #include "Icons.h"       // SanitizeIconPath (IconPath ingress heal)
 #include "JsonUtil.h"
 #include "Logging.h"
+#include "StringUtil.h"  // TrimWhitespace (shared helper)
 #include "Resources.h"   // kMeMoteData bundled seed table
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.memotes"
 
@@ -31,23 +32,13 @@ void ClearMeMotes() {
 
 namespace {
 
-// Trim leading/trailing ASCII whitespace. Same pattern as the trim helper in
-// Favorites.cpp (TrimName), local copy here to avoid a cross-module include
-// for a 3-line function.
-std::string Trim(std::string s) {
-    auto issp = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
-    while (!s.empty() && issp((unsigned char)s.front())) s.erase(s.begin());
-    while (!s.empty() && issp((unsigned char)s.back()))  s.pop_back();
-    return s;
-}
-
 // Strip a leading "/me " if the user accidentally pasted the full command into
 // a variant-text field. TextDefault/You/All carry the variant BODY only — the
 // "/me " prefix is added once at send time in SendOrFillMeMote. Idempotent
 // (no-op for already-stripped strings). Case-insensitive on the "me" so
 // "/ME hugs" also strips cleanly.
 std::string StripMePrefix(std::string s) {
-    s = Trim(s);
+    s = TrimWhitespace(s);
     // A body of exactly "/me" with no text is a nonsensical leftover — treat it
     // as empty so the empty-TextDefault drop fires instead of shipping "/me /me"
     // on send. ("/method" etc. are real words and intentionally NOT stripped.)
@@ -59,7 +50,7 @@ std::string StripMePrefix(std::string s) {
         (s[2] == 'e' || s[2] == 'E') &&
         (s[3] == ' ' || s[3] == '\t')) {
         s.erase(0, 4);
-        s = Trim(s);
+        s = TrimWhitespace(s);
     }
     return s;
 }
@@ -73,7 +64,7 @@ std::string StripMePrefix(std::string s) {
 void TokenizeAliases(const std::string& raw, std::vector<std::string>& out) {
     std::string tok;
     auto flush = [&] {
-        std::string t = Trim(tok);
+        std::string t = TrimWhitespace(tok);
         tok.clear();
         if (t.empty()) return;
         if (std::find(out.begin(), out.end(), t) == out.end()) out.push_back(std::move(t));
@@ -358,7 +349,7 @@ bool LoadMeMotesJson(const std::string& path) {
     // happened.
     {
         std::string rawLang = jsonutil::GetString(j, "language", std::string());
-        std::string trimmedLang = Trim(rawLang);
+        std::string trimmedLang = TrimWhitespace(rawLang);
         std::string normLang = ClampMeMoteLanguage(trimmedLang);
         if (!rawLang.empty() && normLang != rawLang) {
             LOG_WARNING("me_motes.json: language '%s' normalized to '%s' (trim + bundle clamp)",
@@ -428,7 +419,7 @@ bool LoadMeMotesJson(const std::string& path) {
         // not dropped: it's a half-filled entry the user can finish in the
         // editor, same as an Id typed with no Name yet.)
         {
-            std::string trimmedName = Trim(m.Name);
+            std::string trimmedName = TrimWhitespace(m.Name);
             if (trimmedName != m.Name) {
                 LOG_WARNING("me_motes[%s].name: trimmed whitespace", m.Id.c_str());
                 m.Name = std::move(trimmedName); changed = true;

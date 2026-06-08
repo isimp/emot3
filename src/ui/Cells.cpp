@@ -5,7 +5,9 @@
 #include "EmoteData.h"
 #include "EmoteAction.h"
 #include "Favorites.h"
+#include "StringUtil.h"      // TrimWhitespace (category rename)
 #include "Icons.h"
+#include "IconDrawing.h"     // DrawStarIcon / DrawTrashIcon / cell overlays
 #include "Layout.h"
 #include "MeMotes.h"         // /me-mote struct + lookups (RenderMeMoteCellBody)
 #include "TextCache.h"       // EllipsizeCached / FitNameCached (per-cell label memo)
@@ -1381,7 +1383,7 @@ bool RenderCategoryHeader(int categoryIdx, const char* name, bool searchActive) 
         // Inline rename - same red-border + tooltip validation as every other
         // text input (empty or duplicate name both flag the box).
         if (s_renameFocus) { ImGui::SetKeyboardFocusHere(); s_renameFocus = false; }
-        std::string trimmed = TrimName(s_catRenameBuf);
+        std::string trimmed = TrimWhitespace(s_catRenameBuf);
         bool empty   = trimmed.empty();
         bool dup     = !empty && CategoryNameExists(trimmed, categoryIdx);
         bool invalid = empty || dup;

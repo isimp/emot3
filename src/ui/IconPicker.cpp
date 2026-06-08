@@ -7,6 +7,7 @@
 #include "Settings.h"     // g_Settings.UseAIIconFallback
 #include "I18n.h"         // L()
 #include "Logging.h"      // LOG_WARNING (folder cap)
+#include "StringUtil.h"   // ToLower (shared helper)
 #include "Profiling.h"    // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS)
 
 #ifdef EMOT3_DEVTOOLS
@@ -56,12 +57,6 @@ std::vector<std::string> s_folderFiles;             // image filenames in g_Icon
 // frame the modal renders (no per-frame allocation churn). A modal blocks other
 // UI, so UseAIIconFallback can't change mid-open; rebuilding on open suffices.
 std::vector<PickItem> s_official, s_ai, s_mmai, s_folder;
-
-std::string ToLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return (char)std::tolower(c); });
-    return s;
-}
 
 // Strip a supported-image extension (.png / .jpg / .jpeg, case-insensitive)
 // from a filename or relative path. Used to derive the display label + cache
