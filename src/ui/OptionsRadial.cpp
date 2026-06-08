@@ -487,18 +487,23 @@ void RenderWizard() {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(L("opt.radial.pages"));
         ImGui::SameLine();
-        if (s_wizPageCount <= minPages) BeginDisabledCompat();
-        if (ImGui::Button("-##pages") && s_wizPageCount > minPages) {
+        // Cache the disabled state BEFORE the button: the click mutates s_wizPageCount,
+        // and re-evaluating the condition after would unbalance BeginDisabledCompat /
+        // EndDisabledCompat (pop without push -> ImGui stack underflow -> crash).
+        const bool minusOff = s_wizPageCount <= minPages;
+        if (minusOff) BeginDisabledCompat();
+        if (ImGui::Button("-##pages") && !minusOff) {
             --s_wizPageCount;
             for (auto& w : s_wizItems) if (w.page > s_wizPageCount) w.page = s_wizPageCount;
         }
-        if (s_wizPageCount <= minPages) EndDisabledCompat();
+        if (minusOff) EndDisabledCompat();
         ImGui::SameLine();
         ImGui::Text("%d", s_wizPageCount);
         ImGui::SameLine();
-        if (s_wizPageCount >= maxPages) BeginDisabledCompat();
-        if (ImGui::Button("+##pages") && s_wizPageCount < maxPages) ++s_wizPageCount;
-        if (s_wizPageCount >= maxPages) EndDisabledCompat();
+        const bool plusOff = s_wizPageCount >= maxPages;
+        if (plusOff) BeginDisabledCompat();
+        if (ImGui::Button("+##pages") && !plusOff) ++s_wizPageCount;
+        if (plusOff) EndDisabledCompat();
         ImGui::SameLine();
         if (ImGui::Button(L("opt.radial.autofill"))) AutoFillPages();
 
@@ -607,13 +612,33 @@ int CategoryRefCount(const std::string& category) {
     return 0;
 }
 
-// Would re-exporting this logical export change it? Aggregates the union of all the
-// group's page items vs the source category: a full export must still cover exactly
-// the category's default refs; a partial export only drifts when one of its refs left
-// the category (added / reordered items don't matter - the subset is deliberate).
-// Caller guarantees the source category exists.
+// Has the source category changed since this export? Preferred path: compare the
+// category's CURRENT member keys to the snapshot stored at export (emot3_source_refs) -
+// catches any add/remove for full AND subset wheels alike (the reported bug: moving a
+// new emote into the category never tripped a subset wheel). Falls back to the old
+// item-vs-category heuristic for legacy packs with no snapshot. Caller guarantees the
+// source category exists.
 bool GroupDrift(const std::vector<RadialExport>& pages, const std::string& category,
                 bool partial) {
+    const std::vector<std::string>& snap = pages.front().SourceRefs;
+    if (!snap.empty()) {
+        std::vector<std::string> cur;
+        for (const auto& fc : g_Settings.FavoriteCategories)
+            if (fc.Name == category) {
+                for (const auto& ref : fc.Refs)
+                    cur.push_back(std::to_string((int)ref.Type) + ":" + ref.Id);
+                break;
+            }
+        if (cur.size() != snap.size()) return true;
+        for (const auto& k : cur) {
+            bool found = false;
+            for (const auto& s : snap) if (s == k) { found = true; break; }
+            if (!found) return true;  // a member changed (set differs)
+        }
+        return false;
+    }
+
+    // --- legacy fallback (pack predates the snapshot) ---
     std::vector<RadialItemRef> items;  // union across pages (dedupe by type/id/variant)
     for (const auto& pg : pages)
         for (const auto& it : pg.Items) {
@@ -626,7 +651,6 @@ bool GroupDrift(const std::vector<RadialExport>& pages, const std::string& categ
             if (!CategoryHasRefId(category, it.Type, it.Id)) return true;
         return false;
     }
-    // Full: item set must equal the category's default refs (order-independent).
     if ((int)items.size() != CategoryRefCount(category)) return true;
     for (const auto& it : items) {
         if (it.Variant != EMeMoteVariant::Default) return true;

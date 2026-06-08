@@ -64,8 +64,11 @@ struct RadialExport {
     int         Id = 0;          // RadialMenus menu ID (>= 90001)
     RadialWheelOptions          Options;
     std::vector<RadialItemRef>  Items;
-    bool        Partial    = false;  // a deliberate subset (not a full mirror of the
-                                     // category) - drift is judged leniently for these
+    bool        Partial    = false;  // a deliberate subset (not a full mirror of the category)
+    // The source category's member keys ("<type>:<id>") at export time. Drift compares
+    // this snapshot to the category's CURRENT members, so any add/remove is caught even
+    // for a subset wheel (where the wheel's own items don't reflect the full category).
+    std::vector<std::string>    SourceRefs;
     bool        ParseError = false;  // pack present but unreadable (shown as a broken row)
 };
 

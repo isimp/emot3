@@ -56,6 +56,10 @@ bool ReadPack(const std::string& packPath, RadialExport& w) {
     w.Partial        = j.value("emot3_partial", false);
     w.Group          = j.value("emot3_group", w.Slug);  // legacy/hand-made -> own group
     w.Page           = j.value("emot3_page", 1);
+    w.SourceRefs.clear();
+    if (j.contains("emot3_source_refs") && j["emot3_source_refs"].is_array())
+        for (const auto& s : j["emot3_source_refs"])
+            if (s.is_string()) w.SourceRefs.push_back(s.get<std::string>());
 
     // Logical export name: prefer the emot3_name marker; fall back to the pack "Name"
     // minus the "emot3: " prefix (legacy / hand-made packs).

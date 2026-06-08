@@ -146,7 +146,19 @@ bool WriteOneWheel(const std::string& slug, int id, const std::string& name,
     j["emot3_group"]           = group;                                  // shared across a split's pages
     j["emot3_page"]            = page;                                   // 1-based page index
     j["emot3_name"]            = baseName;                               // logical export name (no "(N)")
-    if (partial) j["emot3_partial"] = true;                              // subset: judge drift leniently
+    if (partial) j["emot3_partial"] = true;                              // subset (informational)
+    // Snapshot the source category's current members so drift can detect later
+    // add/remove even for a subset wheel.
+    {
+        json srefs = json::array();
+        for (const auto& fc : g_Settings.FavoriteCategories)
+            if (fc.Name == sourceCategory) {
+                for (const auto& ref : fc.Refs)
+                    srefs.push_back(std::to_string((int)ref.Type) + ":" + ref.Id);
+                break;
+            }
+        j["emot3_source_refs"] = std::move(srefs);
+    }
     if (opt.Scale != 1.0f)       j["Scale"]               = opt.Scale;      // user-changed only
     if (opt.IconScale != 1.0f)   j["IconScale"]           = opt.IconScale;
     if (opt.ShowItemNameTooltip) j["ShowItemNameTooltip"] = true;
