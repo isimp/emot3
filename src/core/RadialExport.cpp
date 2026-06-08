@@ -267,30 +267,46 @@ bool ComputePartial(const std::string& category,
 }
 
 // Write all pages of a group `group` (already allocated/free). Rescans + binds.
+// `reuse` (an edit's pre-removal page set) lets a surviving page keep its existing
+// menu id + slug, matched by page number: RadialMenus opens a wheel via the bind
+// "KB_RADIAL<id>" and the deployed pack is addressed by <slug>.json, so reallocating
+// either would orphan the user's wheel keybind / strand the deployed copy. Only
+// genuinely new pages (a page-count increase) get fresh ids/slugs.
 RadialExportResult WriteGroupPages(const std::string& group, const std::string& baseName,
                                    const std::string& category,
                                    const std::vector<std::vector<RadialItemRef>>& pages,
-                                   const RadialWheelOptions& options, bool partial) {
+                                   const RadialWheelOptions& options, bool partial,
+                                   const std::vector<RadialExport>& reuse = {}) {
     RadialExportResult res;
     const bool multi = pages.size() > 1;
     // Export/edit re-snapshots the category as the new drift baseline.
     const std::vector<std::string> srefs = CaptureCategoryRefs(category);
+    // Reserve every reused id/slug up front so a fresh page can't be handed one.
     std::vector<int>         reservedIds;
     std::vector<std::string> reservedSlugs;
+    for (const auto& pg : reuse) { reservedIds.push_back(pg.Id); reservedSlugs.push_back(pg.Slug); }
+    auto reusedFor = [&](int page, int& id, std::string& slug) -> bool {
+        for (const auto& pg : reuse)
+            if (pg.Page == page) { id = pg.Id; slug = pg.Slug; return true; }
+        return false;
+    };
     for (size_t p = 0; p < pages.size(); ++p) {
         const int page = (int)p + 1;
-        const std::string desired = multi ? group + "_" + std::to_string(page) : group;
-        const std::string slug    = AllocSlug(desired, reservedSlugs);
-        const int         id      = NextFreeRadialId(reservedIds);
-        const std::string name    = multi ? baseName + " (" + std::to_string(page) + ")"
-                                          : baseName;
+        int id; std::string slug;
+        if (!reusedFor(page, id, slug)) {  // new page -> allocate (avoiding reused ids/slugs)
+            const std::string desired = multi ? group + "_" + std::to_string(page) : group;
+            slug = AllocSlug(desired, reservedSlugs);
+            id   = NextFreeRadialId(reservedIds);
+            reservedSlugs.push_back(slug);
+            reservedIds.push_back(id);
+        }
+        const std::string name = multi ? baseName + " (" + std::to_string(page) + ")"
+                                       : baseName;
         if (!WriteOneWheel(slug, id, name, baseName, category, group, page, partial,
                            srefs, pages[p], options)) {
             res.error = "write failed";
             break;
         }
-        reservedSlugs.push_back(slug);
-        reservedIds.push_back(id);
         res.ids.push_back(id);
         res.names.push_back(std::string(kRadialPackNamePrefix) + name);
         ++res.wheelsWritten;
@@ -326,11 +342,16 @@ RadialExportResult EditGroup(const std::string& group, const std::string& source
         return res;
     }
     const bool partial = ComputePartial(sourceCategory, pages);
-    // Clear the group's current packs + icons, then rewrite fresh under the same group
-    // (page menu ids reassigned). RemoveRadialGroup reads the page set in memory, so do
-    // it before the rescan inside WriteGroupPages.
+    // Capture the current pages (id + slug per page) BEFORE removing them, so the
+    // rewrite can keep each surviving page's menu id + slug stable - otherwise the
+    // RadialMenus open-keybind (KB_RADIAL<id>) would be orphaned on every edit.
+    const std::vector<RadialExport> existing = WheelsInGroup(group);
+    // Clear the group's current packs + icons, then rewrite under the same group,
+    // reusing ids/slugs for matching pages. RemoveRadialGroup reads the page set in
+    // memory, so do it before the rescan inside WriteGroupPages.
     RemoveRadialGroup(group);
-    RadialExportResult r = WriteGroupPages(group, baseName, sourceCategory, pages, options, partial);
+    RadialExportResult r =
+        WriteGroupPages(group, baseName, sourceCategory, pages, options, partial, existing);
     r.group = group;
     return r;
 }
