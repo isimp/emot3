@@ -112,6 +112,37 @@ int RemoveFromRadialMenus(const std::vector<std::string>& slugs) {
     return removed;
 }
 
+int DeployGroupToRadialMenus(const std::vector<std::string>& slugs) {
+    const std::string rmDir = RadialMenusDir();
+    if (rmDir.empty() || !DirExists(rmDir)) return 0;
+    const std::string dstPacks = rmDir + "\\packs";
+    const std::string dstIcons = rmDir + "\\icons";
+    CreateDirectoryA(dstPacks.c_str(), nullptr);
+    CreateDirectoryA(dstIcons.c_str(), nullptr);
+    const std::string srcPacks = RadialPacksDir();
+    const std::string srcIcons = RadialIconsDir();
+    int n = 0;
+    for (const auto& slug : slugs) {
+        if (slug.empty()) continue;
+        if (CopyFileA((srcPacks + "\\" + slug + ".json").c_str(),
+                      (dstPacks + "\\" + slug + ".json").c_str(), FALSE)) ++n;
+        std::string pattern = srcIcons + "\\emot3_" + slug + "_*";
+        WIN32_FIND_DATAA fd;
+        HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+                std::string fn = fd.cFileName;
+                if (CopyFileA((srcIcons + "\\" + fn).c_str(),
+                              (dstIcons + "\\" + fn).c_str(), FALSE)) ++n;
+            } while (FindNextFileA(h, &fd));
+            FindClose(h);
+        }
+    }
+    LOG_INFO("radials: synced %d file(s) to RadialMenus", n);
+    return n;
+}
+
 #else  // ---- base build: nothing outside emot3's own folder ----
 
 RadialDeployResult DeployToRadialMenus() {
@@ -121,5 +152,6 @@ RadialDeployResult DeployToRadialMenus() {
 }
 bool RadialMenusHasPack(const std::string&) { return false; }
 int  RemoveFromRadialMenus(const std::vector<std::string>&) { return 0; }
+int  DeployGroupToRadialMenus(const std::vector<std::string>&) { return 0; }
 
 #endif  // EMOT3_PLUS

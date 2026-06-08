@@ -76,9 +76,11 @@ std::string           s_wizEditGroup;
 std::string s_deployMsg;
 bool        s_deployOk = false;
 
-// rename inline edit (keyed on a group id; "" = none)
+// rename inline edit (keyed on a group id; "" = none) - matches the Library's inline
+// category rename, no popup.
 std::string s_renameGroup;
 char        s_renameBuf[128] = {};
+bool        s_renameFocus = false;  // grab keyboard focus on the frame rename starts
 // remove modal: in +plus, whether to also delete the deployed copy from RadialMenus.
 bool        s_removeAlsoRM = true;
 
@@ -603,9 +605,45 @@ void RenderRadialTab() {
                 bool parseErr   = false;
                 for (const auto& pg : pages) { totalItems += (int)pg.Items.size(); parseErr = parseErr || pg.ParseError; }
 
+                // This export's page slugs + whether any are deployed in RadialMenus
+                // (drives the +plus "also delete / sync" cross-addon paths).
+                std::vector<std::string> groupSlugs;
+                bool deployedInRM = false;
+                for (const auto& pg : pages) {
+                    groupSlugs.push_back(pg.Slug);
+                    if (RadialMenusHasPack(pg.Slug)) deployedInRM = true;
+                }
+                // After a rename, push the new name onto the deployed copy (+plus).
+                auto syncRenameToRM = [&]() {
+#ifdef EMOT3_PLUS
+                    if (deployedInRM) DeployGroupToRadialMenus(groupSlugs);
+#endif
+                };
+
                 ImGui::PushID(group.c_str());
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(Ellipsize(head.Name, 180.0f).c_str());
+                if (s_renameGroup == group) {
+                    // Inline rename (no popup) - mirrors the Library's category rename.
+                    if (s_renameFocus) { ImGui::SetKeyboardFocusHere(); s_renameFocus = false; }
+                    bool empty = (s_renameBuf[0] == '\0');
+                    ImGui::SetNextItemWidth(180.0f);
+                    if (empty) PushInvalidInputStyle();
+                    bool enter = ImGui::InputText("##wrn", s_renameBuf, sizeof(s_renameBuf),
+                                                  ImGuiInputTextFlags_EnterReturnsTrue);
+                    bool active = ImGui::IsItemActive();
+                    if (empty) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
+                    if (enter && !empty) {
+                        RenameGroup(group, s_renameBuf); syncRenameToRM();
+                        s_renameGroup.clear();
+                    } else if (!active && ImGui::IsItemDeactivated()) {
+                        if (!empty && head.Name != s_renameBuf) {
+                            RenameGroup(group, s_renameBuf); syncRenameToRM();
+                        }
+                        s_renameGroup.clear();
+                    }
+                } else {
+                    ImGui::TextUnformatted(Ellipsize(head.Name, 180.0f).c_str());
+                }
                 ImGui::SameLine();
                 ImGui::TextDisabled("(%s)", head.SourceCategory.c_str());
                 ImGui::SameLine();
@@ -645,45 +683,16 @@ void RenderRadialTab() {
                     ImGui::SameLine();
                 }
                 if (ImGui::SmallButton(L("opt.radial.rename"))) {
+                    // Begin inline rename (the InputText renders in place of the name
+                    // at the top of the row next frame).
                     s_renameGroup = group;
+                    s_renameFocus = true;
                     std::snprintf(s_renameBuf, sizeof(s_renameBuf), "%s", head.Name.c_str());
-                    ImGui::OpenPopup("##radialrename");
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton(L("opt.radial.remove"))) {
                     s_removeAlsoRM = true;
                     ImGui::OpenPopup("##radialremove");
-                }
-
-                // This export's page slugs + whether any are deployed in RadialMenus
-                // (so the +plus remove modal can offer to clean them up there too).
-                std::vector<std::string> groupSlugs;
-                bool deployedInRM = false;
-                for (const auto& pg : pages) {
-                    groupSlugs.push_back(pg.Slug);
-                    if (RadialMenusHasPack(pg.Slug)) deployedInRM = true;
-                }
-
-                // rename popup (with an explicit Cancel)
-                if (s_renameGroup == group && ImGui::BeginPopup("##radialrename")) {
-                    ImGui::TextUnformatted(L("opt.radial.rename"));
-                    bool empty = (s_renameBuf[0] == '\0');
-                    if (empty) PushInvalidInputStyle();
-                    ImGui::SetNextItemWidth(200.0f);
-                    bool enter = ImGui::InputText("##rn", s_renameBuf, sizeof(s_renameBuf),
-                                                  ImGuiInputTextFlags_EnterReturnsTrue);
-                    if (empty) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
-                    bool save = (enter || ImGui::Button(L("common.save"))) && !empty;
-                    ImGui::SameLine();
-                    if (ImGui::Button(L("common.cancel"))) {
-                        s_renameGroup.clear();
-                        ImGui::CloseCurrentPopup();
-                    } else if (save) {
-                        RenameGroup(group, s_renameBuf);
-                        s_renameGroup.clear();
-                        ImGui::CloseCurrentPopup();
-                    }
-                    ImGui::EndPopup();
                 }
                 // remove confirm — a proper modal (matches the destructive-action idiom)
                 {

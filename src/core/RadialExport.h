@@ -54,3 +54,10 @@ bool RenameGroup(const std::string& group, const std::string& newName);
 // SyncEmoteBinds so its radial-only binds drop (personal binds for the same entries
 // persist).
 bool RemoveGroup(const std::string& group);
+
+// A favorites category was renamed: update the emot3_source_category marker of every
+// staged pack that pointed at the old name, so exported wheels stay linked to it
+// (drift/edit keep working). The marker is emot3-only, so deployed copies need no
+// change. No-op when nothing references the old name. Call from the rename site.
+void RetargetExportsCategory(const std::string& oldCategory,
+                             const std::string& newCategory);

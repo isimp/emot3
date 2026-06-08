@@ -50,3 +50,8 @@ bool RadialMenusHasPack(const std::string& slug);
 // RadialMenus' folders. Returns the count of files removed. Base build: no-op (0) -
 // touching another addon's folder is a +plus-only action.
 int RemoveFromRadialMenus(const std::vector<std::string>& slugs);
+
+// +plus: (re)copy just the given page slugs' pack + icons into RadialMenus,
+// overwriting. Returns files copied. Used to push a rename's new name onto an
+// already-deployed wheel (same filenames). Base build: no-op (0).
+int DeployGroupToRadialMenus(const std::vector<std::string>& slugs);

@@ -298,23 +298,54 @@ RadialExportResult EditGroup(const std::string& group, const std::string& source
 }
 
 bool RenameGroup(const std::string& group, const std::string& newName) {
-    // Snapshot the group's pages from the in-memory record (sorted by page).
+    // Rewrite each page pack IN PLACE - same slug, id, group, items, options - only
+    // the Name / emot3_name change. Keeping the slug + id stable means the staged
+    // files don't move (no orphaning) and a deployed copy stays addressable by the
+    // same filename + KB_RADIAL id, so it can be re-synced cleanly.
     std::vector<RadialExport> pagesIn = WheelsInGroup(group);
     if (pagesIn.empty()) return false;
+    const bool multi = pagesIn.size() > 1;
+    bool ok = true;
+    for (const auto& pg : pagesIn) {
+        const std::string name = multi ? newName + " (" + std::to_string(pg.Page) + ")"
+                                       : newName;
+        if (!WriteOneWheel(pg.Slug, pg.Id, name, newName, pg.SourceCategory, group,
+                           pg.Page, pg.Partial, pg.Items, pg.Options))
+            ok = false;
+    }
+    LoadRadialExports();  // refs unchanged -> no SyncEmoteBinds needed
+    return ok;
+}
 
-    std::vector<std::vector<RadialItemRef>> pages;
-    for (const auto& pg : pagesIn) pages.push_back(pg.Items);
-    const RadialWheelOptions opts = pagesIn.front().Options;
-    const std::string category    = pagesIn.front().SourceCategory;
-    const bool partial            = pagesIn.front().Partial;
-
-    // Re-slug (keeping the same id if the new name slugs to it), free the old packs,
-    // then write fresh under the new group/name. Remove-before-write so a re-slug to
-    // the SAME id reuses its now-free page slugs (like EditGroup).
-    const std::string newGroup = AllocGroupSlug(newName, group);
-    RemoveRadialGroup(group);
-    RadialExportResult res = WriteGroupPages(newGroup, newName, category, pages, opts, partial);
-    return res.ok;
+void RetargetExportsCategory(const std::string& oldCategory,
+                             const std::string& newCategory) {
+    if (oldCategory.empty() || oldCategory == newCategory) return;
+    // Page slugs whose pack points at the old category name.
+    std::vector<std::string> slugs;
+    {
+        std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+        for (const auto& w : g_RadialExports)
+            if (w.SourceCategory == oldCategory) slugs.push_back(w.Slug);
+    }
+    if (slugs.empty()) return;
+    // Minimal field rewrite: just update emot3_source_category in each pack (the
+    // marker is emot3-only, ignored by RadialMenus, so deployed copies need no change).
+    const std::string packsDir = RadialPacksDir();
+    int n = 0;
+    for (const auto& slug : slugs) {
+        std::string path = packsDir + "\\" + slug + ".json";
+        std::ifstream f(path, std::ios::binary);
+        if (!f.is_open()) continue;
+        json j;
+        try { f >> j; } catch (const std::exception&) { f.close(); continue; }
+        f.close();
+        j["emot3_source_category"] = newCategory;
+        std::string body = j.dump(2, ' ', false, json::error_handler_t::replace) + "\n";
+        if (AtomicWriteFile(path, body, /*binary=*/true)) ++n;
+    }
+    LoadRadialExports();
+    LOG_INFO("radials: retargeted %d pack(s) from category \"%s\" to \"%s\"",
+             n, oldCategory.c_str(), newCategory.c_str());
 }
 
 bool RemoveGroup(const std::string& group) {
