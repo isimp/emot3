@@ -59,15 +59,16 @@ void RefreshStatus() {
 void EnsureStatus()  { if (!s_statusKnown) RefreshStatus(); }
 
 #ifdef EMOT3_PLUS
-// Sync feedback for the Nexus options window. ShowFeedback's in-window overlay only
-// paints on emot3's own MainPanel/Quickbar surfaces - the options tab renders in
-// Nexus' addon-options window - so a sync result goes through Nexus' SendAlert (the
-// same toast RadialMenus itself uses). `wrote` is DeployGroupToRadialMenus' return:
-// 0 means nothing landed (RadialMenus' folder is gone / not installed), which the
-// detected-gate normally prevents but a stale detection could still hit.
-void AlertSyncResult(int wrote) {
-    if (!APIDefs || !APIDefs->UI.SendAlert) return;
-    APIDefs->UI.SendAlert(L(wrote > 0 ? "opt.radial.sync_done" : "opt.radial.sync_fail"));
+// In-panel sync result, shown inline under the wheel that was synced (no Nexus
+// SendAlert toast - the options tab can render its own line). Keyed by group so it
+// sits next to the right row; empty group = nothing shown. `wrote` is
+// DeployGroupToRadialMenus' return: 0 means nothing landed (RadialMenus' folder is
+// gone), which the detected-gate normally prevents but a stale detection could hit.
+std::string s_syncMsgGroup;
+bool        s_syncMsgOk = false;
+void NoteSyncResult(const std::string& group, int wrote) {
+    s_syncMsgGroup = group;
+    s_syncMsgOk    = (wrote > 0);
 }
 #endif
 
@@ -100,6 +101,7 @@ RadialWheelOptions    s_wizOpt;
 int                   s_wizPageCount = 1;     // number of wheel pages (split)
 RadialExportResult    s_wizResult;
 bool                  s_wizDoneSynced = false;  // done panel: already pushed to RadialMenus
+bool                  s_wizDoneSyncFail = false; // done panel: last sync wrote nothing
 // Edit mode: when s_wizEditGroup is non-empty the wizard re-opens an EXISTING logical
 // export (seeded from its category with its last selection + page layout + options)
 // and writes back under the same group; empty = creating a new one.
@@ -373,6 +375,12 @@ void RenderWizard() {
             ImGui::Spacing();
         }
         if (canSync && !s_wizDoneSynced) {
+            if (s_wizDoneSyncFail) {  // last attempt wrote nothing - RadialMenus folder gone
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+                ImGui::TextColored(kAmber, "%s", L("opt.radial.sync_fail"));
+                ImGui::PopTextWrapPos();
+                ImGui::Spacing();
+            }
             const float wSync = 170.0f, wClose = 110.0f;
             float total = wSync + ImGui::GetStyle().ItemSpacing.x + wClose;
             float avail = ImGui::GetContentRegionAvail().x;
@@ -383,8 +391,8 @@ void RenderWizard() {
                 const int wrote = DeployGroupToRadialMenus(slugs);
                 PruneDeployedGroupOrphans(s_wizResult.group, slugs);  // drop shrunk-away pages
                 RefreshStatus();
-                AlertSyncResult(wrote);
-                s_wizDoneSynced = (wrote > 0);
+                s_wizDoneSynced  = (wrote > 0);
+                s_wizDoneSyncFail = (wrote == 0);
             }
             ImGui::SameLine();
             doClose = ImGui::Button(L("common.close"), ImVec2(wClose, 0));
@@ -622,6 +630,7 @@ void RenderWizard() {
         else         s_wizResult = ExportGroup(s_wizCategory, s_wizName, pages, s_wizOpt);
         RefreshStatus();
         s_wizDoneSynced = false;
+        s_wizDoneSyncFail = false;
         s_wizPhase = 1;  // -> done panel (modal stays open)
     }
     if (!canExport) EndDisabledCompat();
@@ -872,7 +881,7 @@ void RenderRadialTab() {
                         const int wrote = DeployGroupToRadialMenus(groupSlugs);
                         PruneDeployedGroupOrphans(group, groupSlugs);  // drop shrunk-away pages
                         RefreshStatus();
-                        AlertSyncResult(wrote);
+                        NoteSyncResult(group, wrote);
                     }
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.sync_tip"));
                     ImGui::SameLine();
@@ -931,6 +940,16 @@ void RenderRadialTab() {
                     ImGui::EndPopup();
                     if (removed) { ImGui::PopID(); break; }  // list mutated; rebuild next frame
                 }
+#ifdef EMOT3_PLUS
+                // Inline sync result for THIS wheel (replaces the Nexus alert): shows
+                // under the row after a Sync click, until the next sync overwrites it.
+                if (s_syncMsgGroup == group) {
+                    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
+                    if (s_syncMsgOk) ImGui::TextColored(kGreen, "%s", L("opt.radial.synced_inline"));
+                    else             ImGui::TextColored(kAmber, "%s", L("opt.radial.sync_fail"));
+                    ImGui::PopTextWrapPos();
+                }
+#endif
                 ImGui::PopID();
             }
         }
