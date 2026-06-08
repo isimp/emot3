@@ -116,6 +116,27 @@ bool MergeDeployPack(const std::string& stagedPath, const std::string& deployedP
     return f.good();
 }
 
+// Delete one deployed slug's pack + its emot3_<slug>_* icons from RadialMenus.
+// Returns the number of files removed.
+int DeleteDeployedSlug(const std::string& rmDir, const std::string& slug) {
+    if (slug.empty()) return 0;
+    const std::string packsDir = rmDir + "\\packs";
+    const std::string iconsDir = rmDir + "\\icons";
+    int removed = 0;
+    if (DeleteFileA((packsDir + "\\" + slug + ".json").c_str())) ++removed;
+    std::string pattern = iconsDir + "\\emot3_" + slug + "_*";  // slug-prefixed icons
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            if (DeleteFileA((iconsDir + "\\" + fd.cFileName).c_str())) ++removed;
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    return removed;
+}
+
 // Copy every emot3_<slug>_* icon for one slug from staged into RadialMenus' icons.
 int CopySlugIcons(const std::string& srcIcons, const std::string& dstIcons,
                   const std::string& slug) {
@@ -212,25 +233,48 @@ bool RadialMenusHasPack(const std::string& slug) {
 int RemoveFromRadialMenus(const std::vector<std::string>& slugs) {
     const std::string rmDir = RadialMenusDir();
     if (rmDir.empty()) return 0;
-    const std::string packsDir = rmDir + "\\packs";
-    const std::string iconsDir = rmDir + "\\icons";
     int removed = 0;
-    for (const auto& slug : slugs) {
-        if (slug.empty()) continue;
-        if (DeleteFileA((packsDir + "\\" + slug + ".json").c_str())) ++removed;
-        // icons: emot3_<slug>_*  (slug-prefixed, exact match)
-        std::string pattern = iconsDir + "\\emot3_" + slug + "_*";
-        WIN32_FIND_DATAA fd;
-        HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
-        if (h != INVALID_HANDLE_VALUE) {
-            do {
-                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-                if (DeleteFileA((iconsDir + "\\" + fd.cFileName).c_str())) ++removed;
-            } while (FindNextFileA(h, &fd));
-            FindClose(h);
-        }
-    }
+    for (const auto& slug : slugs) removed += DeleteDeployedSlug(rmDir, slug);
     LOG_INFO("radials: removed %d file(s) from RadialMenus", removed);
+    return removed;
+}
+
+int PruneDeployedGroupOrphans(const std::string& group,
+                              const std::vector<std::string>& keepSlugs) {
+    const std::string rmDir = RadialMenusDir();
+    if (rmDir.empty() || !DirExists(rmDir) || group.empty()) return 0;
+    const std::string packsDir = rmDir + "\\packs";
+    // Find deployed packs tagged with THIS group (emot3_group marker) whose slug is no
+    // longer one of the group's current pages - these are pages a shrink left behind.
+    // Collect first; don't delete while the find handle is open. Match by marker (not a
+    // slug pattern) so we never touch another group's or a hand-made pack.
+    std::vector<std::string> orphans;
+    std::string pattern = packsDir + "\\*.json";
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            std::string fn = fd.cFileName;                       // "<slug>.json"
+            if (fn.size() <= 5) continue;
+            std::string slug = fn.substr(0, fn.size() - 5);      // strip ".json"
+            bool keep = false;
+            for (const auto& k : keepSlugs) if (k == slug) { keep = true; break; }
+            if (keep) continue;
+            std::string text; json j;
+            if (!ReadFileBytes(packsDir + "\\" + fn, text) || !ParseJson(text, j) ||
+                !j.is_object())
+                continue;
+            auto g = j.find("emot3_group");
+            if (g != j.end() && g->is_string() && g->get<std::string>() == group)
+                orphans.push_back(slug);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    int removed = 0;
+    for (const auto& slug : orphans) removed += DeleteDeployedSlug(rmDir, slug);
+    if (removed)
+        LOG_INFO("radials: pruned %d orphan file(s) for group %s", removed, group.c_str());
     return removed;
 }
 
@@ -291,6 +335,7 @@ RadialDeployResult DeployToRadialMenus() {
 }
 bool RadialMenusHasPack(const std::string&) { return false; }
 int  RemoveFromRadialMenus(const std::vector<std::string>&) { return 0; }
+int  PruneDeployedGroupOrphans(const std::string&, const std::vector<std::string>&) { return 0; }
 int  DeployGroupToRadialMenus(const std::vector<std::string>&) { return 0; }
 RadialSyncState RadialMenusSyncState(const std::vector<std::string>&) {
     return RadialSyncState::NotDeployed;

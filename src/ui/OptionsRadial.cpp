@@ -381,6 +381,7 @@ void RenderWizard() {
                 std::vector<std::string> slugs;
                 for (const auto& w : WheelsInGroup(s_wizResult.group)) slugs.push_back(w.Slug);
                 const int wrote = DeployGroupToRadialMenus(slugs);
+                PruneDeployedGroupOrphans(s_wizResult.group, slugs);  // drop shrunk-away pages
                 RefreshStatus();
                 AlertSyncResult(wrote);
                 s_wizDoneSynced = (wrote > 0);
@@ -869,6 +870,7 @@ void RenderRadialTab() {
                 if (!parseErr && s_rmDetected) {
                     if (ImGui::SmallButton(L("opt.radial.sync"))) {
                         const int wrote = DeployGroupToRadialMenus(groupSlugs);
+                        PruneDeployedGroupOrphans(group, groupSlugs);  // drop shrunk-away pages
                         RefreshStatus();
                         AlertSyncResult(wrote);
                     }

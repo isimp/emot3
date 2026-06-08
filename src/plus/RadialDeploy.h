@@ -58,6 +58,14 @@ bool RadialMenusHasPack(const std::string& slug);
 // touching another addon's folder is a +plus-only action.
 int RemoveFromRadialMenus(const std::vector<std::string>& slugs);
 
+// +plus: delete any DEPLOYED pack tagged with `group` (emot3_group marker) whose slug
+// isn't in `keepSlugs` - i.e. pages a shrink (e.g. 2 wheels -> 1) left orphaned in
+// RadialMenus. Matched by marker, not slug pattern, so it never touches another group
+// or a hand-made pack. Called as part of a per-group sync so RadialMenus ends up with
+// exactly the group's current pages. Returns files removed. Base build: no-op (0).
+int PruneDeployedGroupOrphans(const std::string& group,
+                              const std::vector<std::string>& keepSlugs);
+
 // +plus: (re)deploy the given page slugs' pack + icons into RadialMenus. The pack is
 // MERGE-deployed: a first deploy writes emot3's staged pack whole (wizard presentation
 // included); a re-deploy keeps the deployed wheel's RadialMenus presentation (Scale,
