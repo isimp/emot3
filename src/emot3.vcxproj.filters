@@ -45,6 +45,7 @@
   <ItemGroup>
     <ClCompile Include="core\entry.cpp">          <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\EmoteAction.cpp">    <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\EmoteBinds.cpp">     <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\I18n.cpp">           <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\Globals.cpp">        <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\Logging.cpp">        <Filter>core</Filter></ClCompile>
@@ -100,6 +101,7 @@
 
   <ItemGroup>
     <ClInclude Include="core\EmoteAction.h"> <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\EmoteBinds.h">  <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\CharacterState.h"><Filter>core</Filter></ClInclude>
     <ClInclude Include="core\UnlockScan.h">  <Filter>core</Filter></ClInclude>
     <ClInclude Include="plus\UpdateCheck.h"> <Filter>plus</Filter></ClInclude>

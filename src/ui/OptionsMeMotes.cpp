@@ -7,6 +7,7 @@
 #include "I18n.h"        // L(), TooltipText
 #include "IconBrowse.h"  // ApplyIconPathToTarget (cross-catalog routing) + EIconTargetKind
 #include "IconPicker.h"  // OpenIconPicker ("Library..." button)
+#include "EmoteBinds.h"  // SyncEmoteBinds on a keybind toggle
 #include "Layout.h"      // PushDestructiveButtonStyles, PushInvalidInputStyle, DrawInvalidInputBorder, Ellipsize
 #include "Logging.h"
 #include "StringUtil.h"  // TrimWhitespace (shared helper)
@@ -526,6 +527,7 @@ void RenderMeMotesTab() {
             }
 
             bool anyChanged = false;
+            bool keybindChanged = false;  // UserKeybind / variant toggle -> re-sync binds
 
             // ---- Name (REQUIRED) ----
             {
@@ -796,9 +798,62 @@ void RenderMeMotesTab() {
                 }
             }
 
+            // ---- Keybind (opt-in Nexus InputBinds — one per bound variant) ----
+            // Each ticked variant registers its own Nexus InputBind, so a hotkey
+            // or a RadialMenus wheel item can target that specific body. You/All
+            // are only bindable when that body is set.
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(L("opt.mm.lbl_keybind"));
+            ImGui::TableSetColumnIndex(1);
+            {
+                bool kd = false, ky = false, ka = false, hasYou = false, hasAll = false;
+                {
+                    std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                    if (const MeMote* m = FindMeMote(id)) {
+                        kd = m->KeybindDefault; ky = m->KeybindYou; ka = m->KeybindAll;
+                        hasYou = !m->TextYou.empty(); hasAll = !m->TextAll.empty();
+                    }
+                }
+                // One checkbox per variant. Disabled (greyed, still hoverable for
+                // the tooltip) when that body is empty. The setter writes the
+                // matching field under the mutex.
+                auto variantCheckbox = [&](EMeMoteVariant which, const char* lblKey,
+                                           bool cur, bool enabled) {
+                    if (!enabled) {
+                        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+                        ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                                            ImGui::GetStyle().Alpha * 0.5f);
+                    }
+                    bool v = enabled && cur;
+                    if (ImGui::Checkbox(L(lblKey), &v) && enabled) {
+                        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                        if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
+                            switch (which) {
+                                case EMeMoteVariant::Default: m->KeybindDefault = v; break;
+                                case EMeMoteVariant::You:     m->KeybindYou     = v; break;
+                                case EMeMoteVariant::All:     m->KeybindAll     = v; break;
+                            }
+                            anyChanged = keybindChanged = true;
+                            LOG_DEBUG("/me-mote keybind toggle: id=%s", id.c_str());
+                        }
+                    }
+                    bool hov = ImGui::IsItemHovered();
+                    if (!enabled) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
+                    if (hov) TooltipText("opt.mm.keybind_help");
+                };
+                variantCheckbox(EMeMoteVariant::Default, "opt.mm.variant_default", kd, true);
+                ImGui::SameLine();
+                variantCheckbox(EMeMoteVariant::You,     "opt.mm.variant_you",     ky, hasYou);
+                ImGui::SameLine();
+                variantCheckbox(EMeMoteVariant::All,     "opt.mm.variant_all",     ka, hasAll);
+            }
+
             ImGui::EndTable();
 
             if (anyChanged) Persist();
+            if (keybindChanged) SyncEmoteBinds();  // register/deregister the bind
         }
         ImGui::Unindent(10.f);
         ImGui::Spacing();

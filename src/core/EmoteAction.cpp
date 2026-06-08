@@ -315,7 +315,7 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
 
 } // namespace
 
-void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
+void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, bool fromKeybind) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
     if (!APIDefs) return;
     std::string cmd = e.Command;
@@ -323,6 +323,10 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
     if (useSync)                     cmd += " *";
     const bool send        = g_Settings.SendOnClick;
     const bool swallowMode = EmoteSendSwallowActive();
+    // From a keybind / radial, the trigger key is physically held at fire time;
+    // skip the held-printable-key garble/movement guard so the bind isn't refused
+    // by its own key (the +plus swallow drops it the same way).
+    const bool checkHeld   = !swallowMode && !fromKeybind;
 
     // "Close chat on send": if a GW2 text box is focused and the setting is on,
     // we'll close it (Escape) in the worker instead of refusing - so tell the gate
@@ -336,7 +340,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
     // check - those are handled by the swallow - but keep the chat-unbound and
     // textbox-focused checks (the refined textbox guard stays).
     const char* skipKey = nullptr;
-    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/!swallowMode,
+    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/checkHeld,
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("Emote skipped (%s): %s", skipKey, cmd.c_str());
         ShowFeedback(L(skipKey));
@@ -359,7 +363,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
 }
 
-void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
+void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, bool fromKeybind) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
     if (!APIDefs) return;
 
@@ -386,6 +390,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
 
     const bool send        = g_Settings.MeMoteSendOnClick;  // independent of SendOnClick
     const bool swallowMode = EmoteSendSwallowActive();
+    const bool checkHeld   = !swallowMode && !fromKeybind;  // see SendOrFillEmote
 
     const bool closeChat = g_Settings.CloseChatOnSend &&
                            MumbleLink && MumbleLink->Context.IsTextboxFocused;
@@ -395,7 +400,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
     // specific to slash-command emotes; they protect ANY chat injection from
     // garbling.
     const char* skipKey = nullptr;
-    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/!swallowMode,
+    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/checkHeld,
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("/me-mote skipped (%s): %s", skipKey, cmd.c_str());
         ShowFeedback(L(skipKey));

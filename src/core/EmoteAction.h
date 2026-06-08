@@ -15,14 +15,23 @@ enum class EmoteBlock;   // core/CharacterState.h (PickQbBlockReason param)
 //   useTarget — appends " @" when the emote is targetable (caller decides;
 //               the function double-checks IsTargetable defensively).
 //   useSync   — appends " *" unconditionally.
+//   fromKeybind — the call originated from a Nexus InputBind (a per-emote
+//               keybind or a RadialMenus wheel item), NOT a panel click. The
+//               key used to trigger the bind is physically HELD at fire time,
+//               so it would trip the held-printable-key garble/movement guard
+//               and refuse the send; this skips that guard (the held key is the
+//               trigger, not movement) — same posture as the +plus swallow.
 // Whether the input is auto-submitted (Enter at the end) or left for the
 // user to finish is controlled by g_Settings.SendOnClick.
-void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync);
+void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync,
+                     bool fromKeybind = false);
 
-// Which of a /me-mote's three text bodies to send. Default fires on left-click;
-// You and All are the right-click context-menu entries (each grayed out when
-// the corresponding text is empty). See data/MeMotes.h.
-enum class EMeMoteVariant { Default, You, All };
+// EMeMoteVariant (Default / You / All) is defined in data/MeMotes.h (its
+// /me-mote domain home, now that MeMote stores a KeybindVariant of this type).
+// Opaque forward-declaration here is enough for the SendOrFillMeMote
+// declaration below; every TU that names an enumerator already includes
+// MeMotes.h (it deals with MeMote anyway).
+enum class EMeMoteVariant;
 
 // Inject "/me <text>" into the game's chat box, where <text> is the body
 // selected by `variant`. If the selected variant's text is empty, falls back
@@ -33,8 +42,10 @@ enum class EMeMoteVariant { Default, You, All };
 //
 // GW2's @ token doesn't substitute inside /me text and its * sync token also
 // doesn't work — verified in-game — so the /me-mote send path is targetless
-// and unsync'd by construction.
-void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant);
+// and unsync'd by construction. `fromKeybind` — see SendOrFillEmote (skips the
+// held-key garble/movement guard since the bind's trigger key is held at fire).
+void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant,
+                      bool fromKeybind = false);
 
 // A *transient* reason the send would be refused RIGHT NOW that can clear on its
 // own: a GW2 text box is focused (Typing) or a printable key is held (KeysHeld).

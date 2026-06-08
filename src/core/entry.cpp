@@ -28,6 +28,7 @@
 #include "MeMotes.h"     // /me-motes domain (load/save lifecycle, see data/MeMotes.h)
 #include "Favorites.h"
 #include "Usage.h"        // usage log load/prune/save (Recently/Frequently used)
+#include "EmoteBinds.h"   // per-emote Nexus InputBinds (Sync/Deregister)
 #include "MainPanel.h"
 #include "NexusShortcut.h"
 #include "Quickbar.h"
@@ -403,6 +404,10 @@ void AddonLoad(AddonAPI* aApi) {
     APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_MAIN, OnKeybind, "");
     APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_QB,   OnKeybind, "");
 
+    // Per-emote InputBinds for entries opted into a keybind (catalogs loaded
+    // above). Diff-based, so re-entrant-safe on a Nexus reload.
+    SyncEmoteBinds();
+
     LOG_INFO("emot3 v%d.%d.%d.%d (%s) loaded",
              AddonDef.Version.Major, AddonDef.Version.Minor,
              AddonDef.Version.Build, AddonDef.Version.Revision, Emot3BuildTag());
@@ -421,6 +426,7 @@ void AddonUnload() {
     RemoveNexusShortcut();
     APIDefs->InputBinds.Deregister(KB_TOGGLE_MAIN);
     APIDefs->InputBinds.Deregister(KB_TOGGLE_QB);
+    DeregisterAllEmoteBinds();  // drop every per-emote InputBind we registered
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Library##wnd");
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Quickbar##qb");
     APIDefs->WndProc.Deregister(WndProcCallback);

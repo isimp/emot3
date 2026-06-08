@@ -388,6 +388,14 @@ bool LoadMeMotesJson(const std::string& path) {
         m.TextDefault = jsonutil::GetString(item, "text",     std::string());
         m.TextYou     = jsonutil::GetString(item, "text_you", std::string());
         m.TextAll     = jsonutil::GetString(item, "text_all", std::string());
+        // Bound variants: "keybinds": ["default","you","all"] (any subset).
+        for (const auto& v : jsonutil::GetArray(item, "keybinds")) {
+            if (!v.is_string()) continue;
+            std::string s = ToLower(TrimWhitespace(v.get<std::string>()));
+            if      (s == "default") m.KeybindDefault = true;
+            else if (s == "you")     m.KeybindYou     = true;
+            else if (s == "all")     m.KeybindAll     = true;
+        }
 
         // Normalize the Id at every ingress (mirrors NormalizeEmoteCommand's
         // discipline — every code path that introduces an Id runs the same
@@ -532,7 +540,21 @@ std::string SerializeMeMotesJson() {
             f << "      \"icon\": "     << quoted(m.IconPath)    << ",\n";
             f << "      \"text\": "     << quoted(m.TextDefault) << ",\n";
             f << "      \"text_you\": " << quoted(m.TextYou)     << ",\n";
-            f << "      \"text_all\": " << quoted(m.TextAll);
+            f << "      \"text_all\": " << quoted(m.TextAll)     << ",\n";
+            f << "      \"keybinds\": [";
+            {
+                bool firstKb = true;
+                auto emitKb = [&](bool on, const char* name) {
+                    if (!on) return;
+                    if (!firstKb) f << ", ";
+                    f << quoted(name);
+                    firstKb = false;
+                };
+                emitKb(m.KeybindDefault, "default");
+                emitKb(m.KeybindYou,     "you");
+                emitKb(m.KeybindAll,     "all");
+            }
+            f << "]";
             // aliases omitted entirely when empty (matches SaveEmotesJson);
             // when present, written inline so the file stays compact.
             if (!m.Aliases.empty()) {

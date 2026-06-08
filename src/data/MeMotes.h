@@ -23,6 +23,13 @@
 #include <vector>
 #include <mutex>
 
+// Which of a /me-mote's three text bodies to send. Default fires on left-click;
+// You and All are the right-click context-menu entries (each grayed out when
+// the corresponding text is empty). Lives here (the /me-mote domain) because
+// MeMote stores a KeybindVariant of this type; core/EmoteAction.h opaque-
+// forward-declares it for SendOrFillMeMote.
+enum class EMeMoteVariant { Default, You, All };
+
 struct MeMote {
     // Stable, language-INDEPENDENT key across the codebase (favorites refs,
     // serialization, texture cache key for the icon path). Derived from the
@@ -60,7 +67,21 @@ struct MeMote {
     std::string TextDefault;
     std::string TextYou;
     std::string TextAll;
+
+    // Opt-in Nexus InputBinds — bind ANY subset of the three variants, each as
+    // its own bind (its own identifier), so a hotkey or a RadialMenus wheel item
+    // can target a specific body. You/All are only bindable when that body is
+    // non-empty. Persisted as "keybinds": ["default","you","all"]. See
+    // core/EmoteBinds. (KeybindDefault doubles as the legacy single-bind opt-in.)
+    bool KeybindDefault = false;
+    bool KeybindYou     = false;
+    bool KeybindAll     = false;
 };
+
+// True if any variant of this /me-mote is bound (used by the editor + binds sync).
+inline bool MeMoteHasAnyKeybind(const MeMote& m) {
+    return m.KeybindDefault || m.KeybindYou || m.KeybindAll;
+}
 
 // Runtime /me-mote catalog. All /me-motes live here; serialized to me_motes.json.
 extern std::vector<MeMote> g_MeMotes;
