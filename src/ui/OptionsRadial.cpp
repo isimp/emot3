@@ -413,7 +413,19 @@ void RenderWizard() {
 
     // Items (bordered scroll child). When split, each included row gets a page combo.
     ImGui::Spacing();
+    ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(L("opt.radial.items_label"));
+    ImGui::SameLine();
+    if (ImGui::SmallButton(L("opt.radial.select_all"))) {
+        // Select all - but pass on /me-mote You/All variants (leave them as-is), so
+        // "select all" yields the sensible default set (emotes + each Default body).
+        for (auto& w : s_wizItems)
+            if (!w.isMeMote || w.ref.Variant == EMeMoteVariant::Default) w.include = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton(L("opt.radial.deselect_all"))) {
+        for (auto& w : s_wizItems) w.include = false;
+    }
     // A borderless table keeps the columns aligned: item (stretch) + a fixed-width
     // wheel-assignment combo, so the selectors line up instead of floating after each
     // variable-width name. The wheel column only exists when the export is split.
