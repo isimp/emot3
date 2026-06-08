@@ -396,6 +396,7 @@ bool LoadEmotesJson(const std::string& path) {
         e.IsTargetable = jsonutil::GetBool  (item, "targetable", false);
         e.IsCore       = jsonutil::GetBool  (item, "is_core",    false);
         e.IsMadKing    = jsonutil::GetBool  (item, "mad_king",   false);
+        e.UserKeybind  = jsonutil::GetBool  (item, "keybind",    false);
 
         // Every command ingress runs the same normalization (leading '/' etc.)
         // so the send path's "skip index 0" assumption always holds.
@@ -500,6 +501,7 @@ std::string SerializeEmotesJson() {
             f << "      \"is_core\": "    << B(e.IsCore)        << ",\n";
             f << "      \"targetable\": " << B(e.IsTargetable)  << ",\n";
             f << "      \"mad_king\": "   << B(e.IsMadKing)     << ",\n";
+            f << "      \"keybind\": "    << B(e.UserKeybind)   << ",\n";
             f << "      \"icon\": "       << quoted(e.IconPath);
             // aliases omitted entirely when empty (matches prior behaviour);
             // when present, written inline so the file stays compact.

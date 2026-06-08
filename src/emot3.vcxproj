@@ -317,6 +317,7 @@
     <ClInclude Include="devtools\IconCacheTuner.h" />
     <ClInclude Include="ui\Feedback.h" />
     <ClInclude Include="core\EmoteAction.h" />
+    <ClInclude Include="core\EmoteBinds.h" />
     <ClInclude Include="core\Globals.h" />
     <ClInclude Include="plus\QuickbarWheel.h" />
     <ClInclude Include="plus\SendSuppress.h" />
@@ -380,6 +381,7 @@
     <ClCompile Include="devtools\MemoryMonitor.cpp" />
     <ClCompile Include="ui\Feedback.cpp" />
     <ClCompile Include="core\EmoteAction.cpp" />
+    <ClCompile Include="core\EmoteBinds.cpp" />
     <ClCompile Include="core\entry.cpp" />
     <ClCompile Include="core\Globals.cpp" />
     <ClCompile Include="plus\QuickbarWheel.cpp" />

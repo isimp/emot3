@@ -15,6 +15,7 @@
 #include "Layout.h"         // ToggleButton, PushHighContrastButtonStyles
 #include "IconBrowse.h"
 #include "IconPicker.h"     // OpenIconPicker ("Library..." button)
+#include "EmoteBinds.h"     // SyncEmoteBinds on a keybind toggle
 #include "NexusShortcut.h"  // ApplyNexusShortcut on settings changes
 #include "Resources.h"      // kOfficialIcons / kAIIcons for icon-source status
 #include "Profiling.h"      // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
@@ -306,6 +307,7 @@ void RenderEmotesTab() {
 
     std::string deleteId;      // empty = nothing to delete this frame
     bool        emoteEdited = false;
+    bool        keybindEdited = false;  // a UserKeybind toggle -> re-sync Nexus binds
 
     // List toolbar: a muted emote count on the left, the Expand all /
     // Collapse all bulk toggles pinned to the right (right-aligned by
@@ -664,6 +666,11 @@ void RenderEmotesTab() {
                     flowCheckbox("opt.em.core", &e.IsCore, nullptr, /*onOff default Off=*/0);
                     flowCheckbox("opt.em.mad_king", &e.IsMadKing,
                                  "opt.em.mad_king_tooltip", -1);
+                    // Opt-in Nexus keybind (also makes it radial-exportable).
+                    // Snapshot to detect the change so we re-sync the binds.
+                    bool kbBefore = e.UserKeybind;
+                    flowCheckbox("opt.em.keybind", &e.UserKeybind, nullptr, /*Off*/0);
+                    if (e.UserKeybind != kbBefore) keybindEdited = true;
                 }
 
                 // ---- Icon ----
@@ -798,6 +805,7 @@ void RenderEmotesTab() {
         RequestSave(SaveKind::Emotes);
         MarkEmotesDirty();
     }
+    if (keybindEdited) SyncEmoteBinds();  // register/deregister the toggled bind
 
     // ===== Bundled emotes (uncommon: reseed) =====
     // Bottom of the tab, next to Clear catalog: both are catalog-wide
