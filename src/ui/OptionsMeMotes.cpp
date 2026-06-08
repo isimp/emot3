@@ -812,22 +812,9 @@ void RenderMeMotesTab() {
     // Deferred delete — applied after the iteration so the snapshot doesn't
     // shift mid-loop.
     if (!deleteId.empty()) {
-        std::string nameForLog;
-        {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            auto it = std::find_if(g_MeMotes.begin(), g_MeMotes.end(),
-                                   [&](const MeMote& m) { return m.Id == deleteId; });
-            if (it != g_MeMotes.end()) {
-                nameForLog = it->Name;
-                g_MeMotes.erase(it);
-            }
-        }
-        LOG_DEBUG("/me-mote deleted: id=%s (name='%s')",
-                  deleteId.c_str(), nameForLog.c_str());
-        RemoveRefFromCategories(EFavoriteRefType::MeMote, deleteId);
-        s_rowOpen.erase(deleteId);
+        DeleteMeMote(deleteId);      // erase + favorites cascade + persist + dirty
+        s_rowOpen.erase(deleteId);   // UI-only: drop this row's expand + edit-buffer state
         s_rowBufs.erase(deleteId);
-        Persist();
     }
 
     // ===== Bundled samples (uncommon: reseed) =====

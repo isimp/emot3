@@ -81,6 +81,7 @@
     <ClCompile Include="resources\Resources.cpp"> <Filter>resources</Filter></ClCompile>
     <ClCompile Include="generated\ResourcesGenerated.cpp"> <Filter>generated</Filter></ClCompile>
     <ClCompile Include="data\IconCacheConfig.cpp"><Filter>data</Filter></ClCompile>
+    <ClCompile Include="data\IconPath.cpp">       <Filter>data</Filter></ClCompile>
     <ClCompile Include="data\MeMotes.cpp">        <Filter>data</Filter></ClCompile>
     <ClCompile Include="devtools\Simulators.cpp"> <Filter>devtools</Filter></ClCompile>
     <ClCompile Include="ui\IconPicker.cpp">       <Filter>ui</Filter></ClCompile>
@@ -130,7 +131,10 @@
     <ClInclude Include="ui\TextCache.h">     <Filter>ui</Filter></ClInclude>
     <ClInclude Include="resources\Resources.h"> <Filter>resources</Filter></ClInclude>
     <ClInclude Include="core\StringUtil.h">  <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\QuickbarGeometry.h"><Filter>core</Filter></ClInclude>
+    <ClInclude Include="ui\QbHitRects.h">    <Filter>ui</Filter></ClInclude>
     <ClInclude Include="data\IconCacheConfig.h"><Filter>data</Filter></ClInclude>
+    <ClInclude Include="data\IconPath.h">    <Filter>data</Filter></ClInclude>
     <ClInclude Include="data\MeMotes.h">     <Filter>data</Filter></ClInclude>
     <ClInclude Include="devtools\DevToolsUI.h">      <Filter>devtools</Filter></ClInclude>
     <ClInclude Include="devtools\Simulators.h">      <Filter>devtools</Filter></ClInclude>

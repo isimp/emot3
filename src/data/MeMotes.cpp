@@ -1,10 +1,11 @@
 #include "MeMotes.h"
 #include "Globals.h"     // g_MeMotesVersion (DevStateRegistrar reads it)
-#include "Icons.h"       // SanitizeIconPath (IconPath ingress heal)
+#include "IconPath.h"    // SanitizeIconPath (IconPath ingress heal) - data-layer, no ui/
 #include "JsonUtil.h"
 #include "Logging.h"
 #include "StringUtil.h"  // TrimWhitespace (shared helper)
 #include "Resources.h"   // kMeMoteData bundled seed table
+#include "Favorites.h"   // RemoveRefFromCategories + EFavoriteRefType (DeleteMeMote cascade)
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.memotes"
 
 #ifdef EMOT3_DEVTOOLS
@@ -482,6 +483,20 @@ bool LoadMeMotesJson(const std::string& path) {
         SaveMeMotesJson(path);
     }
     return true;
+}
+
+void DeleteMeMote(const std::string& id) {
+    std::string nameForLog;
+    {
+        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+        auto it = std::find_if(g_MeMotes.begin(), g_MeMotes.end(),
+                               [&](const MeMote& m){ return m.Id == id; });
+        if (it != g_MeMotes.end()) { nameForLog = it->Name; g_MeMotes.erase(it); }
+    }
+    LOG_DEBUG("/me-mote deleted: id=%s (name='%s')", id.c_str(), nameForLog.c_str());
+    RemoveRefFromCategories(EFavoriteRefType::MeMote, id);   // favorites cascade
+    MarkMeMotesDirty();
+    if (!g_MeMotesJsonPath.empty()) SaveMeMotesJson(g_MeMotesJsonPath);
 }
 
 void SaveMeMotesJson(const std::string& path) {

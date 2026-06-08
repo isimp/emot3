@@ -172,6 +172,22 @@ SendBusy CurrentSendBusy(bool checkHeldKeys, bool ignoreTextbox) {
     return SendBusy::None;
 }
 
+const char* PickQbBlockReason(EmoteBlock block, bool greying, SendBusy busy,
+                              bool heldLongEnough) {
+    // A DEFINITE game state (mounted / downed / swimming / gliding / ...) wins,
+    // regardless of the grey setting. Then the transient refusals - which outrank
+    // AIRBORNE on purpose (running and briefly clipping "airborne" reads clearer as
+    // "moving"). Airborne is the fallback. The transient + airborne reasons only
+    // grey when `greying` is on; a definite block always explains itself.
+    if (block != EmoteBlock::None && block != EmoteBlock::Airborne)
+        return EmoteBlockKey(block);
+    if (!greying) return nullptr;
+    if (busy == SendBusy::Typing)                     return "cells.blocked_typing";
+    if (busy == SendBusy::KeysHeld && heldLongEnough) return "cells.blocked_moving";
+    if (block == EmoteBlock::Airborne)                return "cells.blocked_airborne";
+    return nullptr;
+}
+
 namespace {
 
 // Spawn the detached worker thread that types `cmd` (a full slash command,

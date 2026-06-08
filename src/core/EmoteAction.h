@@ -9,6 +9,7 @@
 
 struct Emote;
 struct MeMote;
+enum class EmoteBlock;   // core/CharacterState.h (PickQbBlockReason param)
 
 // Inject the slash command for `e` into the game's chat box.
 //   useTarget — appends " @" when the emote is targetable (caller decides;
@@ -49,6 +50,16 @@ enum class SendBusy { None, Typing, KeysHeld };
 // ignoreTextbox skips the textbox-focused refusal (the "close chat on send" path
 // closes the box instead, but the movement / held-key refusal still applies).
 SendBusy CurrentSendBusy(bool checkHeldKeys, bool ignoreTextbox = false);
+
+// Compose the Quickbar's "why this emote is unusable" cell-explainer key from the
+// current game-state block + transient send-busy state. Pure: the caller (Quickbar)
+// owns the move-hold debounce and passes the resolved `heldLongEnough`. Priority
+// mirrors ShouldSkipEmoteSend (definite game state > transient typing/moving >
+// airborne), mapped to the present-tense cells.blocked_* keys. Airborne and the
+// transient reasons only apply when `greying` is on; a definite block always wins.
+// Returns nullptr when the emote is usable (no reason to grey).
+const char* PickQbBlockReason(EmoteBlock block, bool greying, SendBusy busy,
+                              bool heldLongEnough);
 
 // --- Held printable-key tracking (the movement/garble half of the gate) -------
 // Maintained event-driven from the WndProc instead of polling ~37 keys/frame.

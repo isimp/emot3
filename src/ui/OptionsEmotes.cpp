@@ -760,19 +760,8 @@ void RenderEmotesTab() {
     s_setAllOpen = 0;
 
     if (!deleteId.empty()) {
-        {
-            std::lock_guard<std::mutex> lk(g_EmotesMutex);
-            auto it = std::find_if(g_Emotes.begin(), g_Emotes.end(),
-                [&](const Emote& e){ return e.Id == deleteId; });
-            if (it != g_Emotes.end()) g_Emotes.erase(it);
-        }
-        RemoveEmoteFromCategories(deleteId);
-        auto& u = g_Settings.ManuallyUnlocked;
-        u.erase(std::remove(u.begin(), u.end(), deleteId), u.end());
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
-        s_rowBufs.erase(deleteId);
-        LOG_INFO("Deleted emote %s", deleteId.c_str());
-        emoteEdited = true;
+        DeleteEmote(deleteId);       // erase + favorites/manual-unlock cascade + persist + dirty
+        s_rowBufs.erase(deleteId);   // UI-only: drop the edit buffer for the now-gone row
     }
 
     // Prune buffers whose emote no longer exists. Bounded scan; map is small.

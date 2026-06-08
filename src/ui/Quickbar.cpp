@@ -1,5 +1,7 @@
 #include "Quickbar.h"
 #include "Globals.h"
+#include "QuickbarGeometry.h"  // g_QbWin* / g_QbStep* / ... (moved out of Globals.h)
+#include "QbHitRects.h"        // g_QbIconRects (defined in this TU)
 #include "I18n.h"
 #include "Settings.h"
 #include "EmoteData.h"
@@ -26,6 +28,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+// Defined here (declared in ui/QbHitRects.h): the Quickbar's per-frame
+// click-through hit-rects. Lives in the ui/ layer so its ImVec2 type doesn't
+// pull imgui into core/Globals.h.
+std::vector<std::pair<ImVec2, ImVec2>> g_QbIconRects;
 
 namespace {
 // Drag-snap metrics for the Quickbar window (experimental QuickbarSnapWindow).
@@ -153,25 +160,13 @@ void QuickbarRender() {
             s_heldSince = -1.0;
         }
 
-        // Pick the reason. A DEFINITE game state (mounted / downed / swimming /
-        // gliding / ...) wins. Then the transient refusals - and these outrank
-        // AIRBORNE on purpose: when you're running and briefly clip "airborne",
-        // "moving" is the clearer message. Airborne is the fallback, shown only when
-        // nothing else applies (e.g. a jump from standstill). Movement only greys
-        // after the sustained-hold threshold (the clock survives a mounted spell, so
-        // the grey carries over when you unmount still moving - no flicker).
-        if (g_QbBlockReason != EmoteBlock::None && g_QbBlockReason != EmoteBlock::Airborne) {
-            reason = EmoteBlockKey(g_QbBlockReason);
-        } else if (greying) {
-            if (busy == SendBusy::Typing) {
-                reason = "cells.blocked_typing";
-            } else if (busy == SendBusy::KeysHeld && s_heldSince >= 0.0 &&
-                       now - s_heldSince >= kHeldGreyDelay) {
-                reason = "cells.blocked_moving";
-            } else if (g_QbBlockReason == EmoteBlock::Airborne) {
-                reason = "cells.blocked_airborne";
-            }
-        }
+        // Movement only greys after the sustained-hold threshold (the clock
+        // survives a mounted spell, so the grey carries over when you unmount still
+        // moving - no flicker). The priority tree (definite block > typing / moving >
+        // airborne) lives in PickQbBlockReason (core/EmoteAction).
+        const bool heldLongEnough = (busy == SendBusy::KeysHeld && s_heldSince >= 0.0 &&
+                                     now - s_heldSince >= kHeldGreyDelay);
+        reason = PickQbBlockReason(g_QbBlockReason, greying, busy, heldLongEnough);
     }
 
     // One interaction applies to whichever source fired: Hide pulls the whole bar

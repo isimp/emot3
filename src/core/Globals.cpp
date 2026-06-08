@@ -1,4 +1,5 @@
 #include "Globals.h"
+#include "QuickbarGeometry.h"  // decls for the geometry globals defined below
 
 AddonAPI*      APIDefs    = nullptr;
 NexusLinkData* NexusLink  = nullptr;
@@ -20,7 +21,7 @@ std::vector<std::string> g_NewBundledEmoteIds;
 std::atomic<bool> g_Unloading       { false };
 std::atomic<int>  g_InflightWorkers { 0 };
 
-std::vector<std::pair<ImVec2, ImVec2>> g_QbIconRects;
+// g_QbIconRects (ImVec2-typed) is defined in ui/Quickbar.cpp; see ui/QbHitRects.h.
 
 float g_QbWinX = 0.f, g_QbWinY = 0.f, g_QbWinW = 0.f, g_QbWinH = 0.f;
 bool  g_QbGeometryValid = false;

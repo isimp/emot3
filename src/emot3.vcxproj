@@ -326,6 +326,7 @@
     <ClInclude Include="data\EmoteData.h" />
     <ClInclude Include="data\Favorites.h" />
     <ClInclude Include="data\IconCacheConfig.h" />
+    <ClInclude Include="data\IconPath.h" />
     <ClInclude Include="data\MeMotes.h" />
     <ClInclude Include="data\QuickbarPresets.h" />
     <ClInclude Include="data\Settings.h" />
@@ -335,6 +336,8 @@
     <ClInclude Include="ui\IconPicker.h" />
     <ClInclude Include="ui\OptionsMeMotes.h" />
     <ClInclude Include="core\StringUtil.h" />
+    <ClInclude Include="core\QuickbarGeometry.h" />
+    <ClInclude Include="ui\QbHitRects.h" />
     <ClInclude Include="ui\Icons.h" />
     <ClInclude Include="ui\IconDrawing.h" />
     <ClInclude Include="ui\Layout.h" />
@@ -382,6 +385,7 @@
     <ClCompile Include="data\EmoteData.cpp" />
     <ClCompile Include="data\Favorites.cpp" />
     <ClCompile Include="data\IconCacheConfig.cpp" />
+    <ClCompile Include="data\IconPath.cpp" />
     <ClCompile Include="data\MeMotes.cpp" />
     <ClCompile Include="data\QuickbarPresets.cpp" />
     <ClCompile Include="data\Settings.cpp" />

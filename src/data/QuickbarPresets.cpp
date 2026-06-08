@@ -1,6 +1,7 @@
 #include "QuickbarPresets.h"
 #include "JsonUtil.h"
-#include "Globals.h"   // g_PresetsDir, g_QbWin*/g_QbApply*/g_QbGeometryValid, Windows.h
+#include "Globals.h"   // g_PresetsDir (+ Windows.h)
+#include "QuickbarGeometry.h"  // g_QbWin*/g_QbApply*/g_QbGeometryValid (preset capture/apply)
 #include "Logging.h"
 #include "Resources.h" // kPresets bundled default-preset table
 #include "StringUtil.h" // ToLower (shared helper)

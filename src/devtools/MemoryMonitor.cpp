@@ -1,4 +1,5 @@
 #include "MemoryMonitor.h"
+#include "QbHitRects.h"   // g_QbIconRects (capacity row)
 
 #ifdef EMOT3_DEVTOOLS
 

@@ -1,8 +1,11 @@
 #include "EmoteData.h"
-#include "Icons.h"       // SanitizeIconPath (IconPath ingress heal)
+#include "IconPath.h"    // SanitizeIconPath (IconPath ingress heal) - data-layer, no ui/
 #include "JsonUtil.h"
 #include "Logging.h"
 #include "Resources.h"   // kEmoteData bundled localization table
+#include "Settings.h"    // g_Settings.ManuallyUnlocked + SaveSettings (DeleteEmote cascade)
+#include "Favorites.h"   // RemoveEmoteFromCategories (DeleteEmote cascade)
+#include "Globals.h"     // g_*Path + MarkEmotesDirty (DeleteEmote)
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.catalog"
 
 #include <nlohmann/json.hpp>
@@ -440,6 +443,24 @@ bool LoadEmotesJson(const std::string& path) {
         SaveEmotesJson(path);
     }
     return true;
+}
+
+void DeleteEmote(const std::string& id) {
+    {
+        std::lock_guard<std::mutex> lk(g_EmotesMutex);
+        auto it = std::find_if(g_Emotes.begin(), g_Emotes.end(),
+                               [&](const Emote& e){ return e.Id == id; });
+        if (it != g_Emotes.end()) g_Emotes.erase(it);
+    }
+    // Cascade: drop it from favorites and from the manual-unlock list (its own
+    // settings-backed state), then persist both files + bump the catalog epoch.
+    RemoveEmoteFromCategories(id);
+    auto& u = g_Settings.ManuallyUnlocked;
+    u.erase(std::remove(u.begin(), u.end(), id), u.end());
+    if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+    if (!g_SettingsPath.empty())   SaveSettings(g_SettingsPath);
+    MarkEmotesDirty();
+    LOG_INFO("Deleted emote %s", id.c_str());
 }
 
 void SaveEmotesJson(const std::string& path) {
