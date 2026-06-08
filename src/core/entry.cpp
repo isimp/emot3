@@ -21,6 +21,7 @@
 #include "Logging.h"
 #include "I18n.h"
 #include "Settings.h"
+#include "SaveScheduler.h"  // debounced, off-thread config writer (start/flush lifecycle)
 #include "QuickbarPresets.h"
 #include "IconCacheConfig.h"  // optional icon-cache tuning (icon_cache.json)
 #include "EmoteData.h"
@@ -50,7 +51,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
 
 extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.APIVersion  = NEXUS_API_VERSION;
-    AddonDef.Version     = { 1, 2, 1, 0 };
+    AddonDef.Version     = { 1, 2, 2, 0 };
     AddonDef.Author      = "Morlaed";
     AddonDef.Description = "Clickable emote panel with unlock tracking.";
     AddonDef.Load        = AddonLoad;
@@ -110,12 +111,12 @@ static void OnKeybind(const char* identifier, bool isRelease) {
         g_Settings.ShowWindow = !g_Settings.ShowWindow;
         LOG_DEBUG("Keybind: Library %s",
                   g_Settings.ShowWindow ? "shown" : "hidden");
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        // Window visibility is navigation state — rides along (no eager save).
     } else if (std::strcmp(identifier, KB_TOGGLE_QB) == 0) {
         g_Settings.ShowQuickbar = !g_Settings.ShowQuickbar;
         LOG_DEBUG("Keybind: Quickbar %s",
                   g_Settings.ShowQuickbar ? "shown" : "hidden");
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        // Window visibility is navigation state — rides along (no eager save).
     }
 }
 
@@ -347,6 +348,11 @@ void AddonLoad(AddonAPI* aApi) {
     // from Options whenever the toggle / swap setting changes.
     ApplyNexusShortcut();
 
+    // Background config writer: UI changes route through RequestSave() and flush
+    // off this thread (AddonRender pumps them; AddonUnload joins it). Start before
+    // the render callbacks so the first frame's PumpSaves has a live writer.
+    StartSaveWriter();
+
     APIDefs->Renderer.Register(ERenderType_Render,        AddonRender);
     APIDefs->Renderer.Register(ERenderType_Render,        QuickbarRender);
     APIDefs->Renderer.Register(ERenderType_OptionsRender, AddonOptions);
@@ -399,7 +405,10 @@ void AddonUnload() {
 #ifdef EMOT3_DEVTOOLS
     APIDefs->Renderer.Deregister(RenderDevToolOverlays);  // dev-tools framework
 #endif
-    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    // Persist any pending debounced writes + ride-along nav state, then join the
+    // writer thread. Always writes settings (nav state marks nothing dirty, so this
+    // is its guaranteed persist point). Replaces the old direct SaveSettings here.
+    FlushSavesBlocking();
 
     // Give in-flight workers up to ~500 ms to drain. SendOrFillEmote
     // tops out at ~250-400 ms per emote; IconBrowse blocks on the

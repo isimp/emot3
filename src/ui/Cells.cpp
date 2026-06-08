@@ -4,6 +4,7 @@
 #include "QbHitRects.h"        // g_QbIconRects (register cell hit-rects)
 #include "I18n.h"
 #include "Settings.h"
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "EmoteData.h"
 #include "EmoteAction.h"
 #include "Favorites.h"
@@ -210,7 +211,7 @@ void ApplyEmoteDrop(const EmoteDragPayload& src, int dstCat, int gap) {
             d.insert(d.begin() + ins, std::move(moved));
         }
     }
-    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    RequestSave(SaveKind::Settings);
 }
 
 // Accept a hovering FAV_DRAG emote drop into category `dstCat` at a fixed `gap`,
@@ -1403,7 +1404,7 @@ bool RenderCategoryHeader(int categoryIdx, const char* name, bool searchActive) 
             LOG_DEBUG("favorites: renamed category \"%s\" -> \"%s\"",
                       cats[categoryIdx].Name.c_str(), trimmed.c_str());
             cats[categoryIdx].Name = trimmed;
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            RequestSave(SaveKind::Settings);
         };
         if (enter && !invalid) { commit(); s_renamingCat = -1; }
         else if (!active && ImGui::IsItemDeactivated()) {
@@ -1455,7 +1456,8 @@ bool RenderCategoryHeader(int categoryIdx, const char* name, bool searchActive) 
             cats[categoryIdx].Collapsed = !stored;       // toggle the stored flag
             stored    = cats[categoryIdx].Collapsed;
             collapsed = stored && !searchActive;         // effective for this frame
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            // Collapse is navigation state — updated in memory only; it rides along
+            // the next real settings write and the unload flush (see SaveScheduler.h).
         }
         if (ImGui::IsItemHovered() && !ImGui::IsMouseDragging(ImGuiMouseButton_Left))
             TooltipText("mp.cat_header_tooltip");
@@ -1522,7 +1524,8 @@ bool SectionHeader(const char* label, bool isUser, bool* collapsed, bool searchA
         if (clicked) {
             *collapsed = !*collapsed;
             effective  = *collapsed && !searchActive;
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            // Collapse is navigation state — updated in memory only; it rides along
+            // the next real settings write and the unload flush (see SaveScheduler.h).
         }
         if (ImGui::IsItemHovered())
             TooltipText("mp.section_header_tooltip");

@@ -98,6 +98,9 @@ std::vector<std::string> ComputeNewBundledEmotes(const std::vector<std::string>&
 // /mad_king/icon, plus a top-level emote_language). Tolerant of missing keys.
 bool LoadEmotesJson(const std::string& path);
 void SaveEmotesJson(const std::string& path);
+// Serialize the catalog to its on-disk JSON string (holds g_EmotesMutex while
+// iterating) without touching disk — see SerializeSettings.
+std::string SerializeEmotesJson();
 
 // Delete an emote from the catalog by Id and cascade the cleanup: drop it from
 // favorites + the manual-unlock list, persist emotes.json + settings.json, and

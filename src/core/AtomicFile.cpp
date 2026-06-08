@@ -30,8 +30,19 @@ bool AtomicWriteFile(const std::string& path, const std::string& content,
             return false;
         }
     }  // close f before the rename
+    // MOVEFILE_REPLACE_EXISTING only — deliberately NOT MOVEFILE_WRITE_THROUGH.
+    // The two guarantees are independent: the temp+rename gives ATOMICITY (readers
+    // never see a torn file; a crash leaves the complete new or the complete
+    // previous file — what this writer exists for, since NTFS journals the rename
+    // metadata), while WRITE_THROUGH would add DURABILITY by blocking the caller on
+    // a physical-media flush every save. That device flush is the multi-millisecond
+    // stall that made casual saves (toggle a checkbox, switch a category) hitch; for
+    // an addon config it isn't worth it. Worst case after a hard power-loss seconds
+    // after a save: the config reverts to the previous valid version (and the
+    // loaders heal/default a bad file anyway). The cheap f.flush() above still
+    // pushes the bytes into the OS cache before the rename — no device flush.
     if (!MoveFileExA(tmp.c_str(), path.c_str(),
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                     MOVEFILE_REPLACE_EXISTING)) {
         LOG_WARNING("Atomic write: replace %s failed (err %lu); left previous file intact",
                     path.c_str(), (unsigned long)GetLastError());
         DeleteFileA(tmp.c_str());

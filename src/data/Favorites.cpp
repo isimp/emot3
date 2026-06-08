@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "Logging.h"
 #include "Settings.h"
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "EmoteData.h"   // g_Emotes / g_EmotesMutex, for the catalog reconcile
 #include "MeMotes.h"     // g_MeMotes / g_MeMotesMutex, /me-mote reconcile half
 #include "StringUtil.h"  // SanitizeFilename + MakeUniqueSlug (CategoryFolderNames)
@@ -59,7 +60,7 @@ void AddRefToCategory(int catIdx, EFavoriteRefType type, const std::string& id,
                   g_Settings.FavoriteCategories[catIdx].Name.c_str());
     }
     g_Settings.FavoriteCategories[catIdx].Refs.push_back(FavoriteRef{ type, id });
-    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    RequestSave(SaveKind::Settings);
 }
 
 void RemoveRefFromCategories(EFavoriteRefType type, const std::string& id) {
@@ -73,7 +74,7 @@ void RemoveRefFromCategories(EFavoriteRefType type, const std::string& id) {
                        cat.Refs.end());
         if (cat.Refs.size() != before) changed = true;
     }
-    if (changed && !g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    if (changed) RequestSave(SaveKind::Settings);
 }
 
 bool CategoryNameExists(const std::string& name, int excludeIdx) {
@@ -102,7 +103,7 @@ void DeleteFavoriteCategory(int idx) {
     if (active != prevActive)
         LOG_DEBUG("favorites: quickbar active category index %d -> %d (after delete)",
                   prevActive, active);
-    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    RequestSave(SaveKind::Settings);
 }
 
 void MoveFavoriteCategory(int from, int to) {
@@ -126,7 +127,7 @@ void MoveFavoriteCategory(int from, int to) {
     if (a != prevActive)
         LOG_DEBUG("favorites: quickbar active category index %d -> %d (after move)",
                   prevActive, a);
-    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    RequestSave(SaveKind::Settings);
 }
 
 void EnsureDefaultCategory() {

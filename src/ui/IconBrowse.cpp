@@ -3,6 +3,7 @@
 #include "Logging.h"
 #include "EmoteData.h"
 #include "MeMotes.h"
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread catalog writes)
 #include "Icons.h"       // SanitizeIconPath (heal at the write boundary)
 
 // Historically this TU also wired a Win32 OPENFILENAME "From file..." picker
@@ -38,7 +39,7 @@ bool ApplyIconPathToTarget(EIconTargetKind kind, const std::string& targetId,
         }
         if (applied) {
             LOG_INFO("Icon for emote %s set to: %s", targetId.c_str(), clean.c_str());
-            if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+            RequestSave(SaveKind::Emotes);
             MarkEmotesDirty();
         } else {
             LOG_WARNING("Icon choice discarded - emote %s no longer exists",
@@ -53,7 +54,7 @@ bool ApplyIconPathToTarget(EIconTargetKind kind, const std::string& targetId,
         if (applied) {
             LOG_INFO("Icon for /me-mote %s set to: %s",
                      targetId.c_str(), clean.c_str());
-            if (!g_MeMotesJsonPath.empty()) SaveMeMotesJson(g_MeMotesJsonPath);
+            RequestSave(SaveKind::MeMotes);
             MarkMeMotesDirty();
         } else {
             LOG_WARNING("Icon choice discarded - /me-mote %s no longer exists",

@@ -4,6 +4,7 @@
 #include "Logging.h"
 #include "I18n.h"
 #include "Settings.h"
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread catalog/settings writes)
 #include "QuickbarPresets.h"
 #include "EmoteData.h"
 #include "EmoteAction.h"
@@ -262,7 +263,7 @@ void RenderEmotesTab() {
         }
         LOG_INFO("Added emote id=%s command=%s (\"%s\")",
                  newId.c_str(), normalizedNew.c_str(), finalName.c_str());
-        if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+        RequestSave(SaveKind::Emotes);
         MarkEmotesDirty();
         newCmdBuf[0] = '\0';  // Clear input on commit.
     }
@@ -792,7 +793,7 @@ void RenderEmotesTab() {
     }
 
     if (emoteEdited) {
-        if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+        RequestSave(SaveKind::Emotes);
         MarkEmotesDirty();
     }
 
@@ -826,7 +827,7 @@ void RenderEmotesTab() {
                     LOG_INFO("emote language (for new bundled emotes) -> %s",
                              langs[i].c_str());
                     g_EmoteLanguage = langs[i];
-                    if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+                    RequestSave(SaveKind::Emotes);
                 }
                 if (sel) ImGui::SetItemDefaultFocus();
             }
@@ -871,7 +872,7 @@ void RenderEmotesTab() {
         ImGui::Spacing();
         if (ImGui::Button(L("opt.em.restore_bundled"))) {
             SeedDefaultEmotes(current, s_secondaryRestore);
-            if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+            RequestSave(SaveKind::Emotes);
             MarkEmotesDirty();
         }
         if (ImGui::IsItemHovered())
@@ -927,8 +928,8 @@ void RenderEmotesTab() {
                                cat.Refs.end());
             }
             g_Settings.ManuallyUnlocked.clear();
-            if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-            if (!g_SettingsPath.empty())   SaveSettings(g_SettingsPath);
+            RequestSave(SaveKind::Emotes);
+            RequestSave(SaveKind::Settings);
             MarkEmotesDirty();
             LOG_INFO("Catalog cleared by user (%d emote(s) removed)", total);
             ImGui::CloseCurrentPopup();

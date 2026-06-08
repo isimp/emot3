@@ -91,6 +91,9 @@ void ClearMeMotes();
 // only — the prefix is added at send time).
 bool LoadMeMotesJson(const std::string& path);
 void SaveMeMotesJson(const std::string& path);
+// Serialize the /me-mote catalog to its on-disk JSON string (holds g_MeMotesMutex
+// while iterating) without touching disk — see SerializeSettings.
+std::string SerializeMeMotesJson();
 
 // Delete a /me-mote from the catalog by Id and cascade: drop it from favorites,
 // bump the epoch, and persist me_motes.json. Self-contained (the Options UI just
