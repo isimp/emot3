@@ -5,7 +5,8 @@
 #include "AtomicFile.h"  // AtomicWriteFile (crash-safe save - no live-file truncation)
 #include "Logging.h"
 #include "Resources.h"   // kEmoteData bundled localization table
-#include "Settings.h"    // g_Settings.ManuallyUnlocked + SaveSettings (DeleteEmote cascade)
+#include "Settings.h"    // g_Settings.ManuallyUnlocked (DeleteEmote cascade)
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread catalog/settings writes)
 #include "Favorites.h"   // RemoveEmoteFromCategories (DeleteEmote cascade)
 #include "Globals.h"     // g_*Path + MarkEmotesDirty (DeleteEmote)
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.catalog"
@@ -460,15 +461,15 @@ void DeleteEmote(const std::string& id) {
     RemoveEmoteFromCategories(id);
     auto& u = g_Settings.ManuallyUnlocked;
     u.erase(std::remove(u.begin(), u.end(), id), u.end());
-    if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
-    if (!g_SettingsPath.empty())   SaveSettings(g_SettingsPath);
+    RequestSave(SaveKind::Emotes);
+    RequestSave(SaveKind::Settings);
     MarkEmotesDirty();
     LOG_INFO("Deleted emote %s", id.c_str());
 }
 
-void SaveEmotesJson(const std::string& path) {
-    PROFILE_SCOPE("save.catalog");  // dev perf overlay - catalog JSON serialize + write
-    std::ostringstream f;   // build in memory, then write atomically (temp + rename)
+std::string SerializeEmotesJson() {
+    PROFILE_SCOPE("save.catalog");  // dev perf overlay - catalog JSON serialize cost
+    std::ostringstream f;   // build in memory; the caller writes it atomically (temp + rename)
 
     // Hand-rolled writer (mirrors Settings.cpp's SaveSettings) so the on-disk
     // layout is controlled: per-emote keys in a logical, stable order instead of
@@ -517,8 +518,13 @@ void SaveEmotesJson(const std::string& path) {
 
     f << "]\n";
     f << "}\n";
-    AtomicWriteFile(path, f.str());   // replace the live file only once the full
-                                      // content is on disk (crash-safe)
+    return f.str();
+}
+
+void SaveEmotesJson(const std::string& path) {
+    // Thin disk-writing wrapper; catalog edits route through the SaveScheduler
+    // (debounced, off-thread). Crash-safe via temp+rename.
+    AtomicWriteFile(path, SerializeEmotesJson());
 }
 
 const Emote* FindEmote(const std::string& id) {

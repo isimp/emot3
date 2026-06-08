@@ -3,6 +3,7 @@
 #include "Globals.h"
 #include "I18n.h"
 #include "Settings.h"
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "EmoteData.h"     // CatalogIndex / BuildCatalogIndex (live count)
 #include "UnlockScan.h"    // StartUnlockSync / status
 #include "Profiling.h"     // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
@@ -16,7 +17,7 @@
 
 namespace {
 
-void SaveNow() { if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath); }
+void SaveNow() { RequestSave(SaveKind::Settings); }
 
 // Live unlocked/locked tally over the catalog (excludes core, which is always
 // unlocked). Same shared index helper the render builds use.

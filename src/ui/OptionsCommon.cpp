@@ -3,6 +3,7 @@
 #include "Globals.h"    // g_SettingsPath
 #include "I18n.h"       // L
 #include "Settings.h"   // SaveSettings
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "PlusSettings.h" // SavePlusSettings (+plus toggles; empty in base builds)
 #include "Logging.h"    // LOG_TRACE (setting-change audit trail)
 
@@ -22,7 +23,7 @@ bool CheckboxWithSaveAndTooltip(const char* labelKey, bool* state,
     bool changed = ImGui::Checkbox(L(labelKey), state);
     if (changed) {
         LOG_TRACE("setting %s = %s", labelKey, *state ? "on" : "off");
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L(tooltipKey));
     return changed;
@@ -32,7 +33,7 @@ bool CheckboxWithSaveAndTooltip(const char* labelKey, bool* state, bool defaultI
     bool changed = ImGui::Checkbox(L(labelKey), state);
     if (changed) {
         LOG_TRACE("setting %s = %s", labelKey, *state ? "on" : "off");
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered())
         TooltipOnOff(OnKey(labelKey).c_str(), OffKey(labelKey).c_str(), defaultIsOn);
@@ -65,7 +66,7 @@ bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
     }
     if (changed) {  // only true on an enabled change (disabled clicks were reverted)
         LOG_TRACE("setting %s = %s", labelKey, *state ? "on" : "off");
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
     return changed;
 }

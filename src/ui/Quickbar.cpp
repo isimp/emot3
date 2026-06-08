@@ -372,7 +372,9 @@ void QuickbarRender() {
         }
         ImGui::End();
         if (flattenChrome) ImGui::PopStyleColor(7);
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        // ShowQuickbar (incl. closing via the title-bar X) is navigation state —
+        // no save here; it rides along the next real write / unload flush. This
+        // also removes the old every-frame save while the bar sat collapsed.
         return;
     }
 
@@ -553,9 +555,8 @@ void QuickbarRender() {
                            ? ((target % catCount) + catCount) % catCount
                            : std::max(0, std::min(target, catCount - 1));
                 if (newIdx != active) {
-                    active = newIdx;
+                    active = newIdx;  // navigation state — rides along (no eager save)
                     LOG_DEBUG("quickbar: category -> \"%s\" (wheel)", cats[active].name.c_str());
-                    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
                 }
                 // Consume the wheel so the content child doesn't also scroll.
                 // (Horizontal too — io.MouseWheelH isn't routed via WndProc.)
@@ -622,8 +623,7 @@ void QuickbarRender() {
                     if (ImGui::Selectable(cats[i].name.c_str(), sel)) {
                         if (i != active)
                             LOG_DEBUG("quickbar: category -> \"%s\"", cats[i].name.c_str());
-                        active = i;
-                        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+                        active = i;  // navigation state — rides along (no eager save)
                     }
                     if (sel) ImGui::SetItemDefaultFocus();
                 }
@@ -677,8 +677,7 @@ void QuickbarRender() {
                 if (ImGui::Button(label.c_str())) {
                     if (!isActive)
                         LOG_DEBUG("quickbar: category -> \"%s\"", cats[i].name.c_str());
-                    active = i;
-                    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+                    active = i;  // navigation state — rides along (no eager save)
                 }
                 // Each tab button gets its own input-active rect so users
                 // can click any of them while click-through is on, even

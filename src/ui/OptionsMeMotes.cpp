@@ -2,6 +2,7 @@
 
 #include "Favorites.h"   // RemoveRefFromCategories on delete
 #include "Globals.h"
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread /me-mote writes)
 #include "I18n.h"        // L(), TooltipText
 #include "IconBrowse.h"  // ApplyIconPathToTarget (cross-catalog routing) + EIconTargetKind
 #include "IconPicker.h"  // OpenIconPicker ("Library..." button)
@@ -152,7 +153,7 @@ std::string JoinAliases(const std::vector<std::string>& v) {
 // lock and releases before Persist().
 void Persist() {
     MarkMeMotesDirty();
-    if (!g_MeMotesJsonPath.empty()) SaveMeMotesJson(g_MeMotesJsonPath);
+    RequestSave(SaveKind::MeMotes);
 }
 
 // Render one labeled single-line InputText row inside an open 2-column table.
@@ -855,7 +856,7 @@ void RenderMeMotesTab() {
                     LOG_INFO("/me-mote language (for new bundled samples) -> %s",
                              mmLangs[i].c_str());
                     g_MeMoteLanguage = mmLangs[i];
-                    if (!g_MeMotesJsonPath.empty()) SaveMeMotesJson(g_MeMotesJsonPath);
+                    RequestSave(SaveKind::MeMotes);
                 }
                 if (sel) ImGui::SetItemDefaultFocus();
             }

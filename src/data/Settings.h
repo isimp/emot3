@@ -325,3 +325,7 @@ float MinIconScaleForMode(EViewMode mode);
 // out-of-range value, so the caller can re-save to heal the file on disk.
 bool LoadSettings(const std::string& path);
 void SaveSettings(const std::string& path);
+// Serialize g_Settings to the on-disk JSON string without touching disk. Lets the
+// SaveScheduler build the bytes on the render thread and hand them to its writer
+// thread; SaveSettings is the thin disk-writing wrapper.
+std::string SerializeSettings();

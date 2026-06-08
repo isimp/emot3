@@ -3,6 +3,7 @@
 #include "I18n.h"
 #include "Logging.h"
 #include "Settings.h"
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "EmoteData.h"
 #include "MeMotes.h"        // /me-mote struct (SendOrFillMeMote)
 #include "SendSuppress.h"   // keyboard swallow during emote injection (stub in base builds)
@@ -407,7 +408,7 @@ void MarkEmoteUnlocked(const std::string& id) {
     if (IsEmoteUnlocked(id)) return;
     g_Settings.ManuallyUnlocked.push_back(id);
     LOG_DEBUG("Marked %s as unlocked", id.c_str());
-    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    RequestSave(SaveKind::Settings);
 }
 
 void MarkEmoteLocked(const std::string& id) {
@@ -429,6 +430,6 @@ void MarkEmoteLocked(const std::string& id) {
     if (wasUnlocked || evicted > 0) {
         LOG_DEBUG("Marked %s as locked (evicted from %d favorite slot(s))",
                   id.c_str(), evicted);
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
 }

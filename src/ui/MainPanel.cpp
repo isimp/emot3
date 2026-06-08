@@ -3,6 +3,7 @@
 #include "Logging.h"
 #include "I18n.h"
 #include "Settings.h"
+#include "SaveScheduler.h"  // RequestSave / PumpSaves (debounced, off-thread saves)
 #include "EmoteData.h"
 #include "MeMotes.h"           // /me-motes Library section + favorites mixing
 #include "EmoteAction.h"
@@ -39,14 +40,15 @@
 static char g_SearchBuf[64] = {};
 
 // Collapse / expand every Library section at once: each user favorites category
-// plus the three built-in sections (Core / Unlockable / /me-motes). One save
-// covers them all.
+// plus the three built-in sections (Core / Unlockable / /me-motes). These collapse
+// flags are pure navigation state — updated in memory only; they ride along the
+// next genuine settings write and the unload flush, so toggling them costs no disk
+// I/O (see SaveScheduler.h).
 static void SetAllSectionsCollapsed(bool c) {
     for (auto& cat : g_Settings.FavoriteCategories) cat.Collapsed = c;
     g_Settings.MainCoreCollapsed     = c;
     g_Settings.MainUnlockedCollapsed = c;
     g_Settings.MainMeMotesCollapsed  = c;
-    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
 }
 
 // Category-reorder drop zone spanning a whole section (header + its grid), from
@@ -522,6 +524,12 @@ static void RenderNewEmotesDialog() {
 }
 
 void AddonRender() {
+    // Flush any debounced config writes whose changes have settled (the actual
+    // disk I/O runs on the SaveScheduler's writer thread). First thing each frame,
+    // before the gameplay/visibility early-returns below, so a pending save still
+    // lands while the window is hidden. Cheap no-op when nothing is dirty.
+    PumpSaves();
+
     // Tag this render pass so any refusal raised from a main-panel cell shows
     // its feedback line in the main panel (not the Quickbar). See Feedback.h.
     SetActiveFeedbackSurface(FeedbackSurface::MainPanel);
@@ -607,7 +615,8 @@ void AddonRender() {
         LOG_TRACE("setting main.filter core=%d unlocked=%d locked=%d me_motes=%d",
                   g_Settings.FilterShowCore, g_Settings.FilterShowUnlocked,
                   g_Settings.FilterShowLocked, g_Settings.FilterShowMeMotes);
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        // View filters are navigation state — no eager save; ride along the next
+        // real settings write / unload flush (see SaveScheduler.h).
     }
 
     ImGui::SameLine();
@@ -634,7 +643,7 @@ void AddonRender() {
     if (ImGui::Combo("##vm", &displayIdx, viewNames, IM_ARRAYSIZE(viewNames))) {
         g_Settings.ViewMode = kViewOrder[displayIdx];
         LOG_TRACE("setting main.view_mode = %d", (int)g_Settings.ViewMode);
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        // View mode is navigation state — rides along (no eager save).
     }
 
     // Icon-scale slider sits next to the view combo. Per-mode bounds:
@@ -652,14 +661,14 @@ void AddonRender() {
         ImGui::SliderFloat("##mainscale", &g_Settings.MainIconScale, mScaleMin, 2.5f, "%.2fx");
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             LOG_TRACE("setting main.icon_scale = %.2f", g_Settings.MainIconScale);
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            // Icon scale is navigation state — rides along (no eager save).
         }
         // Right-click resets to the default scale. 1.0 is always within the
         // clamp range (mScaleMin is 0.5 or 1.0; max is 2.5).
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
             g_Settings.MainIconScale = 1.0f;
             LOG_TRACE("setting main.icon_scale = %.2f (reset)", g_Settings.MainIconScale);
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            // Icon scale is navigation state — rides along (no eager save).
         }
         if (ImGui::IsItemHovered())
             TooltipText("mp.icon_scale_tooltip");
@@ -677,9 +686,9 @@ void AddonRender() {
         } else {
             ImGui::SameLine();
         }
-        if (ToggleButton(qbLabel.c_str(), &g_Settings.ShowQuickbar)) {
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
-        }
+        // Window visibility is navigation state — ToggleButton flips ShowQuickbar
+        // in place; no eager save (rides along / unload flush).
+        ToggleButton(qbLabel.c_str(), &g_Settings.ShowQuickbar);
         if (ImGui::IsItemHovered())
             TooltipText("mp.quickbar_tooltip");
     }
@@ -1007,7 +1016,7 @@ void AddonRender() {
             catItems.push_back({});
             catTotal.push_back(0);
             newCatBuf[0] = '\0';
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            RequestSave(SaveKind::Settings);
         }
         ImGui::SameLine();
         ImGui::TextDisabled("(?)");

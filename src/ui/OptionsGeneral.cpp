@@ -4,6 +4,7 @@
 #include "Globals.h"
 #include "I18n.h"
 #include "Settings.h"
+#include "SaveScheduler.h"   // RequestSave (debounced, off-thread settings writes)
 #include "PlusSettings.h"    // g_PlusSettings ("send while moving"; empty in base builds)
 #include "Layout.h"          // ToggleButton
 #include "NexusShortcut.h"   // ApplyNexusShortcut on settings changes
@@ -51,9 +52,9 @@ void RenderGeneralOptionsTab() {
     const char* mainToggleLabel = g_Settings.ShowWindow
                                   ? L("opt.gen.hide_main")
                                   : L("opt.gen.show_main");
-    if (ToggleButton(mainToggleLabel, &g_Settings.ShowWindow)) {
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
-    }
+    // Window visibility is navigation state — ToggleButton flips ShowWindow in
+    // place; no eager save (rides along the next real write / unload flush).
+    ToggleButton(mainToggleLabel, &g_Settings.ShowWindow);
     ImGui::PopStyleVar();
     if (ImGui::IsItemHovered())
         TooltipText("opt.gen.toggle_tooltip");
@@ -82,14 +83,14 @@ void RenderGeneralOptionsTab() {
             if (ImGui::Selectable(L("options.ui_language.auto"), autoSel) && !autoSel) {
                 g_Settings.UiLanguage = "auto";
                 SetUiLanguage("auto");
-                if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+                RequestSave(SaveKind::Settings);
             }
             for (const auto& code : uiLangs) {
                 bool sel = (cur == code);
                 if (ImGui::Selectable(UiLanguageDisplayName(code).c_str(), sel) && !sel) {
                     g_Settings.UiLanguage = code;
                     SetUiLanguage(code);
-                    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+                    RequestSave(SaveKind::Settings);
                 }
                 if (sel) ImGui::SetItemDefaultFocus();
             }
@@ -211,7 +212,7 @@ void RenderGeneralOptionsTab() {
         else if (uidx == 1) g_Settings.QuickbarUnusableBehavior = EUnusableBehavior::Hide;
         LOG_TRACE("setting general.unusable: grey=%d behavior=%d",
                   g_Settings.QuickbarGreyUnusable, (int)g_Settings.QuickbarUnusableBehavior);
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered()) {
         static const TooltipOption kUnusableOpts[] = {

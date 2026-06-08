@@ -3,6 +3,7 @@
 #include "Globals.h"
 #include "I18n.h"
 #include "Settings.h"
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "PlusSettings.h"   // g_PlusSettings (wheel routing; empty in base builds)
 #include "QuickbarPresets.h"
 #include "StringUtil.h"     // TrimWhitespace for the preset-name entry
@@ -86,7 +87,7 @@ static void RenderQuickbarPresetsSection() {
         ApplyQuickbarPreset(g_QuickbarPresets[s_sel]);
         ApplyQbCloseOnEsc();   // CloseOnEsc registration is side-effectful
         s_mode = 0; s_confirmDelete = false;
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", hasSel ? L("opt.qb.preset.apply_tooltip")
@@ -209,9 +210,9 @@ void RenderQuickbarOptionsTab() {
     const char* qbToggleLabel = g_Settings.ShowQuickbar
                                 ? L("opt.qb.hide")
                                 : L("opt.qb.show");
-    if (ToggleButton(qbToggleLabel, &g_Settings.ShowQuickbar)) {
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
-    }
+    // Window visibility is navigation state — ToggleButton flips ShowQuickbar in
+    // place; no eager save (rides along the next real write / unload flush).
+    ToggleButton(qbToggleLabel, &g_Settings.ShowQuickbar);
     ImGui::PopStyleVar();
     if (ImGui::IsItemHovered())
         TooltipText("opt.qb.toggle_tooltip");
@@ -248,7 +249,7 @@ void RenderQuickbarOptionsTab() {
     if (ImGui::Combo("##qbvm", &qbDisplayIdx, qbViewNames, IM_ARRAYSIZE(qbViewNames))) {
         g_Settings.QuickbarViewMode = kQbViewOrder[qbDisplayIdx];
         LOG_TRACE("setting quickbar.view_mode = %d", (int)g_Settings.QuickbarViewMode);
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered()) {
         static const TooltipOption kQbViewOpts[] = {
@@ -269,12 +270,12 @@ void RenderQuickbarOptionsTab() {
     ImGui::SliderFloat(L("opt.qb.icon_scale"), &g_Settings.QuickbarIconScale, scaleMin, 2.5f, "%.2fx");
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         LOG_TRACE("setting quickbar.icon_scale = %.2f", g_Settings.QuickbarIconScale);
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
         g_Settings.QuickbarIconScale = 1.0f;
         LOG_TRACE("setting quickbar.icon_scale = %.2f (reset)", g_Settings.QuickbarIconScale);
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered())
         TooltipText("opt.qb.scale_tooltip");
@@ -307,7 +308,7 @@ void RenderQuickbarOptionsTab() {
         if (ImGui::Combo("##qbscrollind", &indIdx, indNames, IM_ARRAYSIZE(indNames))) {
             g_Settings.QuickbarScrollIndicator = (EQbScrollIndicator)indIdx;
             LOG_TRACE("setting quickbar.scroll_indicator = %d", (int)g_Settings.QuickbarScrollIndicator);
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            RequestSave(SaveKind::Settings);
         }
         if (ImGui::IsItemHovered()) {
             static const TooltipOption kIndOpts[] = {
@@ -333,7 +334,7 @@ void RenderQuickbarOptionsTab() {
         if (ImGui::Combo("##qbsnapscroll", &snapIdx, snapNames, IM_ARRAYSIZE(snapNames))) {
             g_Settings.QuickbarSnapScroll = (EQbScrollSnap)snapIdx;
             LOG_TRACE("setting quickbar.snap_scroll = %d", (int)g_Settings.QuickbarSnapScroll);
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            RequestSave(SaveKind::Settings);
         }
         if (ImGui::IsItemHovered()) {
             static const TooltipOption kSnapOpts[] = {
@@ -385,7 +386,7 @@ void RenderQuickbarOptionsTab() {
         g_Settings.QuickbarClickThrough = false;
         LOG_DEBUG("quickbar: click-through auto-disabled (%s)",
                   g_Settings.ShowQuickbarBg ? "background shown" : "no drag handle");
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
     if (!ctEnabled) {
         ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
@@ -402,7 +403,7 @@ void RenderQuickbarOptionsTab() {
             clickChanged = false;
         }
     }
-    if (clickChanged && !g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+    if (clickChanged) RequestSave(SaveKind::Settings);
     if (ImGui::IsItemHovered()) {
         if (g_Settings.ShowQuickbarBg) {
             TooltipText("opt.qb.ct_need_bg");
@@ -457,7 +458,7 @@ void RenderQuickbarOptionsTab() {
                          IM_ARRAYSIZE(wheelNames))) {
             g_Settings.QuickbarWheelCycle = (EWheelCycle)wheelIdx;
             LOG_TRACE("setting quickbar.wheel_cycle = %d", (int)g_Settings.QuickbarWheelCycle);
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            RequestSave(SaveKind::Settings);
         }
         if (ImGui::IsItemHovered()) {
             static const TooltipOption kWheelOpts[] = {
@@ -490,7 +491,7 @@ void RenderQuickbarOptionsTab() {
         if (ImGui::Combo("##qbcombat", &combatIdx, combatNames, IM_ARRAYSIZE(combatNames))) {
             g_Settings.QuickbarCombatBehavior = (EQbCombat)combatIdx;
             LOG_TRACE("setting quickbar.combat_behavior = %d", (int)g_Settings.QuickbarCombatBehavior);
-            if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+            RequestSave(SaveKind::Settings);
         }
         if (ImGui::IsItemHovered()) {
             static const TooltipOption kCombatOpts[] = {

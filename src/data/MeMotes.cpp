@@ -1,5 +1,6 @@
 #include "MeMotes.h"
 #include "Globals.h"     // g_MeMotesVersion (DevStateRegistrar reads it)
+#include "SaveScheduler.h"  // RequestSave (debounced, off-thread /me-mote writes)
 #include "IconPath.h"    // SanitizeIconPath (IconPath ingress heal) - data-layer, no ui/
 #include "JsonUtil.h"
 #include "Logging.h"
@@ -498,12 +499,12 @@ void DeleteMeMote(const std::string& id) {
     LOG_DEBUG("/me-mote deleted: id=%s (name='%s')", id.c_str(), nameForLog.c_str());
     RemoveRefFromCategories(EFavoriteRefType::MeMote, id);   // favorites cascade
     MarkMeMotesDirty();
-    if (!g_MeMotesJsonPath.empty()) SaveMeMotesJson(g_MeMotesJsonPath);
+    RequestSave(SaveKind::MeMotes);
 }
 
-void SaveMeMotesJson(const std::string& path) {
-    PROFILE_SCOPE("save.memotes");  // dev perf overlay - /me-mote JSON serialize + write
-    std::ostringstream f;   // build in memory, then write atomically (temp + rename)
+std::string SerializeMeMotesJson() {
+    PROFILE_SCOPE("save.memotes");  // dev perf overlay - /me-mote JSON serialize cost
+    std::ostringstream f;   // build in memory; the caller writes it atomically (temp + rename)
 
     // Hand-rolled writer (mirrors SaveEmotesJson) so the on-disk layout is
     // controlled: per-/me-mote keys in a logical order, aliases inline.
@@ -549,8 +550,13 @@ void SaveMeMotesJson(const std::string& path) {
 
     f << "]\n";
     f << "}\n";
-    AtomicWriteFile(path, f.str());   // replace the live file only once the full
-                                      // content is on disk (crash-safe)
+    return f.str();
+}
+
+void SaveMeMotesJson(const std::string& path) {
+    // Thin disk-writing wrapper; /me-mote edits route through the SaveScheduler
+    // (debounced, off-thread). Crash-safe via temp+rename.
+    AtomicWriteFile(path, SerializeMeMotesJson());
 }
 
 const MeMote* FindMeMote(const std::string& id) {

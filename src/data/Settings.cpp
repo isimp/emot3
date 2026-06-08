@@ -548,9 +548,9 @@ bool LoadSettings(const std::string& path) {
     return SanitizeSettings(s);
 }
 
-void SaveSettings(const std::string& path) {
-    PROFILE_SCOPE("save.settings");  // dev perf overlay - fires on every setting toggle
-    std::ostringstream f;   // build in memory, then write atomically (temp + rename)
+std::string SerializeSettings() {
+    PROFILE_SCOPE("save.settings");  // dev perf overlay - serialize cost on the render thread
+    std::ostringstream f;   // build in memory; the caller writes it atomically (temp + rename)
 
     const Settings& s = g_Settings;
 
@@ -697,6 +697,12 @@ void SaveSettings(const std::string& path) {
     f << "]\n";
 
     f << "}\n";
-    AtomicWriteFile(path, f.str());   // replace the live file only once the full
-                                      // content is on disk (crash-safe)
+    return f.str();
+}
+
+void SaveSettings(const std::string& path) {
+    // Thin disk-writing wrapper. Most settings changes route through the
+    // SaveScheduler (debounced, off-thread); this synchronous path is used by the
+    // load-time heal and the unload flush. Crash-safe via temp+rename.
+    AtomicWriteFile(path, SerializeSettings());
 }
