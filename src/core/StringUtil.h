@@ -36,3 +36,74 @@ inline bool IsAbsolutePath(const std::string& p) {
     return (p.size() >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/')) ||
            (p.size() >= 2 && p[0] == '\\' && p[1] == '\\');
 }
+
+// Sanitize a user string into a filesystem-safe path COMPONENT (a single name,
+// NOT a path with separators) valid on Windows, Linux, and Wine. Strict ASCII
+// slug:
+//   - ASCII alphanumerics kept (lowercased);
+//   - space / '-' / '_' collapse to a single '_';
+//   - everything else dropped - so '/', '.', '..', ASCII control chars, the
+//     Windows-illegal set <>:"/\|?*, and all non-ASCII vanish. That makes the
+//     result inherently traversal-proof, illegal-char-proof, and (being all
+//     lowercase) case-collision-proof on Windows/Wine;
+//   - leading/trailing '_' trimmed; empty result -> `fallback`;
+//   - a reserved Windows device name (con/prn/aux/nul/com0-9/lpt0-9, reserved
+//     even WITH an extension) -> prefixed with '_';
+//   - capped to a safe byte length (well under the 255 filesystem limit).
+// For a name that becomes a file, the caller adds the extension AFTER this.
+inline std::string SanitizeFilename(const std::string& name,
+                                    const char* fallback = "untitled") {
+    constexpr size_t kMaxFilenameComponent = 96;  // bytes; << the 255 FS limit
+    const std::string fb = (fallback && *fallback) ? std::string(fallback)
+                                                   : std::string("untitled");
+
+    std::string s;
+    bool lastUnderscore = false;
+    for (char c : name) {
+        unsigned char u = (unsigned char)c;
+        if (u < 0x80 && std::isalnum(u)) {
+            s += (char)std::tolower(u);
+            lastUnderscore = false;
+        } else if (c == ' ' || c == '-' || c == '_') {
+            if (!lastUnderscore) { s += '_'; lastUnderscore = true; }
+        }
+        // anything else (punctuation, control, path separators, UTF-8 >= 0x80)
+        // is dropped entirely
+    }
+    // Trim leading/trailing '_'.
+    size_t a = s.find_first_not_of('_');
+    size_t b = s.find_last_not_of('_');
+    s = (a == std::string::npos) ? std::string() : s.substr(a, b - a + 1);
+    if (s.empty()) return fb;
+
+    // Reserved device names (our stem is already lowercase [a-z0-9_], so compare
+    // the whole stem). COM/LPT are reserved with a single trailing digit 0-9.
+    auto isReserved = [](const std::string& v) {
+        if (v == "con" || v == "prn" || v == "aux" || v == "nul") return true;
+        if (v.size() == 4 && v[3] >= '0' && v[3] <= '9' &&
+            (v.compare(0, 3, "com") == 0 || v.compare(0, 3, "lpt") == 0))
+            return true;
+        return false;
+    };
+    if (isReserved(s)) s.insert(s.begin(), '_');
+
+    if (s.size() > kMaxFilenameComponent) {
+        s.resize(kMaxFilenameComponent);
+        while (!s.empty() && s.back() == '_') s.pop_back();  // re-trim if the cut split
+        if (s.empty()) return fb;
+    }
+    return s;
+}
+
+// Make `base` unique by appending _2, _3, ... until `isTaken(candidate)` is
+// false. `isTaken` is a caller-supplied predicate (e.g. "this file/folder exists
+// or a sibling already uses this name"). Template so it needs no <functional>.
+template <typename TakenFn>
+inline std::string MakeUniqueSlug(const std::string& base, TakenFn isTaken) {
+    if (!isTaken(base)) return base;
+    for (int n = 2; n < 100000; ++n) {
+        std::string cand = base + "_" + std::to_string(n);
+        if (!isTaken(cand)) return cand;
+    }
+    return base;  // pathological; effectively unreachable
+}

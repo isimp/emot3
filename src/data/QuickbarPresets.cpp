@@ -36,43 +36,20 @@ void EnsurePresetsDir() {
     if (!DirExists(g_PresetsDir)) CreateDirectoryA(g_PresetsDir.c_str(), nullptr);
 }
 
-// "My Cool HUD!" -> "my_cool_hud". Alnum kept (lowercased), spaces/dashes/
-// underscores collapse to '_', other punctuation dropped, ends trimmed of '_'.
-std::string Slugify(const std::string& name) {
-    std::string s;
-    bool lastUnderscore = false;
-    for (char c : name) {
-        unsigned char u = (unsigned char)c;
-        if (std::isalnum(u)) { s += (char)std::tolower(u); lastUnderscore = false; }
-        else if (c == ' ' || c == '-' || c == '_') {
-            if (!lastUnderscore) { s += '_'; lastUnderscore = true; }
-        }
-        // any other character is dropped
-    }
-    size_t a = s.find_first_not_of('_');
-    size_t b = s.find_last_not_of('_');
-    if (a == std::string::npos) return "preset";
-    return s.substr(a, b - a + 1);
-}
-
 // Find "<slug>.json" not colliding with another preset's file or an existing
-// on-disk file. selfFile is excluded so re-saving in place doesn't rename.
+// on-disk file. selfFile is excluded so re-saving in place doesn't rename. The
+// `slug` comes from SanitizeFilename (core/StringUtil) - already non-empty,
+// reserved-name-safe, [a-z0-9_]; here we just pick a non-colliding stem.
 std::string UniqueFileName(const std::string& slug, const std::string& selfFile) {
-    auto taken = [&](const std::string& fn) -> bool {
+    auto stemTaken = [&](const std::string& stem) -> bool {
+        const std::string fn = stem + ".json";
         if (fn == selfFile) return false;
         for (const auto& p : g_QuickbarPresets)
             if (p.File == fn && p.File != selfFile) return true;
         DWORD attr = GetFileAttributesA((g_PresetsDir + "\\" + fn).c_str());
         return attr != INVALID_FILE_ATTRIBUTES;
     };
-    std::string base = slug.empty() ? "preset" : slug;
-    std::string fn = base + ".json";
-    if (!taken(fn)) return fn;
-    for (int i = 2; i < 100000; ++i) {
-        fn = base + "_" + std::to_string(i) + ".json";
-        if (!taken(fn)) return fn;
-    }
-    return base + ".json";  // pathological fallback
+    return MakeUniqueSlug(slug, stemTaken) + ".json";
 }
 
 json PresetToJson(const QuickbarPreset& p) {
@@ -313,7 +290,7 @@ bool WriteQuickbarPreset(QuickbarPreset& p) {
     if (g_PresetsDir.empty()) return false;
     EnsurePresetsDir();
     if (p.File.empty())
-        p.File = UniqueFileName(Slugify(p.Name), "");
+        p.File = UniqueFileName(SanitizeFilename(p.Name, "preset"), "");
 
     std::string full = g_PresetsDir + "\\" + p.File;
     try {
@@ -336,7 +313,7 @@ bool RenameQuickbarPreset(QuickbarPreset& p, const std::string& newName) {
         LOG_INFO("preset: renamed \"%s\" -> \"%s\"", p.Name.c_str(), newName.c_str());
     p.Name = newName;
     // UniqueFileName excludes p.File, so an unchanged slug keeps the same file.
-    std::string newFile = UniqueFileName(Slugify(newName), p.File);
+    std::string newFile = UniqueFileName(SanitizeFilename(newName, "preset"), p.File);
     if (newFile != p.File && !p.File.empty()) {
         std::string oldFile = p.File;
         p.File = newFile;

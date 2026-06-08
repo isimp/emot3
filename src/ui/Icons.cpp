@@ -90,6 +90,13 @@ std::string ResolveIconPath(const Emote& e) {
         // German catalog's "/verbeugen" must still resolve to "bow.png".
         std::string base = e.Id;
         if (!base.empty() && base.front() == '/') base.erase(0, 1);
+        // Containment: an emote id can be a user/imported value (NormalizeEmoteCommand
+        // keeps UTF-8 + interior slashes), so a crafted emotes.json id like
+        // "/../../x" could escape icons/. Reject any path separator or drive/ADS
+        // colon here -> no folder lookup (the resolver falls through to the
+        // bundled/letter fallback). A normal id ("bow", "grübeln") has none and
+        // still resolves. (/me-mote ids are NormalizeMeMoteId'd to [a-z0-9_], safe.)
+        if (base.find_first_of("/\\:") != std::string::npos) return std::string();
         p = ToLower(base) + ".png";
     }
     bool isAbs = IsAbsolutePath(p);
