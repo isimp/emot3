@@ -5,6 +5,7 @@
 #include "Logging.h"
 #include "Resources.h" // kPresets bundled default-preset table
 #include "StringUtil.h" // ToLower (shared helper)
+#include "AtomicFile.h" // AtomicWriteFile (crash-safe save - no live-file truncation)
 
 #include <nlohmann/json.hpp>
 
@@ -293,17 +294,16 @@ bool WriteQuickbarPreset(QuickbarPreset& p) {
         p.File = UniqueFileName(SanitizeFilename(p.Name, "preset"), "");
 
     std::string full = g_PresetsDir + "\\" + p.File;
+    std::string body;
     try {
-        std::ofstream f(full, std::ios::binary | std::ios::trunc);
-        if (!f.is_open()) {
-            LOG_WARNING("preset: cannot open %s for writing", full.c_str());
-            return false;
-        }
-        f << PresetToJson(p).dump(2, ' ', false, json::error_handler_t::replace) << "\n";
+        body = PresetToJson(p).dump(2, ' ', false, json::error_handler_t::replace) + "\n";
     } catch (const std::exception& e) {
-        LOG_WARNING("preset: write failed for %s: %s", full.c_str(), e.what());
+        LOG_WARNING("preset: serialize failed for %s: %s", full.c_str(), e.what());
         return false;
     }
+    // binary=true: preserve the exact bytes (this writer used std::ios::binary),
+    // and crash-safe so a mid-save crash can't truncate an existing preset.
+    if (!AtomicWriteFile(full, body, /*binary=*/true)) return false;
     LOG_INFO("preset: saved \"%s\" -> %s", p.Name.c_str(), p.File.c_str());
     return true;
 }

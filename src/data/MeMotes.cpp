@@ -4,6 +4,7 @@
 #include "JsonUtil.h"
 #include "Logging.h"
 #include "StringUtil.h"  // TrimWhitespace (shared helper)
+#include "AtomicFile.h"  // AtomicWriteFile (crash-safe save - no live-file truncation)
 #include "Resources.h"   // kMeMoteData bundled seed table
 #include "Favorites.h"   // RemoveRefFromCategories + EFavoriteRefType (DeleteMeMote cascade)
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.memotes"
@@ -17,6 +18,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <sstream>
 #include <map>
 #include <unordered_set>
 
@@ -501,11 +503,7 @@ void DeleteMeMote(const std::string& id) {
 
 void SaveMeMotesJson(const std::string& path) {
     PROFILE_SCOPE("save.memotes");  // dev perf overlay - /me-mote JSON serialize + write
-    std::ofstream f(path);
-    if (!f.is_open()) {
-        LOG_WARNING("Could not open %s for writing", path.c_str());
-        return;
-    }
+    std::ostringstream f;   // build in memory, then write atomically (temp + rename)
 
     // Hand-rolled writer (mirrors SaveEmotesJson) so the on-disk layout is
     // controlled: per-/me-mote keys in a logical order, aliases inline.
@@ -551,6 +549,8 @@ void SaveMeMotesJson(const std::string& path) {
 
     f << "]\n";
     f << "}\n";
+    AtomicWriteFile(path, f.str());   // replace the live file only once the full
+                                      // content is on disk (crash-safe)
 }
 
 const MeMote* FindMeMote(const std::string& id) {

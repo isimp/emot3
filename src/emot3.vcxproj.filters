@@ -49,6 +49,7 @@
     <ClCompile Include="core\Globals.cpp">        <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\Logging.cpp">        <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\WinEncoding.cpp"> <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\AtomicFile.cpp">  <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\CharacterState.cpp"><Filter>core</Filter></ClCompile>
     <ClCompile Include="core\UnlockScan.cpp">    <Filter>core</Filter></ClCompile>
     <ClCompile Include="plus\UpdateCheck.cpp">   <Filter>plus</Filter></ClCompile>
@@ -133,6 +134,7 @@
     <ClInclude Include="resources\Resources.h"> <Filter>resources</Filter></ClInclude>
     <ClInclude Include="core\StringUtil.h">  <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\WinEncoding.h"> <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\AtomicFile.h">  <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\QuickbarGeometry.h"><Filter>core</Filter></ClInclude>
     <ClInclude Include="ui\QbHitRects.h">    <Filter>ui</Filter></ClInclude>
     <ClInclude Include="data\IconCacheConfig.h"><Filter>data</Filter></ClInclude>

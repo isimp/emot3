@@ -337,6 +337,7 @@
     <ClInclude Include="ui\OptionsMeMotes.h" />
     <ClInclude Include="core\StringUtil.h" />
     <ClInclude Include="core\WinEncoding.h" />
+    <ClInclude Include="core\AtomicFile.h" />
     <ClInclude Include="core\QuickbarGeometry.h" />
     <ClInclude Include="ui\QbHitRects.h" />
     <ClInclude Include="ui\Icons.h" />
@@ -384,6 +385,7 @@
     <ClCompile Include="core\I18n.cpp" />
     <ClCompile Include="core\Logging.cpp" />
     <ClCompile Include="core\WinEncoding.cpp" />
+    <ClCompile Include="core\AtomicFile.cpp" />
     <ClCompile Include="data\EmoteData.cpp" />
     <ClCompile Include="data\Favorites.cpp" />
     <ClCompile Include="data\IconCacheConfig.cpp" />

@@ -1,6 +1,7 @@
 #include "Settings.h"
 #include "JsonUtil.h"
 #include "StringUtil.h"  // TrimWhitespace, reused by the sanitize pass
+#include "AtomicFile.h"  // AtomicWriteFile (crash-safe save - no live-file truncation)
 #include "I18n.h"        // AvailableUiLanguages, for UiLanguage validation
 #include "Logging.h"
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.settings"
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <unordered_set>
 
@@ -548,12 +550,7 @@ bool LoadSettings(const std::string& path) {
 
 void SaveSettings(const std::string& path) {
     PROFILE_SCOPE("save.settings");  // dev perf overlay - fires on every setting toggle
-    std::ofstream f(path);
-    if (!f.is_open()) {
-        LOG_WARNING("Could not open %s for writing - settings not persisted",
-                    path.c_str());
-        return;
-    }
+    std::ostringstream f;   // build in memory, then write atomically (temp + rename)
 
     const Settings& s = g_Settings;
 
@@ -700,4 +697,6 @@ void SaveSettings(const std::string& path) {
     f << "]\n";
 
     f << "}\n";
+    AtomicWriteFile(path, f.str());   // replace the live file only once the full
+                                      // content is on disk (crash-safe)
 }

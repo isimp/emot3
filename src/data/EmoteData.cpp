@@ -2,6 +2,7 @@
 #include "IconPath.h"    // SanitizeIconPath (IconPath ingress heal) - data-layer, no ui/
 #include "JsonUtil.h"
 #include "StringUtil.h"  // TruncateUtf8 / kMaxNameBytes (name cap at load)
+#include "AtomicFile.h"  // AtomicWriteFile (crash-safe save - no live-file truncation)
 #include "Logging.h"
 #include "Resources.h"   // kEmoteData bundled localization table
 #include "Settings.h"    // g_Settings.ManuallyUnlocked + SaveSettings (DeleteEmote cascade)
@@ -15,6 +16,7 @@
 #include <cctype>
 #include <cstring>
 #include <fstream>
+#include <sstream>
 #include <map>
 
 std::vector<Emote> g_Emotes;
@@ -466,11 +468,7 @@ void DeleteEmote(const std::string& id) {
 
 void SaveEmotesJson(const std::string& path) {
     PROFILE_SCOPE("save.catalog");  // dev perf overlay - catalog JSON serialize + write
-    std::ofstream f(path);
-    if (!f.is_open()) {
-        LOG_WARNING("Could not open %s for writing", path.c_str());
-        return;
-    }
+    std::ostringstream f;   // build in memory, then write atomically (temp + rename)
 
     // Hand-rolled writer (mirrors Settings.cpp's SaveSettings) so the on-disk
     // layout is controlled: per-emote keys in a logical, stable order instead of
@@ -519,6 +517,8 @@ void SaveEmotesJson(const std::string& path) {
 
     f << "]\n";
     f << "}\n";
+    AtomicWriteFile(path, f.str());   // replace the live file only once the full
+                                      // content is on disk (crash-safe)
 }
 
 const Emote* FindEmote(const std::string& id) {
