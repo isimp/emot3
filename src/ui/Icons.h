@@ -1,10 +1,9 @@
 #pragma once
 
-// Icon-related plumbing: path resolution, texture-cache keys, and the
-// decorative draw helpers used by section headers and emote cells.
+// Icon-related plumbing: path resolution + texture-cache keys. (The decorative
+// draw helpers moved to IconDrawing.h, so this header no longer needs imgui.)
 
 #include <string>
-#include "imgui/imgui.h"
 
 struct Emote;
 struct MeMote;
