@@ -51,14 +51,10 @@ bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
     // tooltip is the On/Off two-liner (<labelKey>.on/.off); when disabled it's
     // the prose disabledTipKey. Auto-saves; returns true only on an enabled
     // change so callers can chain extra work (e.g. ApplyNexusShortcut).
-    if (!enabled) {
-        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-    }
+    if (!enabled) BeginDisabledCompat();
     bool changed = ImGui::Checkbox(L(labelKey), state);
     if (!enabled) {
-        ImGui::PopStyleVar();
-        ImGui::PopItemFlag();
+        EndDisabledCompat();
         if (changed) { *state = !*state; changed = false; }
     }
     if (ImGui::IsItemHovered()) {
@@ -101,16 +97,12 @@ bool PlusDisabledCheckbox(const char* labelKey, bool* state, bool enabled,
                           bool defaultIsOn, const char* disabledTipKey) {
     // Same greyed-out-when-disabled dance as DisabledCheckbox, but persists to
     // plus.json (g_PlusSettings) rather than settings.json.
-    if (!enabled) {
-        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-    }
+    if (!enabled) BeginDisabledCompat();
     bool changed = ImGui::Checkbox(L(labelKey), state);
     bool cbHovered = ImGui::IsItemHovered();  // capture before the badge becomes the last item
     PlusBadge();                              // dims with the row while inside the alpha push
     if (!enabled) {
-        ImGui::PopStyleVar();
-        ImGui::PopItemFlag();
+        EndDisabledCompat();
         if (changed) { *state = !*state; changed = false; }
     }
     if (cbHovered) {

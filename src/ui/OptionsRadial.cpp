@@ -25,38 +25,51 @@
 
 namespace {
 
-// This vendored ImGui predates BeginDisabled(); use the PushItemFlag + alpha dim
-// pattern the rest of the addon uses.
-void BeginDisabledCompat() {
-    ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-}
-void EndDisabledCompat() {
-    ImGui::PopStyleVar();
-    ImGui::PopItemFlag();
-}
+// BeginDisabledCompat/EndDisabledCompat and RightAlignButtons/RightAlignCursor now
+// live in ui/Layout.h (shared across the Options tabs).
 
-// ---- status cache (avoid per-frame disk I/O; refresh on entry + mutations) -------
+// ---- status cache --------------------------------------------------------------
+// RadialMenus *detection* is cheap (a single GetFileAttributes) and re-checked every
+// frame the tab is open (TickStatus), so installing/removing RadialMenus mid-session
+// updates without a game restart (the manual Refresh button was removed). The
+// expensive part - the +plus per-group sync-state file parse - is cached and only
+// rebuilt when detection flips or after a radial mutation (RefreshStatus).
 bool s_statusKnown = false;
 bool s_rmDetected  = false;
-// +plus: per-group RadialMenus sync state, recomputed in RefreshStatus (reads files).
+// +plus: per-group RadialMenus sync state (reads/parses files - cached).
 std::map<std::string, RadialSyncState> s_syncState;
-void RefreshStatus() {
-    s_rmDetected = IsRadialMenusInstalled();
-    s_statusKnown = true;
+
+void RebuildSyncState() {
 #ifdef EMOT3_PLUS
     s_syncState.clear();
-    if (s_rmDetected) {
-        std::map<std::string, std::vector<std::string>> bySlug;
-        {
-            std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
-            for (const auto& w : g_RadialExports) bySlug[w.Group].push_back(w.Slug);
-        }
-        for (const auto& kv : bySlug) s_syncState[kv.first] = RadialMenusSyncState(kv.second);
+    if (!s_rmDetected) return;
+    std::map<std::string, std::vector<std::string>> bySlug;
+    {
+        std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+        for (const auto& w : g_RadialExports) bySlug[w.Group].push_back(w.Slug);
     }
+    for (const auto& kv : bySlug) s_syncState[kv.first] = RadialMenusSyncState(kv.second);
 #endif
 }
-void EnsureStatus()  { if (!s_statusKnown) RefreshStatus(); }
+
+// Full refresh: re-detect + rebuild the sync-state cache. Call after a mutation.
+void RefreshStatus() {
+    s_rmDetected  = IsRadialMenusInstalled();
+    s_statusKnown = true;
+    RebuildSyncState();
+}
+
+// Per-frame: refresh detection cheaply; rebuild the cached sync state only when
+// detection first becomes known or actually flips (so a just-installed RadialMenus
+// lights up without the removed Refresh button / a restart).
+void TickStatus() {
+    bool now = IsRadialMenusInstalled();
+    if (!s_statusKnown || now != s_rmDetected) {
+        s_rmDetected  = now;
+        s_statusKnown = true;
+        RebuildSyncState();
+    }
+}
 
 #ifdef EMOT3_PLUS
 // In-panel sync result, shown inline under the wheel that was synced (no Nexus
@@ -156,13 +169,6 @@ void SliderWithReset(const char* label, float* v, float lo, float hi, float def,
     ImGui::SliderFloat(label, v, lo, hi, "%.2f");
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L(tipKey));
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) *v = def;
-}
-
-// Right-align the cursor for a row of two buttons of width w each.
-void RightAlignButtons(float w, int count) {
-    float total = w * count + ImGui::GetStyle().ItemSpacing.x * (count - 1);
-    float avail = ImGui::GetContentRegionAvail().x;
-    if (avail > total) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
 }
 
 // Snapshot a category's refs into s_wizItems (in order). Emotes -> one row; /me-motes
@@ -265,11 +271,8 @@ void OpenWizardForEdit(const std::string& group) {
     //   new     = a current category entry that wasn't in the snapshot (added since).
     //   removed = a snapshot entry no longer in the category (left since).
     const std::vector<std::string>& snap = pages.front().SourceRefs;
-    auto keyOf = [](EFavoriteRefType t, const std::string& id) {
-        return std::to_string((int)t) + ":" + id;
-    };
     auto inSnap = [&](EFavoriteRefType t, const std::string& id) {
-        const std::string k = keyOf(t, id);
+        const std::string k = FavoriteRefKey(t, id);
         for (const auto& s : snap) if (s == k) return true;
         return false;
     };
@@ -446,7 +449,7 @@ void RenderWizard() {
                          + ImGui::CalcTextSize(deselAllLbl).x + selStyle.FramePadding.x * 2.0f
                          + selStyle.ItemSpacing.x;
     ImGui::SameLine();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - selBtnsW);
+    RightAlignCursor(selBtnsW);
     if (ImGui::SmallButton(selAllLbl)) {
         // Select all - but pass on /me-mote You/All variants (leave them as-is), so
         // "select all" yields the sensible default set (emotes + each Default body).
@@ -684,7 +687,7 @@ bool GroupDrift(const std::vector<RadialExport>& pages, const std::string& categ
         for (const auto& fc : g_Settings.FavoriteCategories)
             if (fc.Name == category) {
                 for (const auto& ref : fc.Refs)
-                    cur.push_back(std::to_string((int)ref.Type) + ":" + ref.Id);
+                    cur.push_back(FavoriteRefKey(ref));
                 break;
             }
         if (cur.size() != snap.size()) return true;
@@ -720,7 +723,7 @@ bool GroupDrift(const std::vector<RadialExport>& pages, const std::string& categ
 }  // namespace
 
 void RenderRadialTab() {
-    EnsureStatus();
+    TickStatus();
 
     // 1. Intro (base build omits the +plus deploy mention)
 #ifdef EMOT3_PLUS

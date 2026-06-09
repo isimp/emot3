@@ -186,3 +186,12 @@ void DeregisterAllEmoteBinds() {
     for (const auto& idn : g_registered) APIDefs->InputBinds.Deregister(idn.c_str());
     g_registered.clear();
 }
+
+int RegisteredBindCount() { return (int)g_registered.size(); }
+
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+static DevStateRegistrar s_bindState(DevStateCat::Content, "Emote keybinds", [] {
+    DevStateRow("registered binds", "%d", RegisteredBindCount());
+});
+#endif

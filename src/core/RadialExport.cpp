@@ -8,6 +8,7 @@
 #include "StringUtil.h"   // SanitizeFilename, MakeUniqueSlug, ToLower
 #include "AtomicFile.h"   // AtomicWriteFile (crash-safe temp+rename)
 #include "Logging.h"
+#include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS)
 #include "Icons.h"        // ResolveEmoteIcon / ResolveMeMoteIcon + ResolvedIcon
 #include "Resources.h"    // TryLoadBundledIconBytes (raw bundled PNG bytes)
 
@@ -244,7 +245,7 @@ std::vector<std::string> CaptureCategoryRefs(const std::string& category) {
     for (const auto& fc : g_Settings.FavoriteCategories)
         if (fc.Name == category) {
             for (const auto& ref : fc.Refs)
-                out.push_back(std::to_string((int)ref.Type) + ":" + ref.Id);
+                out.push_back(FavoriteRefKey(ref));
             break;
         }
     return out;
@@ -277,6 +278,7 @@ RadialExportResult WriteGroupPages(const std::string& group, const std::string& 
                                    const std::vector<std::vector<RadialItemRef>>& pages,
                                    const RadialWheelOptions& options, bool partial,
                                    const std::vector<RadialExport>& reuse = {}) {
+    PROFILE_SCOPE("radials.export");
     RadialExportResult res;
     const bool multi = pages.size() > 1;
     // Export/edit re-snapshots the category as the new drift baseline.

@@ -48,3 +48,6 @@ void SyncEmoteBinds();
 // Deregister every emote InputBind we registered (AddonUnload; also clears the
 // tracking set so an AddonLoad re-sync starts clean on a Nexus reload).
 void DeregisterAllEmoteBinds();
+
+// Count of currently-registered emote/me-mote InputBinds (dev-tool introspection).
+int RegisteredBindCount();

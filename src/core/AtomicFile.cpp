@@ -50,3 +50,8 @@ bool AtomicWriteFile(const std::string& path, const std::string& content,
     }
     return true;
 }
+
+bool DirExists(const std::string& path) {
+    DWORD attr = GetFileAttributesA(path.c_str());
+    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
+}

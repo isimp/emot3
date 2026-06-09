@@ -1,21 +1,13 @@
 #include "RadialDeploy.h"
 
 #include "Globals.h"       // APIDefs (+ Windows.h), g_RadialsDir
+#include "AtomicFile.h"    // DirExists (shared)
 #include "RadialExports.h" // RadialPacksDir / RadialIconsDir (the staged layout)
 #include "Logging.h"
 
 #include <fstream>
 #include <iterator>
 #include <string>
-
-namespace {
-
-bool DirExists(const std::string& path) {
-    DWORD attr = GetFileAttributesA(path.c_str());
-    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-}  // namespace
 
 // --- detection: available in every build ------------------------------------
 

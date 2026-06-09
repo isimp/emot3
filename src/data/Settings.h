@@ -67,6 +67,16 @@ struct FavoriteRef {
     std::string      Id;
 };
 
+// Stable "<type-int>:<id>" key for a typed ref - the single source of truth for
+// the string used to compare/dedup refs across subsystems (usage log dedup,
+// radial drift snapshots). Inline so every caller shares one definition.
+inline std::string FavoriteRefKey(EFavoriteRefType type, const std::string& id) {
+    return std::to_string((int)type) + ":" + id;
+}
+inline std::string FavoriteRefKey(const FavoriteRef& r) {
+    return FavoriteRefKey(r.Type, r.Id);
+}
+
 struct FavoriteCategory {
     std::string                Name;
     // Type-tagged refs in user order. Migrated from the legacy
