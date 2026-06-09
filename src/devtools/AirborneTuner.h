@@ -93,15 +93,22 @@ inline float& MovingPeakSpeed()    { static float v = 0.f; return v; }
 // Peak |vUp| / horiz split into grounded-vs-airborne / standing-vs-moving clusters
 // (since the last reset). kAirSpeed/kMoveSpeed want a value BETWEEN their two
 // clusters; measured from the SMOOTHED signals the thresholds actually compare.
-inline float& VUpPeakAir()     { static float v = 0.f; return v; }
+inline float& VUpPeakAir()     { static float v = 0.f; return v; }   // smoothed |vUp|
 inline float& VUpPeakGround()  { static float v = 0.f; return v; }
 inline float& HorizPeakMove()  { static float v = 0.f; return v; }
 inline float& HorizPeakStand() { static float v = 0.f; return v; }
+// For kClimbSlopeMax: steepest grounded slope ratio |vUp|/horiz while walking (stairs/
+// ramps). For kFastLaunchMult: RAW |vUp| peaks grounded vs airborne (the fast path
+// tests raw velocity).
+inline float& GroundSlopePeak()   { static float v = 0.f; return v; }
+inline float& RawVUpPeakGround()  { static float v = 0.f; return v; }
+inline float& RawVUpPeakAir()     { static float v = 0.f; return v; }
 
 inline void ClearHistory() {
     VertVelHist().clear(); HorizSpeedHist().clear(); Events().clear();
     AirbornePeakAbsVUp() = 0.f; MovingPeakSpeed() = 0.f;
     VUpPeakAir() = 0.f; VUpPeakGround() = 0.f; HorizPeakMove() = 0.f; HorizPeakStand() = 0.f;
+    GroundSlopePeak() = 0.f; RawVUpPeakGround() = 0.f; RawVUpPeakAir() = 0.f;
 }
 
 // ---- per-tick callback (from TickCharacterState) --------------------
@@ -119,6 +126,15 @@ inline void OnSample(const AirtunerSample& s) {
     else            { if (av > VUpPeakGround()) VUpPeakGround() = av; }
     if (s.moving)   { if (s.horizSpeed > HorizPeakMove())  HorizPeakMove()  = s.horizSpeed; }
     else            { if (s.horizSpeed > HorizPeakStand()) HorizPeakStand() = s.horizSpeed; }
+    // Slope ratio while grounded + moving (stairs/ramps) -> kClimbSlopeMax sits above it.
+    if (!s.airborne && s.horizSpeed > 0.3f) {
+        const float r = av / s.horizSpeed;
+        if (r > GroundSlopePeak()) GroundSlopePeak() = r;
+    }
+    // RAW |vUp| peaks (the fast path tests raw velocity) -> kFastLaunchMult between them.
+    const float rv = std::fabs(s.vertVel);
+    if (s.airborne) { if (rv > RawVUpPeakAir())    RawVUpPeakAir()    = rv; }
+    else            { if (rv > RawVUpPeakGround()) RawVUpPeakGround() = rv; }
 
     // Event log: edge-detect, peak captured at the OFF edge.
     if (s.airborne) { float a = std::fabs(s.vertVel); if (a > AirbornePeakAbsVUp()) AirbornePeakAbsVUp() = a; }
@@ -207,6 +223,13 @@ inline void RenderAirborneTuner() {
     devui::StateDot(s.rise);     ImGui::SameLine(); ImGui::Text("rise");
     ImGui::SameLine(150.f);
     devui::StateDot(s.fall);     ImGui::SameLine(); ImGui::Text("fall");
+    // Active timer "windows" (which countdown is running this tick).
+    devui::StateDot(s.riseSince  >= 0.0); ImGui::SameLine(); ImGui::Text("rise-wait");
+    ImGui::SameLine(150.f);
+    devui::StateDot(s.fallSince  >= 0.0); ImGui::SameLine(); ImGui::Text("fall-wait");
+    devui::StateDot(s.groundSince >= 0.0); ImGui::SameLine(); ImGui::Text("release");
+    ImGui::SameLine(150.f);
+    devui::StateDot(s.stillSince >= 0.0); ImGui::SameLine(); ImGui::Text("stop");
     if (have)
         ImGui::Text("vUp %+.2f (sm %+.2f)   horiz %.2f m/s",
                     s.vertVel, s.vertVelEMA, s.horizSpeed);
@@ -226,7 +249,23 @@ inline void RenderAirborneTuner() {
         ImGui::Text("horiz stand %.2f  move %.2f  ->  kMoveSpeed %.2f", hS, hM, sugMv);
         ImGui::SameLine(); if (ImGui::SmallButton("set##mv") && sugMv > 0.05f)
             cs_constants::MoveSpeed() = sugMv;
-        ImGui::TextDisabled("(clusters use the smoothed signal; Reset history to re-measure)");
+
+        // kClimbSlopeMax: just above the steepest grounded slope ratio seen.
+        const float gSlope = airtuner::GroundSlopePeak();
+        const float sugSlope = gSlope > 0.f ? gSlope * 1.3f : 0.f;
+        ImGui::Text("ground slope peak %.2f  ->  kClimbSlopeMax %.2f", gSlope, sugSlope);
+        ImGui::SameLine(); if (ImGui::SmallButton("set##slope") && sugSlope > 0.05f)
+            cs_constants::ClimbSlopeMax() = sugSlope;
+
+        // kFastLaunchMult: between raw grounded vs airborne |vUp| peaks, in units of air.
+        const float rg = airtuner::RawVUpPeakGround(), ra = airtuner::RawVUpPeakAir();
+        const float air2 = cs_constants::AirSpeed();
+        const float sugMult = (ra > rg && air2 > 0.1f) ? 0.5f * (ra + rg) / air2 : 0.f;
+        ImGui::Text("raw |vUp| ground %.1f  air %.1f  ->  kFastLaunchMult %.2f", rg, ra, sugMult);
+        ImGui::SameLine(); if (ImGui::SmallButton("set##mult") && sugMult >= 1.f)
+            cs_constants::FastLaunchMult() = sugMult;
+
+        ImGui::TextDisabled("(measured since reset; Reset history to re-measure)");
     }
 
     // ---- Knobs (default closed) -------------------------------------
