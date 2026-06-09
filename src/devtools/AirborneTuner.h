@@ -53,6 +53,7 @@ struct AirtunerSample {
     bool     airborne;     // s_airborne after this tick
     bool     moving;       // s_moving    after this tick
     int      downRun;      // consecutive fast-descending ticks
+    int      upRun;        // consecutive unexplained fast-rising ticks
     double   groundSince;  // -1 if not running, else when descent began
     double   stillSince;   // -1 if not running, else when stillness began
     double   now;          // ImGui::GetTime() at this sample
@@ -163,11 +164,15 @@ inline std::string CurrentValuesAsCpp() {
         "// Paste into CharacterState.h's cs_constants getter bodies:\n"
         "//   AirSpeed:        %.2ff\n"
         "//   FallEngageTicks: %d\n"
+        "//   RiseEngageTicks: %d\n"
+        "//   ClimbSlopeMax:   %.2ff\n"
         "//   ReleaseSec:      %.3f\n"
         "//   MoveSpeed:       %.2ff\n"
         "//   MoveReleaseSec:  %.3f\n",
         cs_constants::AirSpeed(),
         cs_constants::FallEngageTicks(),
+        cs_constants::RiseEngageTicks(),
+        cs_constants::ClimbSlopeMax(),
         cs_constants::ReleaseSec(),
         cs_constants::MoveSpeed(),
         cs_constants::MoveReleaseSec());
@@ -178,6 +183,8 @@ inline std::string CurrentValuesAsCpp() {
 inline void ResetDefaults() {
     cs_constants::AirSpeed()        = 3.5f;
     cs_constants::FallEngageTicks() = 2;
+    cs_constants::RiseEngageTicks() = 2;
+    cs_constants::ClimbSlopeMax()   = 1.2f;
     cs_constants::ReleaseSec()      = 0.25;
     cs_constants::MoveSpeed()       = 1.0f;
     cs_constants::MoveReleaseSec()  = 0.15;
@@ -222,6 +229,8 @@ inline void RenderAirborneTuner() {
     {
         float& air  = cs_constants::AirSpeed();
         int&   fet  = cs_constants::FallEngageTicks();
+        int&   ret  = cs_constants::RiseEngageTicks();
+        float& csm  = cs_constants::ClimbSlopeMax();
         double& rs  = cs_constants::ReleaseSec();
         float& mvs  = cs_constants::MoveSpeed();
         double& mrs = cs_constants::MoveReleaseSec();
@@ -234,6 +243,8 @@ inline void RenderAirborneTuner() {
         ImGui::PushItemWidth(180.f);
         ImGui::SliderFloat("kAirSpeed (|vUp| m/s)",   &air, 0.5f, 10.0f, "%.2f");
         ImGui::SliderInt  ("kFallEngageTicks",        &fet, 1,    10);
+        ImGui::SliderInt  ("kRiseEngageTicks",        &ret, 1,    10);   // 1 = no debounce
+        ImGui::SliderFloat("kClimbSlopeMax (vUp/horiz)", &csm, 0.0f, 3.0f, "%.2f"); // 0 = gate off
         ImGui::SliderScalar("kReleaseSec (s)",         ImGuiDataType_Double, &rs,
                              &kDoubleMin, &kDoubleMax, "%.3f");
         ImGui::SliderFloat("kMoveSpeed (horiz m/s)",  &mvs, 0.1f, 5.0f, "%.2f");
@@ -271,6 +282,13 @@ inline void RenderAirborneTuner() {
         devui::StateDot(s.moving);   ImGui::SameLine();
         ImGui::Text("moving");
         ImGui::Text("downRun      %d / %d", s.downRun, cs_constants::FallEngageTicks());
+        ImGui::Text("upRun        %d / %d", s.upRun,   cs_constants::RiseEngageTicks());
+        {
+            // Rise "explained by climbing" ratio: a launch needs vUp/horiz above
+            // kClimbSlopeMax (stairs/ramps stay at/under the surface slope).
+            float ratio = s.horizSpeed > 0.01f ? s.vertVel / s.horizSpeed : 0.f;
+            ImGui::Text("rise ratio   %+6.2f / %.2f", ratio, cs_constants::ClimbSlopeMax());
+        }
         if (have && s.groundSince >= 0.0) {
             float frac = (float)((now - s.groundSince) / cs_constants::ReleaseSec());
             if (frac > 1.f) frac = 1.f;

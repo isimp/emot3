@@ -95,8 +95,19 @@ const char* RTApiDebugInfo();
 // kAirSpeed       - |vUp| (m/s) above which a tick counts as airborne.
 //                   Below: slopes/stairs/walking jitter; above: jump launch or
 //                   a real fall.
-// kFallEngageTicks - fast-descending ticks before a FALL engages (jumps
-//                    engage immediately - this only debounces the fall case).
+// kFallEngageTicks - fast-descending ticks before a FALL engages (this only
+//                    debounces the fall case). Disable: 1 (engage first tick).
+// kRiseEngageTicks - fast-RISING ticks (that aren't slope-explained, see
+//                    kClimbSlopeMax) before a launch engages - so a per-step pop
+//                    climbing stairs can't engage, while a jump's sustained rise
+//                    does. Disable: 1 (engage first tick).
+// kClimbSlopeMax   - on stairs/ramps the rise is "explained" by horizontal travel
+//                    (vUp ~= horizSpeed * slope). A rise only counts toward a
+//                    launch when vUp > horizSpeed * kClimbSlopeMax (i.e. faster
+//                    than climbing the surface could produce). Ratio, so it's
+//                    speed-buff-independent. Disable: 0 (any fast rise qualifies).
+//                    With kClimbSlopeMax=0 AND kRiseEngageTicks=1 the rise path is
+//                    the old "engage immediately on vUp > kAirSpeed".
 // kReleaseSec      - descending/settled time before clearing airborne. Must
 //                    exceed the time to fall from 0 to kAirSpeed at GW2
 //                    gravity, so raise this alongside kAirSpeed.
@@ -107,12 +118,16 @@ namespace cs_constants {
 #ifdef EMOT3_DEVTOOLS
 inline float&  AirSpeed()        { static float  v = 3.5f; return v; }
 inline int&    FallEngageTicks() { static int    v = 2;    return v; }
+inline int&    RiseEngageTicks() { static int    v = 2;    return v; }
+inline float&  ClimbSlopeMax()   { static float  v = 1.2f; return v; }
 inline double& ReleaseSec()      { static double v = 0.25; return v; }
 inline float&  MoveSpeed()       { static float  v = 1.0f; return v; }
 inline double& MoveReleaseSec()  { static double v = 0.15; return v; }
 #else
 inline constexpr float  AirSpeed()        { return 3.5f; }
 inline constexpr int    FallEngageTicks() { return 2;    }
+inline constexpr int    RiseEngageTicks() { return 2;    }
+inline constexpr float  ClimbSlopeMax()   { return 1.2f; }
 inline constexpr double ReleaseSec()      { return 0.25; }
 inline constexpr float  MoveSpeed()       { return 1.0f; }
 inline constexpr double MoveReleaseSec()  { return 0.15; }

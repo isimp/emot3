@@ -136,11 +136,12 @@ void TickCharacterState() {
     static float    lastX = 0.f, lastY = 0.f, lastZ = 0.f;
     static double   lastT       = 0.0;
     static int      downRun     = 0;     // consecutive fast-descending ticks
+    static int      upRun       = 0;     // consecutive unexplained fast-rising ticks
     static double   groundSince = -1.0;  // when descent/settle began (airborne release)
     static double   stillSince  = -1.0;  // when horizontal motion dropped (move release)
 
     if (!MumbleLink) {
-        have = false; downRun = 0; groundSince = -1.0; stillSince = -1.0;
+        have = false; downRun = 0; upRun = 0; groundSince = -1.0; stillSince = -1.0;
         s_airborne = false; s_vertVel = 0.f; s_moving = false; s_horizSpeed = 0.f;
         return;
     }
@@ -164,24 +165,36 @@ void TickCharacterState() {
         // vertical or horizontal jump in one tick) - either would fake a velocity.
         if (dt > 0.0001 && dt < 0.5 && std::fabs(dy) < 50.f && horizDist < 100.f) {
             // ---- vertical: airborne (jumps + falls) ----
-            const float vUp = dy / (float)dt;
+            const float vUp   = dy / (float)dt;
+            const float horiz = horizDist / (float)dt;   // also the moving signal below
             s_vertVel = vUp;
-            if (vUp > cs_constants::AirSpeed()) {
-                // Rising fast = a jump / dismount hop / updraft: engage immediately.
-                s_airborne = true; downRun = 0; groundSince = -1.0;
+            // A rise only counts toward a LAUNCH when it's fast AND not "explained"
+            // by climbing the surface: on stairs/ramps vUp ~= horiz * slope, so
+            // vUp <= horiz * kClimbSlopeMax is just a climb (grounded). vUp beyond
+            // that is a real launch (horiz==0 -> RHS 0 -> any vertical launch counts).
+            const bool launchTick = vUp > cs_constants::AirSpeed() &&
+                                    vUp > horiz * cs_constants::ClimbSlopeMax();
+            if (launchTick) {
+                // Debounce so a single-step pop climbing stairs can't engage; a real
+                // jump's rise is sustained for many ticks and clears the threshold.
+                if (++upRun >= cs_constants::RiseEngageTicks()) {
+                    s_airborne = true; groundSince = -1.0;
+                }
+                downRun = 0;
             } else if (vUp < -cs_constants::AirSpeed()) {
                 // Descending fast = walked off a ledge etc.: debounce so a
                 // single-tick stair / curb drop doesn't engage.
                 if (++downRun >= cs_constants::FallEngageTicks()) s_airborne = true;
-                groundSince = -1.0;
+                upRun = 0; groundSince = -1.0;
             } else {
-                // Slow band: apex of a jump (still RISING - hold, the fall is
-                // coming) or back on the ground (DESCENDING / settled - run the
-                // release timer). The direction test bridges the rising half of the
-                // apex with no timer, so the apex can't flash the buttons usable.
-                downRun = 0;
+                // Slow band, or a slope-explained climb (grounded): if airborne from
+                // a jump, hold while a genuine apex rise (vUp>0, NOT a fast launch -
+                // launchTick is false here) else run the release timer. A stair climb
+                // with no prior jump stays grounded (s_airborne already false).
+                upRun = 0; downRun = 0;
                 if (s_airborne) {
-                    if (vUp > 0.f) groundSince = -1.0;          // still rising
+                    if (vUp > 0.f && vUp <= cs_constants::AirSpeed())
+                        groundSince = -1.0;                      // genuine apex rise: hold
                     else {
                         if (groundSince < 0.0) groundSince = now;
                         if (now - groundSince >= cs_constants::ReleaseSec()) s_airborne = false;
@@ -189,7 +202,7 @@ void TickCharacterState() {
                 }
             }
             // ---- horizontal: moving (any input, incl. mouse-walk) ----
-            s_horizSpeed = horizDist / (float)dt;
+            s_horizSpeed = horiz;
             if (s_horizSpeed > cs_constants::MoveSpeed()) { s_moving = true; stillSince = -1.0; }
             else if (s_moving) {
                 if (stillSince < 0.0) stillSince = now;
@@ -203,12 +216,12 @@ void TickCharacterState() {
                 s_vertVel, s_horizSpeed, y, (float)dt,
                 tick - lastUITick,
                 s_airborne, s_moving,
-                downRun, groundSince, stillSince, now
+                downRun, upRun, groundSince, stillSince, now
             });
 #endif
         } else {
             // Stall (loading / alt-tab) or teleport spike: re-baseline.
-            s_airborne = false; s_vertVel = 0.f; downRun = 0; groundSince = -1.0;
+            s_airborne = false; s_vertVel = 0.f; downRun = 0; upRun = 0; groundSince = -1.0;
             s_moving = false; s_horizSpeed = 0.f; stillSince = -1.0;
         }
     }
