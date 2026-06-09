@@ -126,6 +126,21 @@ inline float&  TakeoffAccelPeak() { static float  v = 0.f; return v; }
 inline double& FallGSum()         { static double v = 0.0; return v; }
 inline int&    FallGCount()       { static int    v = 0;   return v; }
 inline float   MeasuredFallG()    { return FallGCount() ? (float)(FallGSum() / FallGCount()) : 0.f; }
+// Legacy-detector calibration: peak |vUp| / horiz split by grounded vs airborne/moving
+// (kAirSpeed/kMoveSpeed want a value between the two clusters).
+inline float&  VUpPeakAir()       { static float  v = 0.f; return v; }
+inline float&  VUpPeakGround()    { static float  v = 0.f; return v; }
+inline float&  HorizPeakMove()    { static float  v = 0.f; return v; }
+inline float&  HorizPeakStand()   { static float  v = 0.f; return v; }
+
+// Reset every calibration accumulator + history ring (the "Reset history" button).
+inline void ClearHistory() {
+    VertVelHist().clear(); HorizSpeedHist().clear(); AvatarYHist().clear(); AUpHist().clear();
+    Events().clear();
+    AirbornePeakAbsVUp() = 0.f; MovingPeakSpeed() = 0.f; AUpSmooth() = 0.f;
+    GroundAccelPeak() = 0.f; TakeoffAccelPeak() = 0.f; FallGSum() = 0.0; FallGCount() = 0;
+    VUpPeakAir() = 0.f; VUpPeakGround() = 0.f; HorizPeakMove() = 0.f; HorizPeakStand() = 0.f;
+}
 
 // ---- the per-tick callback (called from TickCharacterState) ---------
 
@@ -149,6 +164,12 @@ inline void OnSample(const AirtunerSample& s) {
     } else {
         if (s.aUp > GroundAccelPeak()) GroundAccelPeak() = s.aUp;
     }
+    // Legacy-detector clusters: |vUp| and horiz split by the active airborne/moving flags.
+    const float absV = std::fabs(s.vertVel);
+    if (s.airborne) { if (absV > VUpPeakAir())    VUpPeakAir()    = absV; }
+    else            { if (absV > VUpPeakGround()) VUpPeakGround() = absV; }
+    if (s.moving)   { if (s.horizSpeed > HorizPeakMove())  HorizPeakMove()  = s.horizSpeed; }
+    else            { if (s.horizSpeed > HorizPeakStand()) HorizPeakStand() = s.horizSpeed; }
     LastSample() = s;
     HaveSample() = true;
 
@@ -235,51 +256,84 @@ inline void ResetDefaults() {
 inline void RenderAirborneTuner() {
     if (!airtuner::Enabled()) return;
 
+    // Not AlwaysAutoResize: the panel is tall, so cap height to the viewport and let
+    // it SCROLL instead of overflowing off-screen. Sections below are collapsible so
+    // it stays short by default.
     ImGui::SetNextWindowBgAlpha(0.88f);
+    ImGui::SetNextWindowSize(ImVec2(380.f, 520.f), ImGuiCond_FirstUseEver);
+    const ImVec2 ds = ImGui::GetIO().DisplaySize;
+    ImGui::SetNextWindowSizeConstraints(ImVec2(320.f, 140.f), ImVec2(FLT_MAX, ds.y * 0.92f));
     if (!ImGui::Begin("emot3 airborne tuner##airtuner", &airtuner::Enabled(),
-                       ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav)) {
+                       ImGuiWindowFlags_NoNav)) {
         ImGui::End();
         return;
     }
 
-    // ---- top controls -----------------------------------------------
+    const AirtunerSample& s   = airtuner::LastSample();
+    const bool   have = airtuner::HaveSample();
+    // s.now is CharacterState's steady_clock stamp (NOT ImGui::GetTime - unrelated
+    // epoch); use it so the elapsed/timer readouts come out in real seconds.
+    const double now  = s.now;
+    const int    mode = cs_constants::DetectorMode();
+
+    // ---- controls (always visible) ----------------------------------
     ImGui::Checkbox("Freeze", &airtuner::Paused());
-    ImGui::SameLine();
-    if (ImGui::Button("Reset history")) {
-        airtuner::VertVelHist().clear();
-        airtuner::HorizSpeedHist().clear();
-        airtuner::AvatarYHist().clear();
-        airtuner::AUpHist().clear();
-        airtuner::Events().clear();
-        airtuner::AirbornePeakAbsVUp() = 0.f;
-        airtuner::MovingPeakSpeed()    = 0.f;
-        airtuner::AUpSmooth()        = 0.f;
-        airtuner::GroundAccelPeak()  = 0.f;
-        airtuner::TakeoffAccelPeak() = 0.f;
-        airtuner::FallGSum()         = 0.0;
-        airtuner::FallGCount()       = 0;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Reset to defaults")) airtuner::ResetDefaults();
-    ImGui::SameLine();
-    if (ImGui::Button("Copy as C++")) {
+    ImGui::SameLine(); if (ImGui::Button("Reset history"))      airtuner::ClearHistory();
+    ImGui::SameLine(); if (ImGui::Button("Reset to defaults"))  airtuner::ResetDefaults();
+    ImGui::SameLine(); if (ImGui::Button("Copy as C++"))
         ImGui::SetClipboardText(airtuner::CurrentValuesAsCpp().c_str());
-    }
-
-    // Active detector: which one drives the real airborne gate (s_airborne).
-    // Both always compute so the readouts/dots below compare them side by side.
     {
-        int& mode = cs_constants::DetectorMode();
+        int& m = cs_constants::DetectorMode();
         ImGui::TextUnformatted("Active gate:"); ImGui::SameLine();
-        ImGui::RadioButton("legacy", &mode, 0);    ImGui::SameLine();
-        ImGui::RadioButton("ballistic", &mode, 1);
+        ImGui::RadioButton("legacy", &m, 0);    ImGui::SameLine();
+        ImGui::RadioButton("ballistic", &m, 1);
     }
-
-    ImGui::TextDisabled("history ~2s @ 60Hz; long falls scroll off the left edge");
     ImGui::Separator();
 
-    // ---- sliders ----------------------------------------------------
-    {
+    // ---- live state (always visible, compact) -----------------------
+    devui::StateDot(s.airborneLegacy);    ImGui::SameLine();
+    ImGui::Text("legacy%s", mode == 0 ? " *" : "");   ImGui::SameLine(150.f);
+    devui::StateDot(s.airborneBallistic); ImGui::SameLine();
+    ImGui::Text("ballistic%s", mode == 1 ? " *" : "");
+    devui::StateDot(s.moving); ImGui::SameLine(); ImGui::Text("moving");
+    if (have)
+        ImGui::Text("vUp %+.2f   horiz %.2f   aUp %+.0f m/s2",
+                    s.vertVel, s.horizSpeed, airtuner::AUpSmooth());
+    else
+        ImGui::TextDisabled("(no sample yet - waiting for a fresh UITick)");
+
+    // ---- Calibrate: measure, then Apply (default open) --------------
+    if (ImGui::CollapsingHeader("Calibrate  (move around, then Apply)",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Legacy: |vUp| and horiz split into grounded vs airborne/moving clusters;
+        // each threshold wants a value BETWEEN its two clusters.
+        const float vG = airtuner::VUpPeakGround(), vA = airtuner::VUpPeakAir();
+        const float hS = airtuner::HorizPeakStand(), hM = airtuner::HorizPeakMove();
+        const float sugAir = (vA > vG) ? 0.5f * (vA + vG) : 0.f;
+        const float sugMv  = (hM > hS) ? 0.5f * (hM + hS) : 0.f;
+        ImGui::TextDisabled("legacy:");
+        ImGui::Text("|vUp| ground %.2f  air %.2f  ->  kAirSpeed %.2f", vG, vA, sugAir);
+        ImGui::SameLine(); if (ImGui::SmallButton("set##air") && sugAir > 0.1f)
+            cs_constants::AirSpeed() = sugAir;
+        ImGui::Text("horiz stand %.2f  move %.2f  ->  kMoveSpeed %.2f", hS, hM, sugMv);
+        ImGui::SameLine(); if (ImGui::SmallButton("set##mv") && sugMv > 0.05f)
+            cs_constants::MoveSpeed() = sugMv;
+
+        // Ballistic: fall g (avg -aUp descending) + the accel clusters for kLaunchAccel.
+        const float fg    = airtuner::MeasuredFallG();
+        const float gP    = airtuner::GroundAccelPeak(), tP = airtuner::TakeoffAccelPeak();
+        const float sugLA = (tP > gP) ? 0.5f * (tP + gP) : 0.f;
+        ImGui::Spacing(); ImGui::TextDisabled("ballistic:");
+        ImGui::Text("fall g %.1f  ->  kGravity", fg);
+        ImGui::SameLine(); if (ImGui::SmallButton("set##g") && fg > 1.f)
+            cs_constants::Gravity() = fg;
+        ImGui::Text("accel ground %.0f  takeoff %.0f  ->  kLaunchAccel %.0f", gP, tP, sugLA);
+        ImGui::SameLine(); if (ImGui::SmallButton("set##la") && sugLA > 1.f)
+            cs_constants::LaunchAccel() = sugLA;
+    }
+
+    // ---- Knobs (default closed) -------------------------------------
+    if (ImGui::CollapsingHeader("Knobs (sliders)")) {
         float& air  = cs_constants::AirSpeed();
         int&   fet  = cs_constants::FallEngageTicks();
         int&   ret  = cs_constants::RiseEngageTicks();
@@ -290,228 +344,125 @@ inline void RenderAirborneTuner() {
         float& lac  = cs_constants::LaunchAccel();
         float& grav = cs_constants::Gravity();
         float& gtol = cs_constants::GravityTol();
+        static const double kDoubleMin = 0.0, kDoubleMax = 1.0;
 
-        // ImGui::SliderScalar wants &min / &max as void*. Stable storage so we
-        // can take addresses; static const because the bounds don't change.
-        static const double kDoubleMin = 0.0;
-        static const double kDoubleMax = 1.0;
-
-        ImGui::PushItemWidth(180.f);
-        ImGui::TextDisabled("shared / legacy detector");
-        ImGui::SliderFloat("kAirSpeed (|vUp| m/s)",   &air, 0.5f, 10.0f, "%.2f");
-        ImGui::SliderInt  ("kFallEngageTicks",        &fet, 1,    10);
-        ImGui::SliderInt  ("kRiseEngageTicks",        &ret, 1,    10);   // 1 = no debounce
-        ImGui::SliderFloat("kClimbSlopeMax (vUp/horiz)", &csm, 0.0f, 3.0f, "%.2f"); // 0 = gate off
-        ImGui::SliderScalar("kReleaseSec (s)",         ImGuiDataType_Double, &rs,
-                             &kDoubleMin, &kDoubleMax, "%.3f");
-        ImGui::SliderFloat("kMoveSpeed (horiz m/s)",  &mvs, 0.1f, 5.0f, "%.2f");
-        ImGui::SliderScalar("kMoveReleaseSec (s)",     ImGuiDataType_Double, &mrs,
-                             &kDoubleMin, &kDoubleMax, "%.3f");
-        ImGui::Spacing();
-        ImGui::TextDisabled("ballistic detector (aUp ~ -g)");
-        ImGui::SliderFloat("kLaunchAccel (m/s^2)",    &lac, 20.f, 600.f, "%.0f");
-        ImGui::SliderFloat("kGravity (m/s^2)",        &grav, 5.f, 60.f, "%.1f");
-        ImGui::SliderFloat("kGravityTol (frac)",      &gtol, 0.05f, 1.0f, "%.2f");
+        ImGui::PushItemWidth(170.f);
+        ImGui::TextDisabled("shared / legacy");
+        ImGui::SliderFloat("kAirSpeed (|vUp| m/s)",      &air, 0.5f, 10.0f, "%.2f");
+        ImGui::SliderInt  ("kFallEngageTicks",           &fet, 1,    10);
+        ImGui::SliderInt  ("kRiseEngageTicks",           &ret, 1,    10);   // 1 = no debounce
+        ImGui::SliderFloat("kClimbSlopeMax (vUp/horiz)", &csm, 0.0f, 3.0f, "%.2f"); // 0 = off
+        ImGui::SliderScalar("kReleaseSec (s)",  ImGuiDataType_Double, &rs, &kDoubleMin, &kDoubleMax, "%.3f");
+        ImGui::SliderFloat("kMoveSpeed (horiz m/s)",     &mvs, 0.1f, 5.0f, "%.2f");
+        ImGui::SliderScalar("kMoveReleaseSec (s)", ImGuiDataType_Double, &mrs, &kDoubleMin, &kDoubleMax, "%.3f");
+        ImGui::Spacing(); ImGui::TextDisabled("ballistic (aUp ~ -g)");
+        ImGui::SliderFloat("kLaunchAccel (m/s^2)",       &lac, 20.f, 600.f, "%.0f");
+        ImGui::SliderFloat("kGravity (m/s^2)",           &grav, 5.f, 60.f, "%.1f");
+        ImGui::SliderFloat("kGravityTol (frac)",         &gtol, 0.05f, 1.0f, "%.2f");
         ImGui::PopItemWidth();
     }
 
-    ImGui::Separator();
-
-    // ---- measured calibration aids (so you don't read the graph) ----
-    // Fall once, jump a few times, then click Apply. Numbers accumulate since the
-    // last "Reset history"; kLaunchAccel wants to sit between ground & takeoff peaks.
-    {
-        const float fg     = airtuner::MeasuredFallG();
-        const float gPeak  = airtuner::GroundAccelPeak();
-        const float tPeak  = airtuner::TakeoffAccelPeak();
-        const float suggLA = (tPeak > gPeak) ? 0.5f * (tPeak + gPeak) : 0.f;
-
-        ImGui::TextDisabled("measured (since reset) - calibrate, then Apply:");
-        ImGui::Text("fall g       %5.1f m/s^2", fg);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Apply -> kGravity") && fg > 1.f)
-            cs_constants::Gravity() = fg;
-
-        ImGui::Text("ground peak  %5.0f   takeoff peak %5.0f m/s^2", gPeak, tPeak);
-        ImGui::Text("suggest kLaunchAccel %5.0f", suggLA);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Apply -> kLaunchAccel") && suggLA > 1.f)
-            cs_constants::LaunchAccel() = suggLA;
-    }
-
-    ImGui::Separator();
-
-    // ---- live readouts ----------------------------------------------
-    const AirtunerSample& s = airtuner::LastSample();
-    const bool have = airtuner::HaveSample();
-    // Use the SAMPLE's clock as "now", not ImGui::GetTime(): groundSince/stillSince
-    // and the event timestamps come from CharacterState's std::chrono::steady_clock
-    // (kept imgui-free), whose epoch is unrelated to ImGui's - mixing them made the
-    // elapsed readouts show huge values. s.now is the steady_clock stamp of the
-    // latest tick (kept current even while paused).
-    const double now = s.now;
-
-    if (ImGui::BeginTable("##airtuner_live", 2, ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableNextRow();
-
-        // Left column: scalar signals
-        ImGui::TableSetColumnIndex(0);
-        if (have) {
-            ImGui::Text("vert vel     %+7.2f m/s",  s.vertVel);
-            ImGui::Text("horiz spd    %7.2f m/s",   s.horizSpeed);
-            ImGui::Text("vert accel   %+8.1f m/s2", airtuner::AUpSmooth());
-            ImGui::Text("Avatar Y     %7.2f",       s.avatarY);
-            ImGui::Text("dt           %7.2f ms",    s.dt * 1000.0);
-            ImGui::Text("UITick Δ     %u",           s.uiTickDelta);
-        } else {
-            ImGui::TextDisabled("(no sample yet - waiting for fresh UITick)");
-        }
-
-        // Right column: flags + timers. Show BOTH detectors' results; mark the one
-        // DetectorMode currently routes to s_airborne.
-        ImGui::TableSetColumnIndex(1);
-        const int mode = cs_constants::DetectorMode();
-        devui::StateDot(s.airborneLegacy);    ImGui::SameLine();
-        ImGui::Text("airborne: legacy%s",    mode == 0 ? " (active)" : "");
-        devui::StateDot(s.airborneBallistic); ImGui::SameLine();
-        ImGui::Text("airborne: ballistic%s", mode == 1 ? " (active)" : "");
-        devui::StateDot(s.moving);   ImGui::SameLine();
-        ImGui::Text("moving");
-        ImGui::Text("downRun      %d / %d", s.downRun, cs_constants::FallEngageTicks());
-        ImGui::Text("upRun        %d / %d", s.upRun,   cs_constants::RiseEngageTicks());
-        ImGui::Text("ballFall     %d / %d", s.ballFall, cs_constants::FallEngageTicks());
-        {
-            // Rise "explained by climbing" ratio: a launch needs vUp/horiz above
-            // kClimbSlopeMax (stairs/ramps stay at/under the surface slope).
-            float ratio = s.horizSpeed > 0.01f ? s.vertVel / s.horizSpeed : 0.f;
-            ImGui::Text("rise ratio   %+6.2f / %.2f", ratio, cs_constants::ClimbSlopeMax());
-        }
+    // ---- Timers & counters (default closed) -------------------------
+    if (ImGui::CollapsingHeader("Timers & counters")) {
+        ImGui::Text("downRun %d/%d   upRun %d/%d   ballFall %d/%d",
+                    s.downRun, cs_constants::FallEngageTicks(),
+                    s.upRun,   cs_constants::RiseEngageTicks(),
+                    s.ballFall, cs_constants::FallEngageTicks());
+        const float ratio = s.horizSpeed > 0.01f ? s.vertVel / s.horizSpeed : 0.f;
+        ImGui::Text("rise ratio %+.2f / %.2f   (dt %.1f ms, UITick d %u)",
+                    ratio, cs_constants::ClimbSlopeMax(), s.dt * 1000.0, s.uiTickDelta);
         if (have && s.groundSince >= 0.0) {
             float frac = (float)((now - s.groundSince) / cs_constants::ReleaseSec());
             if (frac > 1.f) frac = 1.f;
-            char buf[48];
-            std::snprintf(buf, sizeof(buf), "groundSince  %.2fs / %.2f",
+            char buf[48]; std::snprintf(buf, sizeof(buf), "groundSince %.2f / %.2f s",
                           now - s.groundSince, cs_constants::ReleaseSec());
-            ImGui::ProgressBar(frac, ImVec2(160.f, 0), buf);
-        } else {
-            ImGui::TextDisabled("groundSince  -");
-        }
+            ImGui::ProgressBar(frac, ImVec2(180.f, 0), buf);
+        } else ImGui::TextDisabled("groundSince -");
         if (have && s.stillSince >= 0.0) {
             float frac = (float)((now - s.stillSince) / cs_constants::MoveReleaseSec());
             if (frac > 1.f) frac = 1.f;
-            char buf[48];
-            std::snprintf(buf, sizeof(buf), "stillSince   %.2fs / %.2f",
+            char buf[48]; std::snprintf(buf, sizeof(buf), "stillSince %.2f / %.2f s",
                           now - s.stillSince, cs_constants::MoveReleaseSec());
-            ImGui::ProgressBar(frac, ImVec2(160.f, 0), buf);
-        } else {
-            ImGui::TextDisabled("stillSince   -");
+            ImGui::ProgressBar(frac, ImVec2(180.f, 0), buf);
+        } else ImGui::TextDisabled("stillSince -");
+    }
+
+    // ---- Graphs (default closed) ------------------------------------
+    if (ImGui::CollapsingHeader("Graphs")) {
+        ImGui::TextDisabled("history ~2s @ 60Hz; long falls scroll off the left");
+        const ImVec2 plotSize(340, 52);
+
+        // Vertical velocity, symmetric, ±kAirSpeed lines.
+        {
+            float buf[prof::kHistLen];
+            int n = prof::FlattenRing(airtuner::VertVelHist(), buf);
+            const float air = cs_constants::AirSpeed();
+            float absMax = air * 2.f;
+            for (int i = 0; i < n; ++i) { float a = std::fabs(buf[i]); if (a > absMax) absMax = a; }
+            const float sMin = -absMax, sMax = absMax;
+            char overlay[48]; std::snprintf(overlay, sizeof(overlay),
+                "vert vel  cur %+.2f  \xc2\xb1%.1f m/s", n ? buf[n-1] : 0.f, absMax);
+            ImGui::PlotLines("##vvplot", buf, n, 0, overlay, sMin, sMax, plotSize);
+            devui::DrawThresholdOnLastPlot( air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
+            devui::DrawThresholdOnLastPlot(-air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
         }
-        ImGui::EndTable();
-    }
-
-    ImGui::Separator();
-
-    // ---- sparklines -------------------------------------------------
-    const ImVec2 plotSize(360, 56);
-
-    // Vertical velocity. Symmetric scale, ±max(kAirSpeed*2, recent peak).
-    {
-        float buf[prof::kHistLen];
-        int n = prof::FlattenRing(airtuner::VertVelHist(), buf);
-        const float air = cs_constants::AirSpeed();
-        // Symmetric scale: ±max(2*threshold, |buffer extreme|). prof::Ring's
-        // .peak() returns the positive windowed max; vUp goes negative on a
-        // fall, so scan the buffer directly for the absolute extreme.
-        float absMax = air * 2.f;
-        for (int i = 0; i < n; ++i) {
-            float a = std::fabs(buf[i]);
-            if (a > absMax) absMax = a;
+        // Vertical acceleration (smoothed), -g line green / +g faint.
+        {
+            float buf[prof::kHistLen];
+            int n = prof::FlattenRing(airtuner::AUpHist(), buf);
+            const float g = cs_constants::Gravity();
+            float absMax = g * 1.5f, vmin = 0.f;
+            for (int i = 0; i < n; ++i) {
+                float a = std::fabs(buf[i]); if (a > absMax) absMax = a;
+                if (buf[i] < vmin) vmin = buf[i];
+            }
+            const float sMin = -absMax, sMax = absMax;
+            char overlay[64]; std::snprintf(overlay, sizeof(overlay),
+                "vert accel  cur %+.0f  min %+.0f (~ -g)", n ? buf[n-1] : 0.f, vmin);
+            ImGui::PlotLines("##auplot", buf, n, 0, overlay, sMin, sMax, plotSize);
+            devui::DrawThresholdOnLastPlot(-g, sMin, sMax - sMin, IM_COL32(70, 200, 90, 220));
+            devui::DrawThresholdOnLastPlot( g, sMin, sMax - sMin, IM_COL32(220, 70, 70, 120));
         }
-        const float sMin = -absMax, sMax = absMax;
-        char overlay[48]; std::snprintf(overlay, sizeof(overlay),
-            "vert vel  cur %+.2f  range \xc2\xb1%.1f m/s", n ? buf[n-1] : 0.f, absMax);
-        ImGui::PlotLines("##vvplot", buf, n, 0, overlay, sMin, sMax, plotSize);
-        // ±kAirSpeed threshold lines (red so they pop)
-        devui::DrawThresholdOnLastPlot( air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
-        devui::DrawThresholdOnLastPlot(-air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
-    }
-
-    // Vertical acceleration (ballistic signal). Symmetric scale; -kGravity line is
-    // where free-fall sits (calibrate kGravity to the descending plateau / "min").
-    // The windowed min ~= the real free-fall accel = the gravity to dial in.
-    {
-        float buf[prof::kHistLen];
-        int n = prof::FlattenRing(airtuner::AUpHist(), buf);
-        const float g = cs_constants::Gravity();
-        float absMax = g * 1.5f, vmin = 0.f;
-        for (int i = 0; i < n; ++i) {
-            float a = std::fabs(buf[i]);
-            if (a > absMax) absMax = a;
-            if (buf[i] < vmin) vmin = buf[i];
+        // Horizontal speed, kMoveSpeed line.
+        {
+            float buf[prof::kHistLen];
+            int n = prof::FlattenRing(airtuner::HorizSpeedHist(), buf);
+            const float mvs = cs_constants::MoveSpeed();
+            float peak = mvs * 2.f;
+            for (int i = 0; i < n; ++i) if (buf[i] > peak) peak = buf[i];
+            char overlay[48]; std::snprintf(overlay, sizeof(overlay),
+                "horiz spd  cur %.2f  0..%.1f m/s", n ? buf[n-1] : 0.f, peak);
+            ImGui::PlotLines("##hsplot", buf, n, 0, overlay, 0.f, peak, plotSize);
+            devui::DrawThresholdOnLastPlot(mvs, 0.f, peak, IM_COL32(220, 70, 70, 200));
         }
-        const float sMin = -absMax, sMax = absMax;
-        char overlay[64]; std::snprintf(overlay, sizeof(overlay),
-            "vert accel  cur %+.0f  min %+.0f m/s2 (~ -g)", n ? buf[n-1] : 0.f, vmin);
-        ImGui::PlotLines("##auplot", buf, n, 0, overlay, sMin, sMax, plotSize);
-        // -g (free-fall) line in green; +g mirrored in faint red for context.
-        devui::DrawThresholdOnLastPlot(-g, sMin, sMax - sMin, IM_COL32(70, 200, 90, 220));
-        devui::DrawThresholdOnLastPlot( g, sMin, sMax - sMin, IM_COL32(220, 70, 70, 120));
     }
 
-    // Horizontal speed. 0..max(kMoveSpeed*2, recent peak).
-    {
-        float buf[prof::kHistLen];
-        int n = prof::FlattenRing(airtuner::HorizSpeedHist(), buf);
-        const float mvs = cs_constants::MoveSpeed();
-        float peak = mvs * 2.f;
-        for (int i = 0; i < n; ++i) if (buf[i] > peak) peak = buf[i];
-        const float sMin = 0.f, sMax = peak;
-        char overlay[48]; std::snprintf(overlay, sizeof(overlay),
-            "horiz spd  cur %.2f  range 0..%.1f m/s", n ? buf[n-1] : 0.f, peak);
-        ImGui::PlotLines("##hsplot", buf, n, 0, overlay, sMin, sMax, plotSize);
-        devui::DrawThresholdOnLastPlot(mvs, sMin, sMax - sMin,
-                                           IM_COL32(220, 70, 70, 200));
-    }
-
-    // Avatar Y. Auto-scaled (FLT_MAX) - spatial context for the velocity plot.
-    {
-        float buf[prof::kHistLen];
-        int n = prof::FlattenRing(airtuner::AvatarYHist(), buf);
-        char overlay[48]; std::snprintf(overlay, sizeof(overlay),
-            "Avatar Y  cur %.2f", n ? buf[n-1] : 0.f);
-        ImGui::PlotLines("##yplot", buf, n, 0, overlay, FLT_MAX, FLT_MAX, plotSize);
-    }
-
-    ImGui::Separator();
-
-    // ---- event log --------------------------------------------------
-    ImGui::Text("recent transitions (newest at top)");
-    const airtuner::EventLog& log = airtuner::Events();
-    if (log.count == 0) {
-        ImGui::TextDisabled("  (none yet - jump or walk to log a transition)");
-    } else if (ImGui::BeginTable("##airtuner_events", 3,
-                                  ImGuiTableFlags_SizingFixedFit |
-                                  ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("when");
-        ImGui::TableSetupColumn("event");
-        ImGui::TableSetupColumn("peak");
-        ImGui::TableHeadersRow();
-        // Iterate newest-first.
-        for (int i = 0; i < log.count; ++i) {
-            int idx = (log.head - 1 - i + airtuner::kEventLogSize) % airtuner::kEventLogSize;
-            const airtuner::Event& e = log.ev[idx];
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::Text("-%5.2fs", (float)(now - e.t));
-            ImGui::TableSetColumnIndex(1);
-            const char* k = e.isAirborne ? "airborne" : "moving";
-            ImVec4 col = e.on ? ImVec4(1.f, 0.6f, 0.6f, 1.f) : ImVec4(0.7f, 0.7f, 0.7f, 1.f);
-            ImGui::TextColored(col, "%s %s", k, e.on ? "ON" : "OFF");
-            ImGui::TableSetColumnIndex(2);
-            if (e.isAirborne) ImGui::Text("|vUp| %.2f", e.peak);
-            else              ImGui::Text("%.2f m/s",  e.peak);
+    // ---- Event log (default closed) ---------------------------------
+    if (ImGui::CollapsingHeader("Event log")) {
+        const airtuner::EventLog& log = airtuner::Events();
+        if (log.count == 0) {
+            ImGui::TextDisabled("(none yet - jump or walk to log a transition)");
+        } else if (ImGui::BeginTable("##airtuner_events", 3,
+                                      ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("when");
+            ImGui::TableSetupColumn("event");
+            ImGui::TableSetupColumn("peak");
+            ImGui::TableHeadersRow();
+            for (int i = 0; i < log.count; ++i) {
+                int idx = (log.head - 1 - i + airtuner::kEventLogSize) % airtuner::kEventLogSize;
+                const airtuner::Event& e = log.ev[idx];
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0); ImGui::Text("-%5.2fs", (float)(now - e.t));
+                ImGui::TableSetColumnIndex(1);
+                const char* k = e.isAirborne ? "airborne" : "moving";
+                ImVec4 col = e.on ? ImVec4(1.f, 0.6f, 0.6f, 1.f) : ImVec4(0.7f, 0.7f, 0.7f, 1.f);
+                ImGui::TextColored(col, "%s %s", k, e.on ? "ON" : "OFF");
+                ImGui::TableSetColumnIndex(2);
+                if (e.isAirborne) ImGui::Text("|vUp| %.2f", e.peak);
+                else              ImGui::Text("%.2f m/s",  e.peak);
+            }
+            ImGui::EndTable();
         }
-        ImGui::EndTable();
     }
 
     ImGui::End();
