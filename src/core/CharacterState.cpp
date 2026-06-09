@@ -185,14 +185,19 @@ void TickCharacterState() {
             const float slope = cs_constants::ClimbSlopeMax();
             // Fast path: an unambiguous spike on the RAW velocity engages immediately
             // (a clear jump/fall shouldn't wait out the debounce).
-            const bool strong = (vUp >= fast) || (vUp <= -fast);
+            const bool strongUp   = vUp >=  fast;
+            const bool strongDown = vUp <= -fast;
             // Marginal bands on the SMOOTHED velocity, slope-gated BOTH ways: a rise or
             // fall only counts when it's steeper than climbing the surface explains
             // (|vUp| > horiz * slope), so stairs/ramps up AND down stay grounded.
             const bool launchBand = vUpEMA >  air &&  vUpEMA > horizEMA * slope;
             const bool fallBand   = vUpEMA < -air && -vUpEMA > horizEMA * slope;
+            // Live rising/falling classification (fast path OR marginal band) - the
+            // tuner's rise/fall dots. Note the apex/release "hold" is neither.
+            const bool rise = strongUp   || launchBand;
+            const bool fall = strongDown || fallBand;
 
-            if (strong) {
+            if (strongUp || strongDown) {
                 s_airborne = true; riseSince = fallSince = -1.0; groundSince = -1.0;
             } else if (launchBand) {
                 if (riseSince < 0.0) riseSince = now;
@@ -231,7 +236,7 @@ void TickCharacterState() {
             airtuner::OnSample({
                 s_vertVel, vUpEMA, s_horizSpeed, y, (float)dt,
                 tick - lastUITick,
-                s_airborne, s_moving,
+                s_airborne, s_moving, rise, fall,
                 riseSince, fallSince, groundSince, stillSince, now
             });
 #endif

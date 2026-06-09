@@ -51,6 +51,8 @@ struct AirtunerSample {
     unsigned uiTickDelta;  // UITick - prev UITick (>= 1)
     bool     airborne;     // s_airborne after this tick
     bool     moving;       // s_moving    after this tick
+    bool     rise;         // currently classified rising-airborne (fast or band)
+    bool     fall;         // currently classified falling-airborne (fast or band)
     double   riseSince;    // -1 if not running, else when the marginal rise began
     double   fallSince;    // -1 if not running, else when the marginal fall began
     double   groundSince;  // -1 if not running, else when descent/settle began
@@ -202,6 +204,9 @@ inline void RenderAirborneTuner() {
     devui::StateDot(s.airborne); ImGui::SameLine(); ImGui::Text("airborne");
     ImGui::SameLine(150.f);
     devui::StateDot(s.moving);   ImGui::SameLine(); ImGui::Text("moving");
+    devui::StateDot(s.rise);     ImGui::SameLine(); ImGui::Text("rise");
+    ImGui::SameLine(150.f);
+    devui::StateDot(s.fall);     ImGui::SameLine(); ImGui::Text("fall");
     if (have)
         ImGui::Text("vUp %+.2f (sm %+.2f)   horiz %.2f m/s",
                     s.vertVel, s.vertVelEMA, s.horizSpeed);
