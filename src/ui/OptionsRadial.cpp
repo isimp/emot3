@@ -11,6 +11,7 @@
 #include "Layout.h"         // Ellipsize, PushInvalidInputStyle / DrawInvalidInputBorder
 #include "RadialDeploy.h"   // IsRadialMenusInstalled / RadialMenusDir / DeployToRadialMenus
 #include "Logging.h"
+#include "Profiling.h"      // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS)
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"  // PushItemFlag
@@ -352,6 +353,7 @@ void RenderWizard() {
     if (!ImGui::BeginPopupModal(title.c_str(), nullptr,
                                 ImGuiWindowFlags_AlwaysAutoResize))
         return;
+    PROFILE_SCOPE("opt.radial.wizard");  // the modal body (item table + thumbnails)
 
     if (s_wizPhase == 1) {
         // ---- done panel ----
@@ -734,6 +736,7 @@ bool GroupDrift(const std::vector<RadialExport>& pages, const std::string& categ
 }  // namespace
 
 void RenderRadialTab() {
+    PROFILE_SCOPE("opt.radial");  // tab body (per-group rows + status); wizard adds its own
     TickStatus();
 
     // 1. Intro (base build omits the +plus deploy mention)
