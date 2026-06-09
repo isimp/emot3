@@ -183,21 +183,22 @@ void TickCharacterState() {
             const float air   = cs_constants::AirSpeed();
             const float fast  = cs_constants::FastLaunchMult() * air;
             const float slope = cs_constants::ClimbSlopeMax();
-            // Fast path: an unambiguous spike on the RAW velocity engages immediately
-            // (a clear jump/fall shouldn't wait out the debounce).
-            const bool strongUp   = vUp >=  fast;
-            const bool strongDown = vUp <= -fast;
+            // Fast path: an unambiguous UPWARD spike on the RAW velocity engages
+            // immediately (a clear jump shouldn't wait out the debounce). UP only - a
+            // fast downward spike (a hard step off a curb/stair) must still go through
+            // the slope gate + debounce so it can't instantly false-trigger.
+            const bool strongUp = vUp >= fast;
             // Marginal bands on the SMOOTHED velocity, slope-gated BOTH ways: a rise or
             // fall only counts when it's steeper than climbing the surface explains
             // (|vUp| > horiz * slope), so stairs/ramps up AND down stay grounded.
             const bool launchBand = vUpEMA >  air &&  vUpEMA > horizEMA * slope;
             const bool fallBand   = vUpEMA < -air && -vUpEMA > horizEMA * slope;
-            // Live rising/falling classification (fast path OR marginal band) - the
-            // tuner's rise/fall dots. Note the apex/release "hold" is neither.
-            const bool rise = strongUp   || launchBand;
-            const bool fall = strongDown || fallBand;
+            // Live rising/falling classification - the tuner's rise/fall dots. The
+            // apex/release "hold" is neither.
+            const bool rise = strongUp || launchBand;
+            const bool fall = fallBand;
 
-            if (strongUp || strongDown) {
+            if (strongUp) {
                 s_airborne = true; riseSince = fallSince = -1.0; groundSince = -1.0;
             } else if (launchBand) {
                 if (riseSince < 0.0) riseSince = now;

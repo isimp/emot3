@@ -131,10 +131,9 @@ inline void OnSample(const AirtunerSample& s) {
         const float r = av / s.horizSpeed;
         if (r > GroundSlopePeak()) GroundSlopePeak() = r;
     }
-    // RAW |vUp| peaks (the fast path tests raw velocity) -> kFastLaunchMult between them.
-    const float rv = std::fabs(s.vertVel);
-    if (s.airborne) { if (rv > RawVUpPeakAir())    RawVUpPeakAir()    = rv; }
-    else            { if (rv > RawVUpPeakGround()) RawVUpPeakGround() = rv; }
+    // RAW UPWARD vUp peaks (the fast path is up-only) -> kFastLaunchMult between them.
+    if (s.airborne) { if (s.vertVel > RawVUpPeakAir())    RawVUpPeakAir()    = s.vertVel; }
+    else            { if (s.vertVel > RawVUpPeakGround()) RawVUpPeakGround() = s.vertVel; }
 
     // Event log: edge-detect, peak captured at the OFF edge.
     if (s.airborne) { float a = std::fabs(s.vertVel); if (a > AirbornePeakAbsVUp()) AirbornePeakAbsVUp() = a; }
@@ -261,7 +260,7 @@ inline void RenderAirborneTuner() {
         const float rg = airtuner::RawVUpPeakGround(), ra = airtuner::RawVUpPeakAir();
         const float air2 = cs_constants::AirSpeed();
         const float sugMult = (ra > rg && air2 > 0.1f) ? 0.5f * (ra + rg) / air2 : 0.f;
-        ImGui::Text("raw |vUp| ground %.1f  air %.1f  ->  kFastLaunchMult %.2f", rg, ra, sugMult);
+        ImGui::Text("raw vUp(up) ground %.1f  air %.1f  ->  kFastLaunchMult %.2f", rg, ra, sugMult);
         ImGui::SameLine(); if (ImGui::SmallButton("set##mult") && sugMult >= 1.f)
             cs_constants::FastLaunchMult() = sugMult;
 

@@ -100,8 +100,9 @@ const char* RTApiDebugInfo();
 //
 // kAirSpeed       - |vUp| (m/s) above which a tick counts as airborne (vs slopes /
 //                   stairs / walking jitter).
-// kFastLaunchMult - raw |vUp| >= kFastLaunchMult * kAirSpeed engages IMMEDIATELY
-//                   (an obvious jump/fall skips the debounce). Disable: very large.
+// kFastLaunchMult - raw UPWARD vUp >= kFastLaunchMult * kAirSpeed engages IMMEDIATELY
+//                   (an obvious jump skips the debounce). Up only: a fast fall still
+//                   goes through the slope gate + debounce. Disable: very large.
 // kClimbSlopeMax  - a rise OR fall is "explained" by the surface when |vUp| <=
 //                   horizSpeed * kClimbSlopeMax (stairs/ramps: |vUp| ~= horiz*slope);
 //                   only motion steeper than the surface counts. Ratio -> speed-buff
