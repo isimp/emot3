@@ -114,6 +114,20 @@ const char* RTApiDebugInfo();
 // kMoveSpeed       - horizontal m/s above which a tick counts as moving.
 //                    Catches mouse-walk (which presses no key).
 // kMoveReleaseSec  - below-threshold time before "stopped" (anti-flicker).
+//
+// --- Experimental BALLISTIC detector (dev-switchable; see DetectorMode) --------
+// A jump is ballistic: vertical accel ~= -g, decoupled from terrain (stairs/ramps
+// follow the surface and never sustain -g). So instead of a velocity threshold this
+// detector keys on acceleration aUp = d(vUp)/dt:
+//   kLaunchAccel - upward accel impulse (m/s^2) marking takeoff (vUp turning +).
+//                  Far above any stair step's accel; calibrate in the tuner.
+//   kGravity     - expected free-fall |accel| (m/s^2). MEASURE it: in the tuner,
+//                  watch aUp settle to ~ -kGravity during a clean fall.
+//   kGravityTol  - fraction of kGravity: a tick is "free-falling" when
+//                  |aUp + kGravity| <= kGravityTol * kGravity (covers rise->fall).
+// DetectorMode picks which detector drives s_airborne (0 = legacy threshold,
+// 1 = ballistic). Dev-mutable via the Airborne tuner; shipped is fixed to 0 for
+// now (no behaviour change) until the ballistic path is validated + promoted.
 namespace cs_constants {
 #ifdef EMOT3_DEVTOOLS
 inline float&  AirSpeed()        { static float  v = 3.5f; return v; }
@@ -123,6 +137,10 @@ inline float&  ClimbSlopeMax()   { static float  v = 1.2f; return v; }
 inline double& ReleaseSec()      { static double v = 0.25; return v; }
 inline float&  MoveSpeed()       { static float  v = 1.0f; return v; }
 inline double& MoveReleaseSec()  { static double v = 0.15; return v; }
+inline int&    DetectorMode()    { static int    v = 0;    return v; }  // 0 legacy / 1 ballistic
+inline float&  LaunchAccel()     { static float  v = 150.f; return v; }
+inline float&  Gravity()         { static float  v = 20.f;  return v; }
+inline float&  GravityTol()      { static float  v = 0.5f;  return v; }
 #else
 inline constexpr float  AirSpeed()        { return 3.5f; }
 inline constexpr int    FallEngageTicks() { return 2;    }
@@ -131,5 +149,9 @@ inline constexpr float  ClimbSlopeMax()   { return 1.2f; }
 inline constexpr double ReleaseSec()      { return 0.25; }
 inline constexpr float  MoveSpeed()       { return 1.0f; }
 inline constexpr double MoveReleaseSec()  { return 0.15; }
+inline constexpr int    DetectorMode()    { return 0;     }  // shipped: legacy
+inline constexpr float  LaunchAccel()     { return 150.f; }
+inline constexpr float  Gravity()         { return 20.f;  }
+inline constexpr float  GravityTol()      { return 0.5f;  }
 #endif
 }  // namespace cs_constants
