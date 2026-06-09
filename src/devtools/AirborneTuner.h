@@ -114,6 +114,19 @@ inline bool&  PrevMoving()      { static bool  b = false; return b; }
 inline float& AirbornePeakAbsVUp() { static float v = 0.f; return v; }  // |vUp| max while airborne
 inline float& MovingPeakSpeed()    { static float v = 0.f; return v; }
 
+// ---- calibration aids (cleared by "Reset history") ------------------
+// The raw aUp trace is jerky; reading kGravity/kLaunchAccel off it by eye is hard.
+// Instead we MEASURE: AUpSmooth is a cosmetic EMA for the plot/live number (the
+// detector still uses raw aUp). The rest are running stats since the last reset:
+// fall g = avg -aUp while ballistic-descending; takeoff/ground peaks = max aUp seen
+// airborne vs grounded - kLaunchAccel wants a value between those two clusters.
+inline float&  AUpSmooth()        { static float  v = 0.f; return v; }
+inline float&  GroundAccelPeak()  { static float  v = 0.f; return v; }
+inline float&  TakeoffAccelPeak() { static float  v = 0.f; return v; }
+inline double& FallGSum()         { static double v = 0.0; return v; }
+inline int&    FallGCount()       { static int    v = 0;   return v; }
+inline float   MeasuredFallG()    { return FallGCount() ? (float)(FallGSum() / FallGCount()) : 0.f; }
+
 // ---- the per-tick callback (called from TickCharacterState) ---------
 
 inline void OnSample(const AirtunerSample& s) {
@@ -126,7 +139,16 @@ inline void OnSample(const AirtunerSample& s) {
     VertVelHist().push(s.vertVel);
     HorizSpeedHist().push(s.horizSpeed);
     AvatarYHist().push(s.avatarY);
-    AUpHist().push(s.aUp);
+    // Cosmetic EMA so the accel plot/readout is legible (detector uses raw aUp).
+    AUpSmooth() += 0.3f * (s.aUp - AUpSmooth());
+    AUpHist().push(AUpSmooth());
+    // Calibration stats from RAW aUp (what the detector tests against).
+    if (s.airborneBallistic) {
+        if (s.aUp > TakeoffAccelPeak()) TakeoffAccelPeak() = s.aUp;
+        if (s.vertVel < -0.5f) { FallGSum() += -s.aUp; FallGCount() += 1; }  // descending: aUp ~ -g
+    } else {
+        if (s.aUp > GroundAccelPeak()) GroundAccelPeak() = s.aUp;
+    }
     LastSample() = s;
     HaveSample() = true;
 
@@ -231,6 +253,11 @@ inline void RenderAirborneTuner() {
         airtuner::Events().clear();
         airtuner::AirbornePeakAbsVUp() = 0.f;
         airtuner::MovingPeakSpeed()    = 0.f;
+        airtuner::AUpSmooth()        = 0.f;
+        airtuner::GroundAccelPeak()  = 0.f;
+        airtuner::TakeoffAccelPeak() = 0.f;
+        airtuner::FallGSum()         = 0.0;
+        airtuner::FallGCount()       = 0;
     }
     ImGui::SameLine();
     if (ImGui::Button("Reset to defaults")) airtuner::ResetDefaults();
@@ -290,6 +317,30 @@ inline void RenderAirborneTuner() {
 
     ImGui::Separator();
 
+    // ---- measured calibration aids (so you don't read the graph) ----
+    // Fall once, jump a few times, then click Apply. Numbers accumulate since the
+    // last "Reset history"; kLaunchAccel wants to sit between ground & takeoff peaks.
+    {
+        const float fg     = airtuner::MeasuredFallG();
+        const float gPeak  = airtuner::GroundAccelPeak();
+        const float tPeak  = airtuner::TakeoffAccelPeak();
+        const float suggLA = (tPeak > gPeak) ? 0.5f * (tPeak + gPeak) : 0.f;
+
+        ImGui::TextDisabled("measured (since reset) - calibrate, then Apply:");
+        ImGui::Text("fall g       %5.1f m/s^2", fg);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Apply -> kGravity") && fg > 1.f)
+            cs_constants::Gravity() = fg;
+
+        ImGui::Text("ground peak  %5.0f   takeoff peak %5.0f m/s^2", gPeak, tPeak);
+        ImGui::Text("suggest kLaunchAccel %5.0f", suggLA);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Apply -> kLaunchAccel") && suggLA > 1.f)
+            cs_constants::LaunchAccel() = suggLA;
+    }
+
+    ImGui::Separator();
+
     // ---- live readouts ----------------------------------------------
     const AirtunerSample& s = airtuner::LastSample();
     const bool have = airtuner::HaveSample();
@@ -308,7 +359,7 @@ inline void RenderAirborneTuner() {
         if (have) {
             ImGui::Text("vert vel     %+7.2f m/s",  s.vertVel);
             ImGui::Text("horiz spd    %7.2f m/s",   s.horizSpeed);
-            ImGui::Text("vert accel   %+8.1f m/s2", s.aUp);
+            ImGui::Text("vert accel   %+8.1f m/s2", airtuner::AUpSmooth());
             ImGui::Text("Avatar Y     %7.2f",       s.avatarY);
             ImGui::Text("dt           %7.2f ms",    s.dt * 1000.0);
             ImGui::Text("UITick Δ     %u",           s.uiTickDelta);
