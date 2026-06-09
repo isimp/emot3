@@ -62,7 +62,18 @@ void RefreshStatus() {
 // Per-frame: refresh detection cheaply; rebuild the cached sync state only when
 // detection first becomes known or actually flips (so a just-installed RadialMenus
 // lights up without the removed Refresh button / a restart).
+//
+// Throttled to ~2x/sec rather than literally every frame: IsRadialMenusInstalled is
+// a directory stat (GetFileAttributes) - microseconds on a cached local path, but a
+// synchronous syscall that could hitch on a network/USB drive or behind an AV filter
+// if hammered each frame. Twice a second is imperceptible for "noticed an install".
+// (A mutation still refreshes immediately via RefreshStatus - this only governs the
+// passive poll while the tab sits open.)
 void TickStatus() {
+    static double s_lastDetect = -1.0;
+    double t = ImGui::GetTime();
+    if (s_statusKnown && (t - s_lastDetect) < 0.5) return;
+    s_lastDetect = t;
     bool now = IsRadialMenusInstalled();
     if (!s_statusKnown || now != s_rmDetected) {
         s_rmDetected  = now;
