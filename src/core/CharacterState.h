@@ -92,66 +92,50 @@ const char* RTApiDebugInfo();
 // returning literals, so the compiler folds every call site to an immediate
 // (codegen identical to the previous file-static constexpr block).
 //
-// kAirSpeed       - |vUp| (m/s) above which a tick counts as airborne.
-//                   Below: slopes/stairs/walking jitter; above: jump launch or
-//                   a real fall.
-// kFallEngageTicks - fast-descending ticks before a FALL engages (this only
-//                    debounces the fall case). Disable: 1 (engage first tick).
-// kRiseEngageTicks - fast-RISING ticks (that aren't slope-explained, see
-//                    kClimbSlopeMax) before a launch engages - so a per-step pop
-//                    climbing stairs can't engage, while a jump's sustained rise
-//                    does. Disable: 1 (engage first tick).
-// kClimbSlopeMax   - on stairs/ramps the rise is "explained" by horizontal travel
-//                    (vUp ~= horizSpeed * slope). A rise only counts toward a
-//                    launch when vUp > horizSpeed * kClimbSlopeMax (i.e. faster
-//                    than climbing the surface could produce). Ratio, so it's
-//                    speed-buff-independent. Disable: 0 (any fast rise qualifies).
-//                    With kClimbSlopeMax=0 AND kRiseEngageTicks=1 the rise path is
-//                    the old "engage immediately on vUp > kAirSpeed".
-// kReleaseSec      - descending/settled time before clearing airborne. Must
-//                    exceed the time to fall from 0 to kAirSpeed at GW2
-//                    gravity, so raise this alongside kAirSpeed.
-// kMoveSpeed       - horizontal m/s above which a tick counts as moving.
-//                    Catches mouse-walk (which presses no key).
-// kMoveReleaseSec  - below-threshold time before "stopped" (anti-flicker).
+// The airborne/moving decision (TickCharacterState) keys on velocity from MumbleLink
+// position deltas. The marginal threshold/slope/debounce tests run on an EMA-smoothed
+// velocity (kVelWindowSec) to tame single-tick position-quantization noise; an
+// unambiguous spike on the RAW velocity (kFastLaunchMult) engages immediately so jump
+// onset isn't delayed.
 //
-// --- Experimental BALLISTIC detector (dev-switchable; see DetectorMode) --------
-// A jump is ballistic: vertical accel ~= -g, decoupled from terrain (stairs/ramps
-// follow the surface and never sustain -g). So instead of a velocity threshold this
-// detector keys on acceleration aUp = d(vUp)/dt:
-//   kLaunchAccel - upward accel impulse (m/s^2) marking takeoff (vUp turning +).
-//                  Far above any stair step's accel; calibrate in the tuner.
-//   kGravity     - expected free-fall |accel| (m/s^2). MEASURE it: in the tuner,
-//                  watch aUp settle to ~ -kGravity during a clean fall.
-//   kGravityTol  - fraction of kGravity: a tick is "free-falling" when
-//                  |aUp + kGravity| <= kGravityTol * kGravity (covers rise->fall).
-// DetectorMode picks which detector drives s_airborne (0 = legacy threshold,
-// 1 = ballistic). Dev-mutable via the Airborne tuner; shipped is fixed to 0 for
-// now (no behaviour change) until the ballistic path is validated + promoted.
+// kAirSpeed       - |vUp| (m/s) above which a tick counts as airborne (vs slopes /
+//                   stairs / walking jitter).
+// kFastLaunchMult - raw |vUp| >= kFastLaunchMult * kAirSpeed engages IMMEDIATELY
+//                   (an obvious jump/fall skips the debounce). Disable: very large.
+// kClimbSlopeMax  - a rise OR fall is "explained" by the surface when |vUp| <=
+//                   horizSpeed * kClimbSlopeMax (stairs/ramps: |vUp| ~= horiz*slope);
+//                   only motion steeper than the surface counts. Ratio -> speed-buff
+//                   independent. Applied to both directions. Disable: 0 (gate off).
+// kVelWindowSec   - EMA time-constant (s) for the smoothed velocity the marginal
+//                   tests use. Larger = steadier but laggier. Disable: 0 (raw).
+// kRiseEngageSec  - a marginal (non-fast) rise must persist this long before engaging
+//                   (debounces a per-step stair pop). Time-based -> framerate-
+//                   independent. Disable: 0 (engage at once).
+// kFallEngageSec  - same, for a marginal fall.
+// kReleaseSec     - descending/settled time before clearing airborne (anti-flicker).
+// kMoveSpeed      - horizontal m/s above which a tick counts as moving (catches
+//                   mouse-walk, which presses no key).
+// kMoveReleaseSec - below-threshold time before "stopped" (anti-flicker).
 namespace cs_constants {
 #ifdef EMOT3_DEVTOOLS
 inline float&  AirSpeed()        { static float  v = 3.5f; return v; }
-inline int&    FallEngageTicks() { static int    v = 2;    return v; }
-inline int&    RiseEngageTicks() { static int    v = 2;    return v; }
+inline float&  FastLaunchMult()  { static float  v = 2.0f; return v; }
 inline float&  ClimbSlopeMax()   { static float  v = 1.2f; return v; }
+inline double& VelWindowSec()    { static double v = 0.04; return v; }
+inline double& RiseEngageSec()   { static double v = 0.05; return v; }
+inline double& FallEngageSec()   { static double v = 0.05; return v; }
 inline double& ReleaseSec()      { static double v = 0.25; return v; }
 inline float&  MoveSpeed()       { static float  v = 1.0f; return v; }
 inline double& MoveReleaseSec()  { static double v = 0.15; return v; }
-inline int&    DetectorMode()    { static int    v = 0;    return v; }  // 0 legacy / 1 ballistic
-inline float&  LaunchAccel()     { static float  v = 150.f; return v; }
-inline float&  Gravity()         { static float  v = 20.f;  return v; }
-inline float&  GravityTol()      { static float  v = 0.5f;  return v; }
 #else
 inline constexpr float  AirSpeed()        { return 3.5f; }
-inline constexpr int    FallEngageTicks() { return 2;    }
-inline constexpr int    RiseEngageTicks() { return 2;    }
+inline constexpr float  FastLaunchMult()  { return 2.0f; }
 inline constexpr float  ClimbSlopeMax()   { return 1.2f; }
+inline constexpr double VelWindowSec()    { return 0.04; }
+inline constexpr double RiseEngageSec()   { return 0.05; }
+inline constexpr double FallEngageSec()   { return 0.05; }
 inline constexpr double ReleaseSec()      { return 0.25; }
 inline constexpr float  MoveSpeed()       { return 1.0f; }
 inline constexpr double MoveReleaseSec()  { return 0.15; }
-inline constexpr int    DetectorMode()    { return 0;     }  // shipped: legacy
-inline constexpr float  LaunchAccel()     { return 150.f; }
-inline constexpr float  Gravity()         { return 20.f;  }
-inline constexpr float  GravityTol()      { return 0.5f;  }
 #endif
 }  // namespace cs_constants

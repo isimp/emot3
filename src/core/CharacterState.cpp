@@ -135,21 +135,17 @@ void TickCharacterState() {
     static unsigned lastUITick  = 0;
     static float    lastX = 0.f, lastY = 0.f, lastZ = 0.f;
     static double   lastT       = 0.0;
-    static int      downRun     = 0;     // consecutive fast-descending ticks (legacy)
-    static int      upRun       = 0;     // consecutive unexplained fast-rising ticks (legacy)
-    static double   groundSince = -1.0;  // legacy airborne release timer
-    static double   stillSince  = -1.0;  // when horizontal motion dropped (move release)
-    // Two airborne detectors run in parallel; DetectorMode picks which drives
-    // s_airborne. legacy* = threshold+slope+debounce; ball* = ballistic (aUp ~ -g).
-    static bool     legacyAir   = false;
-    static bool     ballAir     = false;
-    static float    prevVUp     = 0.f;   // last tick's vUp, for aUp = d(vUp)/dt
-    static int      ballFall    = 0;     // consecutive free-fall (aUp ~ -g) ticks
-    static double   ballGround  = -1.0;  // ballistic airborne release timer
+    static double   groundSince = -1.0;  // airborne release timer
+    static double   stillSince  = -1.0;  // move release timer
+    static double   riseSince   = -1.0;  // marginal-rise debounce timer
+    static double   fallSince   = -1.0;  // marginal-fall debounce timer
+    static float    vUpEMA      = 0.f;   // smoothed vertical velocity (kVelWindowSec)
+    static float    horizEMA    = 0.f;   // smoothed horizontal speed
 
     if (!MumbleLink) {
-        have = false; downRun = 0; upRun = 0; groundSince = -1.0; stillSince = -1.0;
-        legacyAir = false; ballAir = false; prevVUp = 0.f; ballFall = 0; ballGround = -1.0;
+        have = false;
+        groundSince = stillSince = riseSince = fallSince = -1.0;
+        vUpEMA = horizEMA = 0.f;
         s_airborne = false; s_vertVel = 0.f; s_moving = false; s_horizSpeed = 0.f;
         return;
     }
@@ -173,72 +169,56 @@ void TickCharacterState() {
         // vertical or horizontal jump in one tick) - either would fake a velocity.
         if (dt > 0.0001 && dt < 0.5 && std::fabs(dy) < 50.f && horizDist < 100.f) {
             // ---- vertical: airborne (jumps + falls) ----
-            const float vUp   = dy / (float)dt;
-            const float horiz = horizDist / (float)dt;   // also the moving signal below
-            const float aUp   = (vUp - prevVUp) / (float)dt;  // vertical acceleration
-            s_vertVel = vUp;
+            const float vUp   = dy / (float)dt;          // raw, single-tick
+            const float horiz = horizDist / (float)dt;
+            // EMA-smoothed velocity for the marginal tests (denoise position
+            // quantization); alpha from the time-constant so it's framerate-correct.
+            // kVelWindowSec == 0 -> alpha 1 -> raw (no smoothing).
+            const float win   = (float)cs_constants::VelWindowSec();
+            const float alpha = win > 0.f ? (float)(dt / (win + dt)) : 1.f;
+            vUpEMA   += alpha * (vUp   - vUpEMA);
+            horizEMA += alpha * (horiz - horizEMA);
+            s_vertVel = vUp;                             // raw for readout fidelity
 
-            // -- Detector A (legacy): velocity threshold + slope-gated rise + debounce.
-            // A rise only counts toward a LAUNCH when it's fast AND not "explained" by
-            // climbing the surface (vUp > horiz * kClimbSlopeMax); a fall debounces.
-            {
-                const bool launchTick = vUp > cs_constants::AirSpeed() &&
-                                        vUp > horiz * cs_constants::ClimbSlopeMax();
-                if (launchTick) {
-                    if (++upRun >= cs_constants::RiseEngageTicks()) {
-                        legacyAir = true; groundSince = -1.0;
-                    }
-                    downRun = 0;
-                } else if (vUp < -cs_constants::AirSpeed()) {
-                    if (++downRun >= cs_constants::FallEngageTicks()) legacyAir = true;
-                    upRun = 0; groundSince = -1.0;
-                } else {
-                    upRun = 0; downRun = 0;
-                    if (legacyAir) {
-                        if (vUp > 0.f && vUp <= cs_constants::AirSpeed())
-                            groundSince = -1.0;                  // genuine apex rise: hold
-                        else {
-                            if (groundSince < 0.0) groundSince = now;
-                            if (now - groundSince >= cs_constants::ReleaseSec()) legacyAir = false;
-                        }
+            const float air   = cs_constants::AirSpeed();
+            const float fast  = cs_constants::FastLaunchMult() * air;
+            const float slope = cs_constants::ClimbSlopeMax();
+            // Fast path: an unambiguous spike on the RAW velocity engages immediately
+            // (a clear jump/fall shouldn't wait out the debounce).
+            const bool strong = (vUp >= fast) || (vUp <= -fast);
+            // Marginal bands on the SMOOTHED velocity, slope-gated BOTH ways: a rise or
+            // fall only counts when it's steeper than climbing the surface explains
+            // (|vUp| > horiz * slope), so stairs/ramps up AND down stay grounded.
+            const bool launchBand = vUpEMA >  air &&  vUpEMA > horizEMA * slope;
+            const bool fallBand   = vUpEMA < -air && -vUpEMA > horizEMA * slope;
+
+            if (strong) {
+                s_airborne = true; riseSince = fallSince = -1.0; groundSince = -1.0;
+            } else if (launchBand) {
+                if (riseSince < 0.0) riseSince = now;
+                if (now - riseSince >= cs_constants::RiseEngageSec()) {
+                    s_airborne = true; groundSince = -1.0;
+                }
+                fallSince = -1.0;
+            } else if (fallBand) {
+                if (fallSince < 0.0) fallSince = now;
+                if (now - fallSince >= cs_constants::FallEngageSec()) s_airborne = true;
+                riseSince = -1.0; groundSince = -1.0;
+            } else {
+                // Slow band / slope-explained climb (grounded): hold a genuine apex
+                // rise (still rising but below threshold), else run the release timer.
+                riseSince = fallSince = -1.0;
+                if (s_airborne) {
+                    if (vUpEMA > 0.f && vUpEMA <= air) groundSince = -1.0;
+                    else {
+                        if (groundSince < 0.0) groundSince = now;
+                        if (now - groundSince >= cs_constants::ReleaseSec()) s_airborne = false;
                     }
                 }
             }
 
-            // -- Detector B (ballistic): a jump is free flight, so vertical accel ~ -g
-            // for the whole arc (rise->apex->fall), decoupled from terrain. Stairs/ramps
-            // never sustain -g, and their per-step accel is far below a jump's takeoff
-            // impulse. Engage on the takeoff impulse OR sustained free-fall; release once
-            // grounded. Knobs measured/tuned live (kGravity, kGravityTol, kLaunchAccel).
-            {
-                const float g   = cs_constants::Gravity();
-                const float tol = cs_constants::GravityTol() * g;
-                const bool freeFalling = std::fabs(aUp + g) <= tol;     // aUp ~ -g
-                if (aUp > cs_constants::LaunchAccel() && vUp > 0.f) {
-                    // Takeoff impulse (sudden upward accel, now moving up). vUp>0
-                    // excludes the mirror landing spike (big +aUp while vUp <= 0).
-                    ballAir = true; ballFall = 0; ballGround = -1.0;
-                } else if (freeFalling) {
-                    if (++ballFall >= cs_constants::FallEngageTicks()) ballAir = true;
-                    ballGround = -1.0;
-                } else {
-                    ballFall = 0;
-                    if (ballAir) {
-                        if (vUp > 0.f) ballGround = -1.0;              // still ascending: hold
-                        else {
-                            if (ballGround < 0.0) ballGround = now;
-                            if (now - ballGround >= cs_constants::ReleaseSec()) ballAir = false;
-                        }
-                    }
-                }
-            }
-
-            // Publish the selected detector (dev-switchable; shipped = legacy).
-            s_airborne = (cs_constants::DetectorMode() == 1) ? ballAir : legacyAir;
-            prevVUp = vUp;
-
-            // ---- horizontal: moving (any input, incl. mouse-walk) ----
-            s_horizSpeed = horiz;
+            // ---- horizontal: moving (smoothed; catches mouse-walk) ----
+            s_horizSpeed = horizEMA;
             if (s_horizSpeed > cs_constants::MoveSpeed()) { s_moving = true; stillSince = -1.0; }
             else if (s_moving) {
                 if (stillSince < 0.0) stillSince = now;
@@ -249,18 +229,17 @@ void TickCharacterState() {
             // event-log edge detection. Free in non-dev builds (whole block + the
             // include compile out).
             airtuner::OnSample({
-                s_vertVel, s_horizSpeed, y, (float)dt,
+                s_vertVel, vUpEMA, s_horizSpeed, y, (float)dt,
                 tick - lastUITick,
                 s_airborne, s_moving,
-                downRun, upRun, groundSince, stillSince, now,
-                aUp, legacyAir, ballAir, ballFall
+                riseSince, fallSince, groundSince, stillSince, now
             });
 #endif
         } else {
             // Stall (loading / alt-tab) or teleport spike: re-baseline.
-            s_airborne = false; s_vertVel = 0.f; downRun = 0; upRun = 0; groundSince = -1.0;
-            s_moving = false; s_horizSpeed = 0.f; stillSince = -1.0;
-            legacyAir = false; ballAir = false; prevVUp = 0.f; ballFall = 0; ballGround = -1.0;
+            s_airborne = false; s_vertVel = 0.f; s_moving = false; s_horizSpeed = 0.f;
+            groundSince = stillSince = riseSince = fallSince = -1.0;
+            vUpEMA = horizEMA = 0.f;
         }
     }
     lastUITick = tick; lastX = x; lastY = y; lastZ = z; lastT = now; have = true;
