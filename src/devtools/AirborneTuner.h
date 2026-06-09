@@ -258,7 +258,12 @@ inline void RenderAirborneTuner() {
     // ---- live readouts ----------------------------------------------
     const AirtunerSample& s = airtuner::LastSample();
     const bool have = airtuner::HaveSample();
-    const double now = ImGui::GetTime();
+    // Use the SAMPLE's clock as "now", not ImGui::GetTime(): groundSince/stillSince
+    // and the event timestamps come from CharacterState's std::chrono::steady_clock
+    // (kept imgui-free), whose epoch is unrelated to ImGui's - mixing them made the
+    // elapsed readouts show huge values. s.now is the steady_clock stamp of the
+    // latest tick (kept current even while paused).
+    const double now = s.now;
 
     if (ImGui::BeginTable("##airtuner_live", 2, ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableNextRow();
