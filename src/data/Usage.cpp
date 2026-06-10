@@ -42,10 +42,6 @@ void MarkChanged() {
     g_dirty.store(true, std::memory_order_relaxed);
 }
 
-std::string RefKey(const FavoriteRef& r) {
-    return std::to_string((int)r.Type) + ":" + r.Id;
-}
-
 std::string Serialize(const std::vector<FavoriteRef>& snap) {
     std::ostringstream f;
     f << "{\n";
@@ -70,8 +66,12 @@ void DoSave() {
         std::lock_guard<std::mutex> lk(g_mutex);
         snap.assign(g_log.begin(), g_log.end());
     }
-    AtomicWriteFile(g_path, Serialize(snap), /*binary=*/true);
-    g_dirty.store(false, std::memory_order_relaxed);
+    // Clear the dirty edge only on a successful write - otherwise a failed write
+    // would both lose the data AND stop Flush() (writes iff dirty) from retrying.
+    if (AtomicWriteFile(g_path, Serialize(snap), /*binary=*/true))
+        g_dirty.store(false, std::memory_order_relaxed);
+    else
+        LOG_WARNING("usage: failed to write %s (kept dirty; will retry)", g_path.c_str());
 }
 
 }  // namespace
@@ -139,7 +139,7 @@ const std::vector<FavoriteRef>& RecentlyUsed(size_t max) {
         std::lock_guard<std::mutex> lk(g_mutex);
         for (const auto& ref : g_log) {  // front->back == newest->oldest
             if (g_recentMemo.size() >= max) break;
-            if (seen.insert(RefKey(ref)).second) g_recentMemo.push_back(ref);
+            if (seen.insert(FavoriteRefKey(ref)).second) g_recentMemo.push_back(ref);
         }
     }
     g_recentVer = v;
@@ -157,8 +157,8 @@ const std::vector<FavoriteRef>& Frequent(size_t max) {
         std::lock_guard<std::mutex> lk(g_mutex);
         size_t idx = 0;
         for (const auto& ref : g_log) {
-            auto it = agg.find(RefKey(ref));
-            if (it == agg.end()) agg.emplace(RefKey(ref), Agg{ref, 1, idx});
+            auto it = agg.find(FavoriteRefKey(ref));
+            if (it == agg.end()) agg.emplace(FavoriteRefKey(ref), Agg{ref, 1, idx});
             else                 ++it->second.count;
             ++idx;
         }
@@ -215,16 +215,16 @@ void PruneDead(bool (*isLive)(EFavoriteRefType, const std::string&)) {
         std::lock_guard<std::mutex> lk(g_mutex);
         std::unordered_set<std::string> seen;
         for (const auto& r : g_log)
-            if (seen.insert(RefKey(r)).second) distinct.push_back(r);
+            if (seen.insert(FavoriteRefKey(r)).second) distinct.push_back(r);
     }
     std::unordered_set<std::string> dead;
     for (const auto& r : distinct)
-        if (!isLive(r.Type, r.Id)) dead.insert(RefKey(r));
+        if (!isLive(r.Type, r.Id)) dead.insert(FavoriteRefKey(r));
     if (dead.empty()) return;
     {
         std::lock_guard<std::mutex> lk(g_mutex);
         for (auto it = g_log.begin(); it != g_log.end();) {
-            if (dead.count(RefKey(*it))) it = g_log.erase(it);
+            if (dead.count(FavoriteRefKey(*it))) it = g_log.erase(it);
             else ++it;
         }
     }

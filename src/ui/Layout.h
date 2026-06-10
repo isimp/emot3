@@ -7,6 +7,20 @@
 
 #include "imgui/imgui.h"
 
+// Right-align the cursor on the current line so that content of total width
+// `width` ends flush with the content region's right edge. No-op when the row
+// is narrower than `width`. RightAlignButtons is the common case: `count`
+// equal-width buttons of width `w` with the standard ItemSpacing between them.
+void RightAlignCursor(float width);
+void RightAlignButtons(float w, int count);
+
+// Disabled-control scope. This vendored ImGui predates ImGui::BeginDisabled(),
+// so we use the PushItemFlag(Disabled) + alpha-dim pattern the addon standardised
+// on. Push BEFORE the control and pop AFTER; never re-evaluate the disabled
+// condition between push and pop (that unbalances the style/flag stack -> assert).
+void BeginDisabledCompat();
+void EndDisabledCompat();
+
 // Truncate `name` to a single line that fits within `maxW`, appending ".."
 // when truncation happens. Used by the lightweight non-per-cell callers
 // (Quickbar category bar labels, the Options icon-source status line). The

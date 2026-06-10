@@ -1,9 +1,11 @@
 #include "RadialExports.h"
 
 #include "Globals.h"      // g_RadialsDir (+ Windows.h)
+#include "AtomicFile.h"   // DirExists (shared)
 #include "EmoteBinds.h"   // ParseEmoteBindIdentifier - recover refs from item Actions
 #include "StringUtil.h"   // ToLower
 #include "Logging.h"
+#include "Profiling.h"    // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS)
 
 #include <nlohmann/json.hpp>
 
@@ -22,11 +24,6 @@ std::mutex                g_RadialExportsMutex;
 const char* const kRadialPackNamePrefix = "emot3: ";
 
 namespace {
-
-bool DirExists(const std::string& path) {
-    DWORD attr = GetFileAttributesA(path.c_str());
-    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
-}
 
 void EnsureRadialsDir() {
     if (g_RadialsDir.empty()) return;
@@ -109,6 +106,7 @@ std::string RadialPacksDir() { return g_RadialsDir.empty() ? std::string() : g_R
 std::string RadialIconsDir() { return g_RadialsDir.empty() ? std::string() : g_RadialsDir + "\\icons"; }
 
 void LoadRadialExports() {
+    PROFILE_SCOPE("radials.scan");
     std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
     g_RadialExports.clear();
     if (g_RadialsDir.empty()) return;
@@ -122,6 +120,7 @@ void LoadRadialExports() {
         do {
             if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
             std::string file = fd.cFileName;                 // "<slug>.json"
+            if (file.size() <= 5) continue;                  // need a stem before ".json"
             std::string slug = file.substr(0, file.size() - 5);  // drop ".json"
             RadialExport w;
             w.Slug = slug;
@@ -138,7 +137,8 @@ void LoadRadialExports() {
               [](const RadialExport& a, const RadialExport& b) {
                   return ToLower(a.Name) < ToLower(b.Name);
               });
-    LOG_INFO("radials: loaded %d wheel(s)", (int)g_RadialExports.size());
+    LOG_INFO("radials: loaded %d wheel(s) from %s", (int)g_RadialExports.size(),
+             packsDir.c_str());
 }
 
 std::vector<RadialExport> WheelsInGroup(const std::string& group) {
@@ -255,3 +255,42 @@ bool RemoveRadialGroup(const std::string& group) {
     for (const auto& s : slugs) if (!RemoveRadialFiles(s)) ok = false;
     return ok;
 }
+
+// --- dev-tool introspection ----------------------------------------------------
+int RadialExportWheelCount() {
+    std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+    return (int)g_RadialExports.size();
+}
+int RadialExportItemCount() {
+    std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+    int n = 0;
+    for (const auto& w : g_RadialExports) n += (int)w.Items.size();
+    return n;
+}
+int RadialExportParseErrors() {
+    std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+    int n = 0;
+    for (const auto& w : g_RadialExports) if (w.ParseError) ++n;
+    return n;
+}
+size_t RadialExportApproxBytes() {
+    std::lock_guard<std::mutex> lk(g_RadialExportsMutex);
+    size_t b = 0;
+    for (const auto& w : g_RadialExports) {
+        b += sizeof(RadialExport) + w.Slug.capacity() + w.Name.capacity() +
+             w.SourceCategory.capacity() + w.Group.capacity();
+        for (const auto& s : w.SourceRefs) b += sizeof(std::string) + s.capacity();
+        for (const auto& it : w.Items)     b += sizeof(RadialItemRef) + it.Id.capacity();
+    }
+    return b;
+}
+
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+static DevStateRegistrar s_radialState(DevStateCat::Content, "Radial exports", [] {
+    DevStateRow("wheels", "%d", RadialExportWheelCount());
+    DevStateRow("items (total)", "%d", RadialExportItemCount());
+    DevStateRow("parse errors", "%d", RadialExportParseErrors());
+    DevStateRow("approx bytes", "%d", (int)RadialExportApproxBytes());
+});
+#endif

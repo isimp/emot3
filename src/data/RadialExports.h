@@ -127,3 +127,12 @@ bool RemoveRadialFiles(const std::string& slug);
 // Delete every pack in a logical export (all pages, each via RemoveRadialFiles),
 // reading the page set from g_RadialExports. Caller rescans + re-syncs binds.
 bool RemoveRadialGroup(const std::string& group);
+
+// --- dev-tool introspection (runtime-state inspector + MemoryMonitor) ----------
+// Cheap, lock-guarded snapshots of the in-memory wheel record. Safe from the render
+// thread. ApproxBytes is the struct + embedded string/vector footprint (within ~2x;
+// excludes the on-disk packs and RadialMenus' own icon textures).
+int    RadialExportWheelCount();
+int    RadialExportItemCount();
+int    RadialExportParseErrors();
+size_t RadialExportApproxBytes();

@@ -423,9 +423,7 @@ void RenderMeMotesTab() {
         float wCollapse = ImGui::CalcTextSize(L("opt.em.collapse_all")).x + st.FramePadding.x * 2.f;
         float total     = wRescan + wExpand + wCollapse + st.ItemSpacing.x * 2.f;
         ImGui::SameLine();
-        float avail = ImGui::GetContentRegionAvail().x;
-        if (avail > total)
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
+        RightAlignCursor(total);
         if (ImGui::SmallButton(L("opt.icon.rescan"))) {
             s_mmIconStatus.clear();   // every row re-stats its icon status next render
             MarkMeMotesDirty();       // every visible cell re-resolves (memo drops on the epoch)

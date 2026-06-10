@@ -35,6 +35,7 @@
 #include "Settings.h"
 #include "TextCache.h"
 #include "Usage.h"      // usage log row (Recently/Frequently used)
+#include "RadialExports.h" // radial-export row (wheel count + bytes)
 #include "I18n.h"
 #include "Icons.h"         // IconPoolStats / IconPoolUsage - deduped icon-texture pool sizing
 #include "IconPicker.h"    // IconPickerListStats - the picker's transient lists
@@ -299,6 +300,11 @@ void Sample(std::vector<Snapshot>& out) {
 
     // Usage log (Recently/Frequently used; bounded at kUsageLog).
     out.push_back({ "usage log", usage::LogSize(), usage::ApproxBytes() });
+
+    // Radial exports (in-memory wheel record; scanned at load, not accumulating).
+    out.push_back({ "radial exports",
+                    (size_t)RadialExportWheelCount(),
+                    RadialExportApproxBytes() });
 
     // I18n L() cache (the lazily-grown subset that's been looked up).
     out.push_back({ "I18n cache",

@@ -17,3 +17,7 @@
 // the preset writer, which controls its own line endings via the JSON dump).
 bool AtomicWriteFile(const std::string& path, const std::string& content,
                      bool binary = false);
+
+// True if `path` exists and is a directory. Shared by the preset/radial scanners
+// and the +plus RadialMenus deploy (each previously had its own copy).
+bool DirExists(const std::string& path);
