@@ -53,6 +53,7 @@
     <ClCompile Include="core\WinEncoding.cpp"> <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\AtomicFile.cpp">  <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\SaveScheduler.cpp"><Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\AirborneDetect.cpp"><Filter>core</Filter></ClCompile>
     <ClCompile Include="core\CharacterState.cpp"><Filter>core</Filter></ClCompile>
     <ClCompile Include="core\UnlockScan.cpp">    <Filter>core</Filter></ClCompile>
     <ClCompile Include="plus\UpdateCheck.cpp">   <Filter>plus</Filter></ClCompile>
@@ -107,6 +108,7 @@
     <ClInclude Include="core\EmoteAction.h"> <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\EmoteBinds.h">  <Filter>core</Filter></ClInclude>
     <ClInclude Include="core\RadialExport.h"><Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\AirborneDetect.h"><Filter>core</Filter></ClInclude>
     <ClInclude Include="core\CharacterState.h"><Filter>core</Filter></ClInclude>
     <ClInclude Include="core\UnlockScan.h">  <Filter>core</Filter></ClInclude>
     <ClInclude Include="plus\UpdateCheck.h"> <Filter>plus</Filter></ClInclude>
