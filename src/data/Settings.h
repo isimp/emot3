@@ -229,13 +229,17 @@ struct Settings {
     // Quickbar categories.
     bool                          ShowMeMoteIndicator  = true;
     // Block emotes that can't currently be used: refuse the send (toast) + grey
-    // or hide the Quickbar. On by default. Always covers mounted (MumbleLink).
-    // With QuickbarPreciseStateDetection + the RealTime API addon it also covers
-    // downed / swimming / underwater / gliding / flying. See core/CharacterState.
+    // or hide the Quickbar. On by default. Always covers mounted (MumbleLink); the
+    // transient refusals (typing, moving) ride it too. Airborne and the RTAPI states
+    // are separate sub-toggles below. See core/CharacterState.
     bool                          QuickbarGreyUnusable = true;
-    // Extend the block to the precise can't-emote states above - requires the
-    // optional GW2 RealTime API addon (a no-op without it). Gated by
-    // QuickbarGreyUnusable. On by default; only does anything once RTAPI loads.
+    // Grey/refuse while AIRBORNE (jumps + falls) - MumbleLink-derived, needs no addon.
+    // Its own sub-toggle (gated by QuickbarGreyUnusable); on by default.
+    bool                          QuickbarAirborneDetection = true;
+    // Extend the block to the RTAPI-only states (downed / swimming / underwater /
+    // gliding / flying) - requires the optional GW2 RealTime API addon (a no-op
+    // without it). Gated by QuickbarGreyUnusable. On by default; only does anything
+    // once RTAPI loads.
     bool                          QuickbarPreciseStateDetection = true;
     // How a blocked state presents on the Quickbar: grey the buttons (default)
     // or hide the whole bar until the player can emote again. When active

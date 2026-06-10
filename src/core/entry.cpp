@@ -198,6 +198,7 @@ void AddonLoad(AddonAPI* aApi) {
     const char* addonDir = APIDefs->Paths.GetAddonDirectory("emot3");
     if (addonDir) {
         CreateDirectoryA(addonDir, nullptr);
+        g_AddonDir        = addonDir;   // root, e.g. for the dev airborne-trace CSV
         g_SettingsPath    = std::string(addonDir) + "\\settings.json";
         g_EmotesJsonPath  = std::string(addonDir) + "\\emotes.json";
         g_MeMotesJsonPath = std::string(addonDir) + "\\me_motes.json";

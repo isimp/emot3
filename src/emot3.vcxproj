@@ -300,6 +300,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="core\AirborneDetect.h" />
     <ClInclude Include="core\CharacterState.h" />
     <ClInclude Include="core\UnlockScan.h" />
     <ClInclude Include="plus\UpdateCheck.h" />
@@ -373,6 +374,7 @@
     <ClInclude Include="..\vendor\hoardandseek\HoardAndSeekAPI.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="core\AirborneDetect.cpp" />
     <ClCompile Include="core\CharacterState.cpp" />
     <ClCompile Include="core\UnlockScan.cpp" />
     <ClCompile Include="plus\UpdateCheck.cpp" />
