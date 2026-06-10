@@ -379,7 +379,7 @@ inline void ResetDefaults() {   // keep in sync with CharacterState.h cs_constan
     cs_constants::FallAccelDrop()     = 3.5f;
     cs_constants::AccelWindowSec()    = 0.16;
     cs_constants::FallArmSpeed()      = 2.0f;
-    cs_constants::FallEngageSec()     = 0.15;
+    cs_constants::FallEngageSec()     = 0.18;
     cs_constants::SettleAccel()       = 1.5f;
     cs_constants::GroundSettleSpeed() = 3.5f;
     cs_constants::LandConfirmSec()    = 0.08;

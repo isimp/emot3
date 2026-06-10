@@ -26,7 +26,7 @@
 //                     (rise/apex/fall); a surface holds it steady. So a sustained downward
 //                     acceleration of the SMOOTHED velocity over AccelWindowSec engages a
 //                     fall and holds the arc; FallEngageSec debounces it so a brief steep-
-//                     stair spike (<~0.1s) is rejected while a real fall (>0.4s) passes.
+//                     stair or short steep-ramp spike (<~0.18s) is rejected while a fall passes.
 //                     Measured as a change over a fixed window - never an instantaneous
 //                     d/dt on raw position (that noise sank an earlier ballistic attempt).
 //   Release          GroundSettleSpeed + SettleAccel ("vUp settled near 0 AND acceleration
@@ -72,7 +72,7 @@ inline float&  HardFallSpeed()     { static float  v = 10.0f; return v; } // -vU
 inline float&  FallAccelDrop()     { static float  v = 3.5f; return v; }  // downward accel over window -> fall (> ground peaks)
 inline double& AccelWindowSec()    { static double v = 0.16; return v; }  // window for the accel measure
 inline float&  FallArmSpeed()      { static float  v = 2.0f; return v; }  // accel-fall noise floor (|vUpEMA| past this)
-inline double& FallEngageSec()     { static double v = 0.15; return v; }  // ballistic debounce - rejects the brief stair spike
+inline double& FallEngageSec()     { static double v = 0.18; return v; }  // ballistic debounce - rejects the brief stair spike / short steep-ramp descent
 inline float&  SettleAccel()       { static float  v = 1.5f; return v; }  // |accel| below = acceleration stopped
 inline float&  GroundSettleSpeed() { static float  v = 3.5f; return v; }  // |vUpEMA| below + settled = grounded (> walk ~2.7)
 inline double& LandConfirmSec()    { static double v = 0.08; return v; }  // surface-consistent hold before release
@@ -90,7 +90,7 @@ inline constexpr float  HardFallSpeed()     { return 10.0f; }
 inline constexpr float  FallAccelDrop()     { return 3.5f; }
 inline constexpr double AccelWindowSec()    { return 0.16; }
 inline constexpr float  FallArmSpeed()      { return 2.0f; }
-inline constexpr double FallEngageSec()     { return 0.15; }
+inline constexpr double FallEngageSec()     { return 0.18; }
 inline constexpr float  SettleAccel()       { return 1.5f; }
 inline constexpr float  GroundSettleSpeed() { return 3.5f; }
 inline constexpr double LandConfirmSec()    { return 0.08; }
