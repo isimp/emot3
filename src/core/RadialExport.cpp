@@ -111,12 +111,13 @@ json BuildItem(const std::string& itemName, const std::string& identifier,
     if (opt.GateByState) {
         json vis;
         vis["IsMounted"] = kObserveNotMounted;  // always (mounted is reliable everywhere)
+        // Mirror emot3's own gating, now split: airborne has its own toggle (MumbleLink,
+        // reliable without RTAPI); the water states ride precise (RTAPI) detection.
+        if (g_Settings.QuickbarAirborneDetection)
+            vis["IsAirborne"] = kObserveFalse;
         if (g_Settings.QuickbarPreciseStateDetection) {
-            // Positional states are only reliable under precise (RTAPI) detection,
-            // mirroring emot3's own gating.
             vis["IsUnderwater"]     = kObserveFalse;
             vis["IsOnWaterSurface"] = kObserveFalse;
-            vis["IsAirborne"]       = kObserveFalse;
         }
         it["Visibility"] = std::move(vis);
     }
