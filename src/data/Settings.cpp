@@ -27,6 +27,7 @@ static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key f
     DevStateRow("show quickbar",      "%s", s.ShowQuickbar ? "on" : "off");
     DevStateRow("send on click",      "%s", s.SendOnClick ? "on" : "off");
     DevStateRow("grey unusable",      "%s", s.QuickbarGreyUnusable ? "on" : "off");
+    DevStateRow("airborne detection", "%s", s.QuickbarAirborneDetection ? "on" : "off");
     DevStateRow("precise detection",  "%s", s.QuickbarPreciseStateDetection ? "on" : "off");
     DevStateRow("unusable behavior",  "%d", (int)s.QuickbarUnusableBehavior);
     DevStateRow("qb category idx",    "%d", s.QuickbarCategoryIdx);
@@ -462,6 +463,7 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarGreyUnusable = GetBool(general, "quickbar_grey_unusable", s.QuickbarGreyUnusable);
     s.QuickbarPreciseStateDetection = GetBool(general, "quickbar_precise_state",
                                               s.QuickbarPreciseStateDetection);
+    s.QuickbarAirborneDetection = GetBool(general, "quickbar_airborne", s.QuickbarAirborneDetection);
     // Raw int; SanitizeSettings runs NormalizeUnusableBehavior to clamp it.
     s.QuickbarUnusableBehavior = (EUnusableBehavior)GetInt(general, "quickbar_unusable_behavior",
                                                            (int)s.QuickbarUnusableBehavior);
@@ -632,6 +634,7 @@ std::string SerializeSettings() {
     f << "    \"show_target_dot\": "        << B(s.ShowTargetDot)     << ",\n";
     f << "    \"show_me_mote_indicator\": " << B(s.ShowMeMoteIndicator) << ",\n";
     f << "    \"quickbar_grey_unusable\": " << B(s.QuickbarGreyUnusable) << ",\n";
+    f << "    \"quickbar_airborne\": "      << B(s.QuickbarAirborneDetection) << ",\n";
     f << "    \"quickbar_precise_state\": " << B(s.QuickbarPreciseStateDetection) << ",\n";
     f << "    \"quickbar_unusable_behavior\": " << (int)s.QuickbarUnusableBehavior << ",\n";
     f << "    \"notify_new_bundled_emotes\": "  << B(s.NotifyNewBundledEmotes)   << ",\n";

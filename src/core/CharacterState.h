@@ -4,21 +4,24 @@
 //  player emote right now?" and "is the player in combat?".
 //
 //  Bridges two signals:
-//   - MumbleLink (always present): mounted + in-combat, and - derived from the
-//     avatar's height over time - airborne (jumps + falls; GW2 exposes no
-//     "in the air" flag, so we measure vertical speed; see TickCharacterState).
-//   - The optional GW2 RealTime API addon (RTAPI, a DataLink shared-memory
-//     block): the states MumbleLink can't see - downed, swimming,
-//     underwater, gliding, flying.
+//   - MumbleLink (always present): mounted + in-combat, and - via the airborne
+//     detector (core/AirborneDetect, derived from the avatar's height over time) -
+//     airborne (jumps + falls; GW2 exposes no "in the air" flag).
+//   - The optional GW2 RealTime API addon (RTAPI, a DataLink shared-memory block):
+//     the states MumbleLink can't see - downed, swimming, underwater, gliding, flying.
 //
-//  Centralising it here keeps the send refusal (EmoteAction) and the
-//  Quickbar's grey/hide visual in agreement, and degrades gracefully when
-//  RTAPI isn't installed (mounted-only, exactly as before).
+//  This file owns the RTAPI plumbing + the GATING (which settings turn each signal into
+//  a can't-emote reason); the airborne/moving DETECTION algorithm lives in its own file
+//  (core/AirborneDetect) so it's easy to inspect and reuse. Centralising the gating here
+//  keeps the send refusal (EmoteAction) and the Quickbar's grey/hide visual in agreement,
+//  and degrades gracefully when RTAPI isn't installed (mounted + airborne still work).
 // =====================================================================
 
-// Why the player currently can't emote. None = usable. Mounted comes from
-// MumbleLink; Airborne (jumps + falls) is MumbleLink-derived (height velocity)
-// under the precise-detection opt-in; the rest require RTAPI + that opt-in.
+#include <cstdint>
+
+// Why the player currently can't emote. None = usable. Mounted comes from MumbleLink;
+// Airborne (jumps + falls) is MumbleLink-derived (height velocity) under its own
+// QuickbarAirborneDetection opt-in; the rest require RTAPI + the precise-detection opt-in.
 enum class EmoteBlock {
     None = 0,
     Mounted,
@@ -49,21 +52,25 @@ extern const char* g_QbUnusableKey;
 void InitCharacterState();
 void ShutdownCharacterState();
 
-// Per-frame update for the time-derived signals (currently the falling check:
-// vertical speed from MumbleLink's avatar height). Call ONCE per gameplay frame
-// from AddonRender, before anything reads CurrentEmoteBlock(). Cheap; samples
-// only when MumbleLink reports a fresh game tick.
+// Per-frame update for the time-derived signals (airborne + moving). Call ONCE per
+// gameplay frame from AddonRender, before anything reads CurrentEmoteBlock(). Delegates
+// the detection to air::Tick (core/AirborneDetect); cheap (samples only on a fresh tick).
 void TickCharacterState();
 
 // True when the RealTime API addon is loaded and publishing live data (its
 // DataLink exists AND GameBuild != 0 - RTAPI zeroes GameBuild on unload).
 bool RTApiConnected();
 
-// The current can't-emote reason, honoring settings: None unless
-// QuickbarGreyUnusable is on; Mounted whenever mounted; the RTAPI states only
-// when QuickbarPreciseStateDetection is on AND RTAPI is connected; Airborne (jumps
-// + falls) when QuickbarPreciseStateDetection is on (MumbleLink-derived, RTAPI not
-// required), reported only when no more-specific RTAPI state applies.
+// The RTAPI CharacterState bitfield (ECharacterState flags), or 0 when RTAPI isn't live.
+// Lets the airborne detector read the glide/fly state for its fall-prime without owning
+// the RTAPI plumbing (which stays here).
+uint32_t RTApiCharacterStateBits();
+
+// The current can't-emote reason, honoring settings: None unless QuickbarGreyUnusable is
+// on; Mounted whenever mounted; the RTAPI states only when QuickbarPreciseStateDetection
+// is on AND RTAPI is connected; Airborne (jumps + falls) when QuickbarAirborneDetection is
+// on (its own toggle, MumbleLink-derived, RTAPI not required), reported only when no
+// more-specific RTAPI state applies.
 EmoteBlock CurrentEmoteBlock();
 
 // True while the player is in combat (MumbleLink; no RTAPI needed). Drives the
@@ -72,9 +79,9 @@ EmoteBlock CurrentEmoteBlock();
 bool InCombatNow();
 
 // True while the player is moving horizontally (any input, including mouse-walk),
-// derived from MumbleLink position velocity by TickCharacterState. Feeds the
+// derived from MumbleLink position velocity by the airborne detector. Feeds the
 // "grey / refuse while moving" gate alongside the held-key check, so mouse-only
-// movement (which presses no key) is caught too.
+// movement (which presses no key) is caught too. (Thin alias for air::IsMoving.)
 bool MovementActive();
 
 // i18n key for the toast / greyed-cell explainer matching a block reason.
@@ -84,37 +91,3 @@ const char* EmoteBlockKey(EmoteBlock reason);
 // probe - which key resolves and the GameBuild it reads. Surfaced in the General
 // options tab in dev builds only, to chase down "RealTime API not found" reports.
 const char* RTApiDebugInfo();
-
-// Airborne / movement detection thresholds. Read by TickCharacterState
-// (CharacterState.cpp) at every fresh game tick. In dev builds the getters
-// return references to function-local statics so devtools/AirborneTuner's
-// sliders can mutate them live; in shipped builds they're constexpr inline
-// returning literals, so the compiler folds every call site to an immediate
-// (codegen identical to the previous file-static constexpr block).
-//
-// kAirSpeed       - |vUp| (m/s) above which a tick counts as airborne.
-//                   Below: slopes/stairs/walking jitter; above: jump launch or
-//                   a real fall.
-// kFallEngageTicks - fast-descending ticks before a FALL engages (jumps
-//                    engage immediately - this only debounces the fall case).
-// kReleaseSec      - descending/settled time before clearing airborne. Must
-//                    exceed the time to fall from 0 to kAirSpeed at GW2
-//                    gravity, so raise this alongside kAirSpeed.
-// kMoveSpeed       - horizontal m/s above which a tick counts as moving.
-//                    Catches mouse-walk (which presses no key).
-// kMoveReleaseSec  - below-threshold time before "stopped" (anti-flicker).
-namespace cs_constants {
-#ifdef EMOT3_DEVTOOLS
-inline float&  AirSpeed()        { static float  v = 3.5f; return v; }
-inline int&    FallEngageTicks() { static int    v = 2;    return v; }
-inline double& ReleaseSec()      { static double v = 0.25; return v; }
-inline float&  MoveSpeed()       { static float  v = 1.0f; return v; }
-inline double& MoveReleaseSec()  { static double v = 0.15; return v; }
-#else
-inline constexpr float  AirSpeed()        { return 3.5f; }
-inline constexpr int    FallEngageTicks() { return 2;    }
-inline constexpr double ReleaseSec()      { return 0.25; }
-inline constexpr float  MoveSpeed()       { return 1.0f; }
-inline constexpr double MoveReleaseSec()  { return 0.15; }
-#endif
-}  // namespace cs_constants

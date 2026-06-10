@@ -1,19 +1,14 @@
 #include "CharacterState.h"
 
-#include "Globals.h"    // APIDefs, MumbleLink
-#include "Settings.h"   // g_Settings
+#include "Globals.h"        // APIDefs, MumbleLink
+#include "Settings.h"       // g_Settings
 #include "Logging.h"
-#include "Profiling.h"  // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS)
+#include "Profiling.h"      // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS)
+#include "AirborneDetect.h" // air::Tick + air::IsAirborne / IsMoving / VertSpeed / HorizSpeed
 
-#include <cstdio>       // snprintf (RTApiDebugInfo)
-#include <cmath>        // std::fabs (falling-speed guard)
-#include <chrono>       // steady_clock (monotonic time; replaces ImGui::GetTime)
+#include <cstdio>           // snprintf (RTApiDebugInfo)
 
-#include "rtapi/RTAPI.h" // RealTimeData, ECharacterState, DL_RTAPI (vendored)
-
-#ifdef EMOT3_DEVTOOLS
-#include "AirborneTuner.h"  // airtuner::OnSample (per-tick callback)
-#endif
+#include "rtapi/RTAPI.h"    // RealTimeData, ECharacterState, DL_RTAPI (vendored)
 
 EmoteBlock  g_QbBlockReason = EmoteBlock::None;
 const char* g_QbUnusableKey  = nullptr;
@@ -77,34 +72,6 @@ void OnAddonUnloaded(void* aEventArgs) {
     s_rtapi = nullptr;
 }
 
-// ---- Airborne + moving (MumbleLink-derived) ---------------------------
-// GW2 exposes no airborne flag, so we infer it from the avatar's height velocity
-// (a jump launches up, a fall accelerates down; flat ground ~0). We read the FULL
-// position each tick, so horizontal speed is free too - and it catches "moving" by
-// ANY input, including mouse-walk that the held-key gate can't see. TickCharacterState
-// (once per gameplay frame) measures both; CurrentEmoteBlock / CurrentSendBusy / the
-// dev readout read them. (Unmount is NOT special-cased: its up-then-down hop is a
-// real airborne trajectory and greys like any jump - mounted -> airborne -> land.)
-bool  s_airborne   = false;  // in the air this frame (jump or fall)
-float s_vertVel    = 0.f;    // last vertical speed, m/s (+ up / - down)
-bool  s_moving     = false;  // horizontal movement this frame (any input)
-float s_horizSpeed = 0.f;    // last horizontal speed, m/s
-
-// Tuning (watch "vert vel" / "horiz spd" in the dev Game-state readout). kAirSpeed:
-// above the vertical speed slopes/stairs produce, below a jump launch / real fall.
-// Engage is asymmetric - RISING fast (jump) engages immediately; FALLING fast (off a
-// ledge) waits kFallEngageTicks so a single-tick stair/curb drop can't engage.
-// Release is direction-aware: while still rising into the apex we HOLD, and only run
-// kReleaseSec once descending/settled - so the apex never flashes the buttons usable,
-// at any kAirSpeed. kReleaseSec must exceed the time to fall from 0 to kAirSpeed
-// (~kAirSpeed / GW2 gravity), so raise it alongside kAirSpeed. kMoveSpeed: above
-// standing jitter, below a walk; kMoveReleaseSec keeps a step-pause from flickering.
-// Tunable thresholds moved to CharacterState.h's cs_constants namespace so the
-// dev-only Airborne tuner (devtools/AirborneTuner) can mutate them live; in
-// shipped builds the getters are constexpr inline returning literals (compiler
-// folds them to immediate constants, codegen identical to the old constexpr
-// block here). Defaults documented at the declaration.
-
 }  // namespace
 
 void InitCharacterState() {
@@ -125,98 +92,20 @@ void ShutdownCharacterState() {
     s_rtapi = nullptr;
 }
 
+// Per-frame update: delegate the airborne + moving detection to core/AirborneDetect.
+// (The PROFILE scope stays here so the perf overlay's "cs.tick" still reflects the cost.)
 void TickCharacterState() {
     PROFILE_SCOPE("cs.tick");  // dev perf overlay (should read ~0 - no syscalls)
-    // Sample the avatar's height only when MumbleLink reports a fresh game tick
-    // (UITick), so the speed reflects the game's update cadence rather than our
-    // render rate. The dt / teleport guards drop loading-screen stalls and map-jump
-    // spikes (either would fake an enormous velocity).
-    static bool     have        = false;
-    static unsigned lastUITick  = 0;
-    static float    lastX = 0.f, lastY = 0.f, lastZ = 0.f;
-    static double   lastT       = 0.0;
-    static int      downRun     = 0;     // consecutive fast-descending ticks
-    static double   groundSince = -1.0;  // when descent/settle began (airborne release)
-    static double   stillSince  = -1.0;  // when horizontal motion dropped (move release)
-
-    if (!MumbleLink) {
-        have = false; downRun = 0; groundSince = -1.0; stillSince = -1.0;
-        s_airborne = false; s_vertVel = 0.f; s_moving = false; s_horizSpeed = 0.f;
-        return;
-    }
-
-    const unsigned tick = MumbleLink->UITick;
-    if (tick == lastUITick) return;   // no fresh game data this frame
-
-    // Monotonic seconds (steady_clock; was ImGui::GetTime - keeps core/CharacterState
-    // imgui-free). Used only for self-consistent deltas, so the arbitrary epoch is fine.
-    const double now = std::chrono::duration<double>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    const float  x = MumbleLink->AvatarPosition.X;
-    const float  y = MumbleLink->AvatarPosition.Y;
-    const float  z = MumbleLink->AvatarPosition.Z;
-    if (have) {
-        const double dt        = now - lastT;
-        const float  dy        = y - lastY;
-        const float  horizDist = std::sqrt((x - lastX) * (x - lastX) +
-                                           (z - lastZ) * (z - lastZ));
-        // Guards: drop stalls (dt huge) and teleport / map-load spikes (a big
-        // vertical or horizontal jump in one tick) - either would fake a velocity.
-        if (dt > 0.0001 && dt < 0.5 && std::fabs(dy) < 50.f && horizDist < 100.f) {
-            // ---- vertical: airborne (jumps + falls) ----
-            const float vUp = dy / (float)dt;
-            s_vertVel = vUp;
-            if (vUp > cs_constants::AirSpeed()) {
-                // Rising fast = a jump / dismount hop / updraft: engage immediately.
-                s_airborne = true; downRun = 0; groundSince = -1.0;
-            } else if (vUp < -cs_constants::AirSpeed()) {
-                // Descending fast = walked off a ledge etc.: debounce so a
-                // single-tick stair / curb drop doesn't engage.
-                if (++downRun >= cs_constants::FallEngageTicks()) s_airborne = true;
-                groundSince = -1.0;
-            } else {
-                // Slow band: apex of a jump (still RISING - hold, the fall is
-                // coming) or back on the ground (DESCENDING / settled - run the
-                // release timer). The direction test bridges the rising half of the
-                // apex with no timer, so the apex can't flash the buttons usable.
-                downRun = 0;
-                if (s_airborne) {
-                    if (vUp > 0.f) groundSince = -1.0;          // still rising
-                    else {
-                        if (groundSince < 0.0) groundSince = now;
-                        if (now - groundSince >= cs_constants::ReleaseSec()) s_airborne = false;
-                    }
-                }
-            }
-            // ---- horizontal: moving (any input, incl. mouse-walk) ----
-            s_horizSpeed = horizDist / (float)dt;
-            if (s_horizSpeed > cs_constants::MoveSpeed()) { s_moving = true; stillSince = -1.0; }
-            else if (s_moving) {
-                if (stillSince < 0.0) stillSince = now;
-                if (now - stillSince >= cs_constants::MoveReleaseSec()) s_moving = false;
-            }
-#ifdef EMOT3_DEVTOOLS
-            // Feed the Airborne tuner overlay (dev-only) - rings, live readouts,
-            // event-log edge detection. Free in non-dev builds (whole block + the
-            // include compile out).
-            airtuner::OnSample({
-                s_vertVel, s_horizSpeed, y, (float)dt,
-                tick - lastUITick,
-                s_airborne, s_moving,
-                downRun, groundSince, stillSince, now
-            });
-#endif
-        } else {
-            // Stall (loading / alt-tab) or teleport spike: re-baseline.
-            s_airborne = false; s_vertVel = 0.f; downRun = 0; groundSince = -1.0;
-            s_moving = false; s_horizSpeed = 0.f; stillSince = -1.0;
-        }
-    }
-    lastUITick = tick; lastX = x; lastY = y; lastZ = z; lastT = now; have = true;
+    air::Tick();
 }
 
 bool RTApiConnected() {
     return LiveRTApi() != nullptr;
+}
+
+uint32_t RTApiCharacterStateBits() {
+    RealTimeData* rt = LiveRTApi();
+    return rt ? rt->CharacterState : 0u;
 }
 
 EmoteBlock CurrentEmoteBlock() {
@@ -239,10 +128,11 @@ EmoteBlock CurrentEmoteBlock() {
         if (s & CS_IsFlying)     return EmoteBlock::Flying;
     }
 
-    // Airborne (jump or fall): precise-detection opt-in, but MumbleLink-derived -
-    // works without RTAPI. Checked after the RTAPI states so a controlled descent
-    // (gliding / flying) or a water state keeps its own, more specific reason.
-    if (g_Settings.QuickbarPreciseStateDetection && s_airborne)
+    // Airborne (jump or fall): its OWN opt-in (QuickbarAirborneDetection), separate from
+    // the RTAPI states above - it's MumbleLink-derived (core/AirborneDetect) and needs no
+    // addon. Checked after the RTAPI states so a controlled descent (gliding / flying) or
+    // a water state keeps its own, more specific reason.
+    if (g_Settings.QuickbarAirborneDetection && air::IsAirborne())
         return EmoteBlock::Airborne;
     return EmoteBlock::None;
 }
@@ -251,7 +141,7 @@ bool InCombatNow() {
     return MumbleLink && MumbleLink->Context.IsInCombat;
 }
 
-bool MovementActive() { return s_moving; }
+bool MovementActive() { return air::IsMoving(); }
 
 const char* RTApiDebugInfo() {
     static char buf[160];
@@ -338,12 +228,12 @@ static DevStateRegistrar s_gameStateSection(DevStateCat::GameSignals, "Game stat
         DevStateRow("  glide/fly/cmbt", "%d/%d/%d", !!(s & CS_IsGliding),
                     !!(s & CS_IsFlying), !!(s & CS_IsInCombat));
     }
-    // Airborne (vertical) + moving (horizontal), from MumbleLink position velocity
-    // - tune kAirSpeed / kMoveSpeed against these.
-    DevStateRow("vert vel m/s",      "%+.2f", s_vertVel);
-    DevStateRow("airborne",          "%s", s_airborne ? "yes" : "no");
-    DevStateRow("horiz spd m/s",     "%.2f", s_horizSpeed);
-    DevStateRow("moving",            "%s", s_moving ? "yes" : "no");
+    // Airborne (vertical) + moving (horizontal), from the airborne detector (core/
+    // AirborneDetect) - the "[debug] Airborne tuner" overlay graphs/tunes against these.
+    DevStateRow("vert vel m/s",      "%+.2f", air::VertSpeed());
+    DevStateRow("airborne",          "%s", air::IsAirborne() ? "yes" : "no");
+    DevStateRow("horiz spd m/s",     "%.2f", air::HorizSpeed());
+    DevStateRow("moving",            "%s", air::IsMoving() ? "yes" : "no");
     DevStateRow("held printable",    "%d", HeldPrintableCount());
     DevStateRow("CurrentEmoteBlock", "%s", BlockName(CurrentEmoteBlock()));
     DevStateRow("g_QbBlockReason",   "%s", BlockName(g_QbBlockReason));

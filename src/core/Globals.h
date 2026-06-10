@@ -29,6 +29,7 @@ extern Mumble::Data*  MumbleLink;
 extern HWND g_GameHwnd;
 
 // --- On-disk paths under addons/emot3/ ---------------------------------
+extern std::string g_AddonDir;        // the addons/emot3/ root itself
 extern std::string g_SettingsPath;    // settings.json
 extern std::string g_EmotesJsonPath;  // emotes.json (editable unlockables)
 extern std::string g_MeMotesJsonPath; // me_motes.json (/me-motes; see data/MeMotes.h)

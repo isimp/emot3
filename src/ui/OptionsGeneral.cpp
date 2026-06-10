@@ -230,6 +230,9 @@ void RenderGeneralOptionsTab() {
     if (g_Settings.QuickbarGreyUnusable) {
         ImGui::Indent();
 
+        // Airborne (jumps + falls) - its own toggle, MumbleLink-derived (no addon).
+        CheckboxWithSaveAndTooltip("opt.gen.airborne", &g_Settings.QuickbarAirborneDetection, /*defaultIsOn=*/true);
+
         CheckboxWithSaveAndTooltip("opt.gen.precise_state", &g_Settings.QuickbarPreciseStateDetection, /*defaultIsOn=*/true);
         // Live status: precise detection is a no-op without the RealTime API addon.
         if (RTApiConnected())
