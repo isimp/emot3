@@ -32,13 +32,19 @@ inline void RenderAirborneTuner() {}
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>           // ofstream (dev-only trace log; core stays fstream-free)
 #include <string>
+#include <vector>            // buffered session log (retroactive highlight needs in-memory rows)
 
 #include "imgui/imgui.h"
 
 #include "Profiling.h"        // prof::Ring (120-sample rolling buffer reused here)
 #include "DevToolsUI.h"       // devui::StateDot / DrawThresholdOnLastPlot
-#include "CharacterState.h"   // cs_constants::AirSpeed() etc. - the tunable knobs
+#include "AirborneDetect.h"   // cs_constants::HardFallSpeed() etc. - the tunable knobs
+
+// Addon root (Globals.cpp). Forward-declared so this dev header needn't pull in
+// Globals.h (and Windows.h) - we only need the path string for the trace file.
+extern std::string g_AddonDir;
 
 // One fresh game tick's data, packaged for the tuner. File scope so the call
 // site in CharacterState.cpp is `airtuner::OnSample({ ... })` aggregate-init.
@@ -53,11 +59,23 @@ struct AirtunerSample {
     bool     moving;       // s_moving    after this tick
     bool     rise;         // currently classified rising-airborne (fast or band)
     bool     fall;         // currently classified falling-airborne (fast or band)
-    double   riseSince;    // -1 if not running, else when the marginal rise began
-    double   fallSince;    // -1 if not running, else when the marginal fall began
-    double   groundSince;  // -1 if not running, else when descent/settle began
+    double   landSince;    // -1 if not running, else when surface-consistent landing began
+    double   fallSince;    // -1 if not running, else when the ballistic-fall debounce began
+    double   groundSince;  // -1 if not running, else when the release backstop began
     double   stillSince;   // -1 if not running, else when stillness began
     double   now;          // steady_clock seconds at this sample (CharacterState's clock)
+    // ---- vertical ballistic instrumentation (Step 1; appended - keep in sync with
+    //      the OnSample({...}) call site in CharacterState.cpp, positional init) ----
+    float    accel;             // change in smoothed vUp over AccelWindowSec (<=0 falling)
+    bool     launch;            // raw vUp spike >= LaunchSpeed
+    bool     hard;              // +vUpEMA>=HardRiseSpeed or -vUpEMA<=-HardFallSpeed (asymmetric)
+    bool     ballistic;         // accelerating downward past FallAccelDrop / FallArmSpeed
+    bool     surfaceConsistent; // |vUpEMA| settled AND acceleration stopped (landing band)
+    bool     primed;            // inside the post glide/fly-off expect-fall window
+    bool     gliding;           // RTAPI CS_IsGliding (false if RTAPI absent)
+    bool     flying;            // RTAPI CS_IsFlying
+    bool     rtapiLive;         // RTAPI connected this tick
+    float    vInst;             // instantaneous vUp (clamped, pre-median) - for the trace
 };
 
 namespace airtuner {
@@ -72,6 +90,165 @@ inline prof::Ring& HorizSpeedHist() { static prof::Ring r; return r; }
 
 inline AirtunerSample& LastSample() { static AirtunerSample s{}; return s; }
 inline bool& HaveSample() { static bool b = false; return b; }
+
+// ---- ballistic instrumentation history (render-thread only; no locks) ----
+inline prof::Ring& AccelHist()      { static prof::Ring r; return r; }  // windowed vert accel
+inline float&      MeasuredGravity(){ static float v = 0.f; return v; } // steepest sustained descent accel-rate (m/s^2)
+
+// ---- per-event scenario recorder -----------------------------------
+// Record ONE clean event at a time (Record -> do it -> Save), tagged with the
+// scenario you picked. Each row keeps the event's peak signature + what the live
+// detector decided, so distinct fall types are compared side by side instead of
+// blurred into one "AIR" bucket. Derive separates the labeled GROUND vs AIR events.
+enum class Cls { Ground, Air };
+struct Scenario { const char* name; Cls cls; };
+inline const Scenario* Scenarios(int& n) {
+    static const Scenario s[] = {
+        { "stand",       Cls::Ground }, { "walk",        Cls::Ground },
+        { "stairs-up",   Cls::Ground }, { "stairs-down", Cls::Ground },
+        { "ramp",        Cls::Ground },
+        { "long-jump",   Cls::Air },    { "ledge-drop",  Cls::Air },
+        { "glide-cancel",Cls::Air },    { "mount-hop",   Cls::Air },
+        { "jump-drop",   Cls::Air },
+    };
+    n = (int)(sizeof(s) / sizeof(s[0])); return s;
+}
+inline int&  ActiveLabel() { static int  i = 5; return i; }   // default "long-jump"
+inline bool& Recording()   { static bool b = false; return b; }
+
+struct RecEvent { int label; float vUpPeak, accelPeak, rawUpPeak, minV, durSec, airFrac; };
+struct InProgress { float vUpPeak, accelPeak, rawUpPeak, minV; double startT; int nTicks, nAir; bool active; };
+inline InProgress& Cur() { static InProgress p{}; return p; }
+
+static constexpr int kMaxEvents = 64;
+struct EventList {
+    RecEvent ev[kMaxEvents]; int count = 0;
+    void push(const RecEvent& e) { if (count < kMaxEvents) ev[count++] = e; }
+    void remove(int i) { if (i < 0 || i >= count) return; for (int j = i; j + 1 < count; ++j) ev[j] = ev[j + 1]; --count; }
+    void clear() { count = 0; }
+};
+inline EventList& Recorded() { static EventList l; return l; }
+
+inline void RecStart(double now) {
+    InProgress& p = Cur();
+    p.vUpPeak = p.accelPeak = p.rawUpPeak = 0.f; p.minV = 0.f;
+    p.startT = now; p.nTicks = p.nAir = 0; p.active = true;
+    Recording() = true;
+}
+inline void RecSave(double now) {
+    InProgress& p = Cur();
+    if (p.active && p.nTicks > 0)
+        Recorded().push({ ActiveLabel(), p.vUpPeak, p.accelPeak, p.rawUpPeak, p.minV,
+                          (float)(now - p.startT), p.nTicks ? (float)p.nAir / p.nTicks : 0.f });
+    p.active = false; Recording() = false;
+}
+inline void RecDiscard() { Cur().active = false; Recording() = false; }
+
+// ---- raw-signal trace ring (one-click CSV export for offline debugging) ----
+// Captures the per-tick signal so the noise / real scenario shapes can be read off a
+// CSV instead of guessed from a single number. Always-on while not Frozen; "Copy trace
+// CSV" dumps the ring to the clipboard (paste it back for analysis).
+struct TraceRow { double now; float dtMs, vInst, vMed, vEMA, accel, horiz; unsigned flags; int label; int hl; };
+static constexpr int kTraceCap = 512;   // ~7 s at the game tick rate; small enough to paste
+struct TraceRing {
+    TraceRow r[kTraceCap]; int head = 0, count = 0;
+    void push(const TraceRow& x) { r[head] = x; head = (head + 1) % kTraceCap; if (count < kTraceCap) ++count; }
+    void clear() { head = count = 0; }
+};
+inline TraceRing& Trace() { static TraceRing t; return t; }
+
+inline std::string TraceAsCsv() {
+    const TraceRing& t = Trace();
+    int nsc; const Scenario* sc = Scenarios(nsc);
+    std::string out;
+    out.reserve((size_t)t.count * 80 + 128);
+    out += "t,dt_ms,vInst,vMed,vEMA,accel,horiz,airborne,ballistic,hard,launch,surface,primed,label,hl\n";
+    if (t.count == 0) return out;
+    const int first = (t.head - t.count + kTraceCap) % kTraceCap;
+    const double t0 = t.r[first].now;
+    char line[200];
+    for (int i = 0; i < t.count; ++i) {
+        const TraceRow& r = t.r[(first + i) % kTraceCap];
+        const char* lbl = (r.label >= 0 && r.label < nsc) ? sc[r.label].name : "";
+        std::snprintf(line, sizeof(line),
+            "%.3f,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%s,%d\n",
+            r.now - t0, r.dtMs, r.vInst, r.vMed, r.vEMA, r.accel, r.horiz,
+            (r.flags & 1) ? 1 : 0, (r.flags & 2) ? 1 : 0, (r.flags & 4) ? 1 : 0,
+            (r.flags & 8) ? 1 : 0, (r.flags & 16) ? 1 : 0, (r.flags & 32) ? 1 : 0, lbl, r.hl);
+        out += line;
+    }
+    return out;
+}
+
+// ---- whole-session file log (buffered; written on stop) ------------
+// Buffers every tick in memory while logging, then writes <addon dir>\airborne_trace.csv
+// on stop. Buffered (not streamed) on purpose: the "Highlight" button retroactively tags
+// the seconds BEFORE the press, so you flag what just happened - not what's coming up
+// (that's what the recorder is for). A session is a few minutes ~= a few MB; trivial.
+inline bool&                  LogToFile() { static bool b = false; return b; }
+inline std::vector<TraceRow>& LogBuf()    { static std::vector<TraceRow> v; return v; }
+inline std::string&           LogPath()   { static std::string p; return p; }
+inline double&                LogStartT() { static double t = 0.0; return t; }
+inline int&                   LogRows()   { static int n = 0; return n; }
+// Highlight count: each press tags the last kHighlightWindowSec of already-captured rows
+// with an incrementing number (the `hl` column), so the session has numbered regions you
+// can point at after the fact ("what went wrong in highlight 2?"). 0 = unmarked.
+inline int&                   Highlight() { static int n = 0; return n; }
+static constexpr double kHighlightWindowSec = 3.0;
+
+// Buffer one tick while logging (called from OnSample, regardless of Freeze).
+inline void LogTick(const AirtunerSample& s) {
+    if (!LogToFile()) return;
+    if (LogBuf().empty()) LogStartT() = s.now;
+    const unsigned f = (s.airborne ? 1u : 0u) | (s.ballistic ? 2u : 0u) | (s.hard ? 4u : 0u) |
+                       (s.launch ? 8u : 0u) | (s.surfaceConsistent ? 16u : 0u) | (s.primed ? 32u : 0u);
+    LogBuf().push_back({ s.now, s.dt * 1000.f, s.vInst, s.vertVel, s.vertVelEMA,
+                         s.accel, s.horizSpeed, f, Recording() ? ActiveLabel() : -1, 0 });
+    LogRows() = (int)LogBuf().size();
+}
+
+// Retroactively tag the last kHighlightWindowSec of rows (in LogBuf AND the clipboard
+// ring) with the next highlight number - "mark what just happened".
+inline void MarkHighlight() {
+    const int h = Highlight() + 1;
+    bool any = false;
+    std::vector<TraceRow>& b = LogBuf();
+    if (!b.empty()) {
+        const double tEnd = b.back().now;
+        for (int i = (int)b.size() - 1; i >= 0; --i) {
+            if (tEnd - b[i].now > kHighlightWindowSec) break;
+            if (b[i].hl == 0) { b[i].hl = h; any = true; }
+        }
+    }
+    TraceRing& t = Trace();
+    for (int k = 0; k < t.count; ++k) {
+        const int idx = (t.head - 1 - k + kTraceCap) % kTraceCap;
+        if (t.r[(t.head - 1 + kTraceCap) % kTraceCap].now - t.r[idx].now > kHighlightWindowSec) break;
+        if (t.r[idx].hl == 0) { t.r[idx].hl = h; any = true; }
+    }
+    if (any) Highlight() = h;
+}
+
+// Write the buffered session to disk (called from the UI when logging stops).
+inline void WriteLogFile() {
+    LogPath() = (g_AddonDir.empty() ? std::string() : g_AddonDir + "\\") + "airborne_trace.csv";
+    std::ofstream f(LogPath().c_str(), std::ios::out | std::ios::trunc);
+    if (!f.is_open()) return;
+    f << "t,dt_ms,vInst,vMed,vEMA,accel,horiz,airborne,ballistic,hard,launch,surface,primed,label,hl\n";
+    int nsc; const Scenario* sc = Scenarios(nsc);
+    const double t0 = LogStartT();
+    char line[200];
+    for (const TraceRow& r : LogBuf()) {
+        const char* lbl = (r.label >= 0 && r.label < nsc) ? sc[r.label].name : "";
+        std::snprintf(line, sizeof(line),
+            "%.3f,%.1f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%s,%d\n",
+            r.now - t0, r.dtMs, r.vInst, r.vMed, r.vEMA, r.accel, r.horiz,
+            (r.flags & 1) ? 1 : 0, (r.flags & 2) ? 1 : 0, (r.flags & 4) ? 1 : 0,
+            (r.flags & 8) ? 1 : 0, (r.flags & 16) ? 1 : 0, (r.flags & 32) ? 1 : 0, lbl, r.hl);
+        f << line;
+    }
+    LogRows() = (int)LogBuf().size();
+}
 
 // Event log: last N airborne/moving transitions, with the peak captured at OFF.
 struct Event { double t; bool isAirborne; bool on; float peak; };
@@ -89,51 +266,55 @@ inline bool&  PrevMoving()         { static bool  b = false; return b; }
 inline float& AirbornePeakAbsVUp() { static float v = 0.f; return v; }
 inline float& MovingPeakSpeed()    { static float v = 0.f; return v; }
 
-// ---- calibration aids (cleared by "Reset history") ------------------
-// Peak |vUp| / horiz split into grounded-vs-airborne / standing-vs-moving clusters
-// (since the last reset). kAirSpeed/kMoveSpeed want a value BETWEEN their two
-// clusters; measured from the SMOOTHED signals the thresholds actually compare.
-inline float& VUpPeakAir()     { static float v = 0.f; return v; }   // smoothed |vUp|
-inline float& VUpPeakGround()  { static float v = 0.f; return v; }
-inline float& HorizPeakMove()  { static float v = 0.f; return v; }
-inline float& HorizPeakStand() { static float v = 0.f; return v; }
-// For kClimbSlopeMax: steepest grounded slope ratio |vUp|/horiz while walking (stairs/
-// ramps). For kFastLaunchMult: RAW |vUp| peaks grounded vs airborne (the fast path
-// tests raw velocity).
-inline float& GroundSlopePeak()   { static float v = 0.f; return v; }
-inline float& RawVUpPeakGround()  { static float v = 0.f; return v; }
-inline float& RawVUpPeakAir()     { static float v = 0.f; return v; }
-
 inline void ClearHistory() {
-    VertVelHist().clear(); HorizSpeedHist().clear(); Events().clear();
+    VertVelHist().clear(); HorizSpeedHist().clear(); AccelHist().clear(); Events().clear();
+    Trace().clear();
+    MeasuredGravity() = 0.f;
     AirbornePeakAbsVUp() = 0.f; MovingPeakSpeed() = 0.f;
-    VUpPeakAir() = 0.f; VUpPeakGround() = 0.f; HorizPeakMove() = 0.f; HorizPeakStand() = 0.f;
-    GroundSlopePeak() = 0.f; RawVUpPeakGround() = 0.f; RawVUpPeakAir() = 0.f;
+    // Wizard envelopes are managed by the wizard controls, not "Reset history".
 }
 
 // ---- per-tick callback (from TickCharacterState) --------------------
 inline void OnSample(const AirtunerSample& s) {
+    LogTick(s);   // whole-session file log runs regardless of Freeze
     if (Paused()) { LastSample() = s; HaveSample() = true; return; }
 
     VertVelHist().push(s.vertVelEMA);   // plot the signal the detector decides on
     HorizSpeedHist().push(s.horizSpeed);
+    AccelHist().push(s.accel);
     LastSample() = s;
     HaveSample() = true;
 
-    // Calibration clusters (smoothed signals).
-    const float av = std::fabs(s.vertVelEMA);
-    if (s.airborne) { if (av > VUpPeakAir())    VUpPeakAir()    = av; }
-    else            { if (av > VUpPeakGround()) VUpPeakGround() = av; }
-    if (s.moving)   { if (s.horizSpeed > HorizPeakMove())  HorizPeakMove()  = s.horizSpeed; }
-    else            { if (s.horizSpeed > HorizPeakStand()) HorizPeakStand() = s.horizSpeed; }
-    // Slope ratio while grounded + moving (stairs/ramps) -> kClimbSlopeMax sits above it.
-    if (!s.airborne && s.horizSpeed > 0.3f) {
-        const float r = av / s.horizSpeed;
-        if (r > GroundSlopePeak()) GroundSlopePeak() = r;
+    // Measured gravity: steepest sustained downward accel-rate while clearly falling.
+    // The robust successor to the reverted instantaneous-aUp aid (slope of the SMOOTHED
+    // velocity over the window). Informs FallAccelDrop / AccelWindowSec; no knob ships.
+    if (s.vertVelEMA < 0.f && s.accel < 0.f) {
+        const double awin = cs_constants::AccelWindowSec();
+        if (awin > 0.0) {
+            const float rate = -s.accel / (float)awin;   // m/s per s
+            if (rate > MeasuredGravity()) MeasuredGravity() = rate;
+        }
     }
-    // RAW UPWARD vUp peaks (the fast path is up-only) -> kFastLaunchMult between them.
-    if (s.airborne) { if (s.vertVel > RawVUpPeakAir())    RawVUpPeakAir()    = s.vertVel; }
-    else            { if (s.vertVel > RawVUpPeakGround()) RawVUpPeakGround() = s.vertVel; }
+
+    // Per-event recorder: accumulate the current event's peak signature while armed.
+    if (Recording() && Cur().active) {
+        InProgress& p = Cur();
+        const float av  = std::fabs(s.vertVelEMA);
+        const float aac = std::fabs(s.accel);
+        if (av > p.vUpPeak)                    p.vUpPeak   = av;
+        if (s.accel < 0.f && aac > p.accelPeak) p.accelPeak = aac;
+        if (s.vertVel > p.rawUpPeak)           p.rawUpPeak = s.vertVel;
+        if (s.vertVelEMA < p.minV)             p.minV      = s.vertVelEMA;
+        ++p.nTicks; if (s.airborne) ++p.nAir;
+    }
+
+    // Raw-signal trace ring (for the CSV export).
+    {
+        const unsigned f = (s.airborne ? 1u : 0u) | (s.ballistic ? 2u : 0u) | (s.hard ? 4u : 0u) |
+                           (s.launch ? 8u : 0u) | (s.surfaceConsistent ? 16u : 0u) | (s.primed ? 32u : 0u);
+        Trace().push({ s.now, s.dt * 1000.f, s.vInst, s.vertVel, s.vertVelEMA,
+                       s.accel, s.horizSpeed, f, Recording() ? ActiveLabel() : -1, 0 });
+    }
 
     // Event log: edge-detect, peak captured at the OFF edge.
     if (s.airborne) { float a = std::fabs(s.vertVel); if (a > AirbornePeakAbsVUp()) AirbornePeakAbsVUp() = a; }
@@ -154,34 +335,57 @@ inline void OnSample(const AirtunerSample& s) {
 
 // Paste-back text for the current knob values.
 inline std::string CurrentValuesAsCpp() {
-    char buf[512];
+    char buf[1024];
     std::snprintf(buf, sizeof(buf),
         "// Paste into CharacterState.h's cs_constants getter bodies:\n"
-        "//   AirSpeed:        %.2ff\n"
-        "//   FastLaunchMult:  %.2ff\n"
-        "//   ClimbSlopeMax:   %.2ff\n"
-        "//   VelWindowSec:    %.3f\n"
-        "//   RiseEngageSec:   %.3f\n"
-        "//   FallEngageSec:   %.3f\n"
-        "//   ReleaseSec:      %.3f\n"
-        "//   MoveSpeed:       %.2ff\n"
-        "//   MoveReleaseSec:  %.3f\n",
-        cs_constants::AirSpeed(), cs_constants::FastLaunchMult(), cs_constants::ClimbSlopeMax(),
-        cs_constants::VelWindowSec(), cs_constants::RiseEngageSec(), cs_constants::FallEngageSec(),
-        cs_constants::ReleaseSec(), cs_constants::MoveSpeed(), cs_constants::MoveReleaseSec());
+        "//   --- vertical ballistic ---\n"
+        "//   LaunchSpeed:       %.2ff\n"
+        "//   HardRiseSpeed:     %.2ff\n"
+        "//   HardFallSpeed:     %.2ff\n"
+        "//   FallAccelDrop:     %.2ff\n"
+        "//   AccelWindowSec:    %.3f\n"
+        "//   FallArmSpeed:      %.2ff\n"
+        "//   FallEngageSec:     %.3f\n"
+        "//   SettleAccel:       %.2ff\n"
+        "//   GroundSettleSpeed: %.2ff\n"
+        "//   LandConfirmSec:    %.3f\n"
+        "//   ReleaseSec:        %.3f\n"
+        "//   PrimeFallSec:      %.3f\n"
+        "//   PrimeFallScale:    %.2ff\n"
+        "//   --- shared / optional ---\n"
+        "//   VelWindowSec:      %.3f\n"
+        "//   ClimbSlopeMax:     %.2ff\n"
+        "//   MoveSpeed:         %.2ff\n"
+        "//   MoveReleaseSec:    %.3f\n",
+        cs_constants::LaunchSpeed(), cs_constants::HardRiseSpeed(), cs_constants::HardFallSpeed(),
+        cs_constants::FallAccelDrop(), cs_constants::AccelWindowSec(), cs_constants::FallArmSpeed(),
+        cs_constants::FallEngageSec(), cs_constants::SettleAccel(), cs_constants::GroundSettleSpeed(),
+        cs_constants::LandConfirmSec(), cs_constants::ReleaseSec(), cs_constants::PrimeFallSec(),
+        cs_constants::PrimeFallScale(),
+        cs_constants::VelWindowSec(), cs_constants::ClimbSlopeMax(),
+        cs_constants::MoveSpeed(), cs_constants::MoveReleaseSec());
     return std::string(buf);
 }
 
-inline void ResetDefaults() {
-    cs_constants::AirSpeed()       = 3.5f;
-    cs_constants::FastLaunchMult() = 2.0f;
-    cs_constants::ClimbSlopeMax()  = 1.2f;
+inline void ResetDefaults() {   // keep in sync with CharacterState.h cs_constants
+    cs_constants::ClimbSlopeMax()  = 0.0f;   // optional horiz suppressor: off by default
     cs_constants::VelWindowSec()   = 0.04;
-    cs_constants::RiseEngageSec()  = 0.05;
-    cs_constants::FallEngageSec()  = 0.05;
-    cs_constants::ReleaseSec()     = 0.25;
     cs_constants::MoveSpeed()      = 1.0f;
     cs_constants::MoveReleaseSec() = 0.15;
+    // vertical ballistic (calibrated from the in-game trace)
+    cs_constants::LaunchSpeed()       = 7.0f;
+    cs_constants::HardRiseSpeed()     = 6.0f;
+    cs_constants::HardFallSpeed()     = 10.0f;
+    cs_constants::FallAccelDrop()     = 3.5f;
+    cs_constants::AccelWindowSec()    = 0.16;
+    cs_constants::FallArmSpeed()      = 2.0f;
+    cs_constants::FallEngageSec()     = 0.15;
+    cs_constants::SettleAccel()       = 1.5f;
+    cs_constants::GroundSettleSpeed() = 3.5f;
+    cs_constants::LandConfirmSec()    = 0.08;
+    cs_constants::ReleaseSec()        = 0.30;
+    cs_constants::PrimeFallSec()      = 0.40;
+    cs_constants::PrimeFallScale()    = 0.6f;
 }
 
 }  // namespace airtuner
@@ -213,91 +417,232 @@ inline void RenderAirborneTuner() {
     ImGui::SameLine(); if (ImGui::Button("Reset to defaults")) airtuner::ResetDefaults();
     ImGui::SameLine(); if (ImGui::Button("Copy as C++"))
         ImGui::SetClipboardText(airtuner::CurrentValuesAsCpp().c_str());
+    if (ImGui::Button("Copy trace CSV")) ImGui::SetClipboardText(airtuner::TraceAsCsv().c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%d rows - jump/fall, hit Freeze, then copy", airtuner::Trace().count);
+    if (ImGui::Checkbox("Log to file (whole session)", &airtuner::LogToFile())) {
+        if (airtuner::LogToFile()) { airtuner::LogBuf().clear(); airtuner::Highlight() = 0; airtuner::LogRows() = 0; }
+        else airtuner::WriteLogFile();   // stop -> write the buffered session to disk
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Highlight last 3s")) airtuner::MarkHighlight();   // tags what JUST happened
+    ImGui::SameLine(); ImGui::TextDisabled("(%d marked)", airtuner::Highlight());
+    if (airtuner::LogToFile())
+        ImGui::TextDisabled("logging... %d rows - uncheck to write the file", airtuner::LogRows());
+    else if (!airtuner::LogPath().empty())
+        ImGui::TextDisabled("wrote %d rows -> %s", airtuner::LogRows(), airtuner::LogPath().c_str());
     ImGui::Separator();
 
-    // ---- live state (always visible) --------------------------------
-    devui::StateDot(s.airborne); ImGui::SameLine(); ImGui::Text("airborne");
-    ImGui::SameLine(150.f);
-    devui::StateDot(s.moving);   ImGui::SameLine(); ImGui::Text("moving");
-    devui::StateDot(s.rise);     ImGui::SameLine(); ImGui::Text("rise");
-    ImGui::SameLine(150.f);
-    devui::StateDot(s.fall);     ImGui::SameLine(); ImGui::Text("fall");
-    // Active timer "windows" (which countdown is running this tick).
-    devui::StateDot(s.riseSince  >= 0.0); ImGui::SameLine(); ImGui::Text("rise-wait");
-    ImGui::SameLine(150.f);
-    devui::StateDot(s.fallSince  >= 0.0); ImGui::SameLine(); ImGui::Text("fall-wait");
-    devui::StateDot(s.groundSince >= 0.0); ImGui::SameLine(); ImGui::Text("release");
-    ImGui::SameLine(150.f);
-    devui::StateDot(s.stillSince >= 0.0); ImGui::SameLine(); ImGui::Text("stop");
+    // ---- live state (compact; grouped: outputs / why / RTAPI) -------
+    // Tight dot+label so each lamp pairs unambiguously with its name (the old wide
+    // 150px field made them hard to track). Timer-window lamps moved to "Timers".
+    auto lamp = [](bool on, const char* label) {
+        devui::StateDot(on); ImGui::SameLine(0.f, 3.f); ImGui::TextUnformatted(label);
+    };
+    devui::StateDot(s.airborne); ImGui::SameLine(0.f, 4.f);
+    ImGui::TextColored(s.airborne ? ImVec4(1, 0.55f, 0.55f, 1) : ImVec4(0.55f, 0.55f, 0.55f, 1), "AIRBORNE");
+    ImGui::SameLine(0.f, 28.f); lamp(s.moving, "moving");
+    ImGui::TextDisabled("engage:"); ImGui::SameLine();
+    lamp(s.launch, "launch");    ImGui::SameLine();
+    lamp(s.hard, "hard");        ImGui::SameLine();
+    lamp(s.ballistic, "ball");   ImGui::SameLine(0.f, 18.f);
+    ImGui::TextDisabled("rel:"); ImGui::SameLine(); lamp(s.surfaceConsistent, "surface");
+    if (s.rtapiLive) {
+        ImGui::TextDisabled("RTAPI:"); ImGui::SameLine();
+        lamp(s.gliding, "glide"); ImGui::SameLine();
+        lamp(s.flying, "fly");    ImGui::SameLine();
+        lamp(s.primed, "prime");
+    }
     if (have)
-        ImGui::Text("vUp %+.2f (sm %+.2f)   horiz %.2f m/s",
-                    s.vertVel, s.vertVelEMA, s.horizSpeed);
+        ImGui::Text("vUp %+.2f  accel %+.2f  horiz %.2f m/s", s.vertVelEMA, s.accel, s.horizSpeed);
     else
         ImGui::TextDisabled("(no sample yet - waiting for a fresh UITick)");
 
-    // ---- Calibrate: measure, then set (default open) ----------------
-    if (ImGui::CollapsingHeader("Calibrate  (move around, then set)",
-                                ImGuiTreeNodeFlags_DefaultOpen)) {
-        const float vG = airtuner::VUpPeakGround(), vA = airtuner::VUpPeakAir();
-        const float hS = airtuner::HorizPeakStand(), hM = airtuner::HorizPeakMove();
-        const float sugAir = (vA > vG) ? 0.5f * (vA + vG) : 0.f;
-        const float sugMv  = (hM > hS) ? 0.5f * (hM + hS) : 0.f;
-        ImGui::Text("|vUp| ground %.2f  air %.2f  ->  kAirSpeed %.2f", vG, vA, sugAir);
-        ImGui::SameLine(); if (ImGui::SmallButton("set##air") && sugAir > 0.1f)
-            cs_constants::AirSpeed() = sugAir;
-        ImGui::Text("horiz stand %.2f  move %.2f  ->  kMoveSpeed %.2f", hS, hM, sugMv);
-        ImGui::SameLine(); if (ImGui::SmallButton("set##mv") && sugMv > 0.05f)
-            cs_constants::MoveSpeed() = sugMv;
+    // ---- Calibration recorder: per-event capture + derive (default open) ----
+    if (ImGui::CollapsingHeader("Calibration recorder", ImGuiTreeNodeFlags_DefaultOpen)) {
+        int nsc; const airtuner::Scenario* sc = airtuner::Scenarios(nsc);
+        int& lbl = airtuner::ActiveLabel();
+        if (lbl < 0 || lbl >= nsc) lbl = 0;
 
-        // kClimbSlopeMax: just above the steepest grounded slope ratio seen.
-        const float gSlope = airtuner::GroundSlopePeak();
-        const float sugSlope = gSlope > 0.f ? gSlope * 1.3f : 0.f;
-        ImGui::Text("ground slope peak %.2f  ->  kClimbSlopeMax %.2f", gSlope, sugSlope);
-        ImGui::SameLine(); if (ImGui::SmallButton("set##slope") && sugSlope > 0.05f)
-            cs_constants::ClimbSlopeMax() = sugSlope;
+        ImGui::PushItemWidth(150.f);
+        if (ImGui::BeginCombo("label", sc[lbl].name)) {
+            for (int i = 0; i < nsc; ++i)
+                if (ImGui::Selectable(sc[i].name, i == lbl)) lbl = i;
+            ImGui::EndCombo();
+        }
+        ImGui::PopItemWidth();
 
-        // kFastLaunchMult: between raw grounded vs airborne |vUp| peaks, in units of air.
-        const float rg = airtuner::RawVUpPeakGround(), ra = airtuner::RawVUpPeakAir();
-        const float air2 = cs_constants::AirSpeed();
-        const float sugMult = (ra > rg && air2 > 0.1f) ? 0.5f * (ra + rg) / air2 : 0.f;
-        ImGui::Text("raw vUp(up) ground %.1f  air %.1f  ->  kFastLaunchMult %.2f", rg, ra, sugMult);
-        ImGui::SameLine(); if (ImGui::SmallButton("set##mult") && sugMult >= 1.f)
-            cs_constants::FastLaunchMult() = sugMult;
+        if (!airtuner::Recording()) {
+            if (ImGui::Button("Record")) airtuner::RecStart(now);
+            ImGui::SameLine();
+            ImGui::TextDisabled("Record -> do ONE event -> Save. Reposition freely while not recording.");
+        } else {
+            const airtuner::InProgress& p = airtuner::Cur();
+            if (ImGui::Button("Save event")) airtuner::RecSave(now);
+            ImGui::SameLine(); if (ImGui::Button("Discard")) airtuner::RecDiscard();
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1, 0.6f, 0.3f, 1), "REC %s  |vUp|%.1f acc%.1f up%.1f  %.2fs",
+                               sc[lbl].name, p.vUpPeak, p.accelPeak, p.rawUpPeak, (float)(now - p.startT));
+        }
 
-        ImGui::TextDisabled("(measured since reset; Reset history to re-measure)");
+        const airtuner::EventList& L = airtuner::Recorded();
+        if (L.count == 0) {
+            ImGui::TextDisabled("(no events yet)");
+        } else {
+            int delIdx = -1;
+            if (ImGui::BeginTable("##recev", 8,
+                       ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("scenario"); ImGui::TableSetupColumn("|vUp|");
+                ImGui::TableSetupColumn("accel"); ImGui::TableSetupColumn("rawUp");
+                ImGui::TableSetupColumn("minV"); ImGui::TableSetupColumn("dur");
+                ImGui::TableSetupColumn("det%"); ImGui::TableSetupColumn("");
+                ImGui::TableHeadersRow();
+                for (int i = 0; i < L.count; ++i) {
+                    const airtuner::RecEvent& e2 = L.ev[i];
+                    const airtuner::Scenario& s2 = sc[e2.label];
+                    const bool air = s2.cls == airtuner::Cls::Air;
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextColored(air ? ImVec4(1, 0.8f, 0.6f, 1) : ImVec4(0.7f, 0.85f, 1, 1), "%s", s2.name);
+                    ImGui::TableSetColumnIndex(1); devui::NumCell("%.1f", e2.vUpPeak);
+                    ImGui::TableSetColumnIndex(2); devui::NumCell("%.1f", e2.accelPeak);
+                    ImGui::TableSetColumnIndex(3); devui::NumCell("%.1f", e2.rawUpPeak);
+                    ImGui::TableSetColumnIndex(4); devui::NumCell("%.1f", e2.minV);
+                    ImGui::TableSetColumnIndex(5); devui::NumCell("%.2f", e2.durSec);
+                    ImGui::TableSetColumnIndex(6);
+                    const bool bad = air ? (e2.airFrac < 0.6f) : (e2.airFrac > 0.05f);  // missed air / false ground
+                    if (bad) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.4f, 0.4f, 1));
+                    devui::NumCell("%.0f%%", e2.airFrac * 100.f);
+                    if (bad) ImGui::PopStyleColor();
+                    ImGui::TableSetColumnIndex(7);
+                    ImGui::PushID(i); if (ImGui::SmallButton("x")) delIdx = i; ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            if (delIdx >= 0) airtuner::Recorded().remove(delIdx);   // deferred; safe after the loop
+        }
+
+        // Aggregate labeled events -> ground ceiling vs air onset, then derive.
+        float gVUp = 0, gAccel = 0, gRawUp = 0, aVUpMin = 1e9f, aAccelMin = 1e9f, aRawUp = 0;
+        int nG = 0, nA = 0, gAccelLbl = -1, aAccelLbl = -1;
+        for (int i = 0; i < L.count; ++i) {
+            const airtuner::RecEvent& e2 = L.ev[i];
+            if (sc[e2.label].cls == airtuner::Cls::Ground) {
+                ++nG;
+                if (e2.vUpPeak  > gVUp)    gVUp   = e2.vUpPeak;
+                if (e2.accelPeak > gAccel) { gAccel = e2.accelPeak; gAccelLbl = e2.label; }
+                if (e2.rawUpPeak > gRawUp) gRawUp = e2.rawUpPeak;
+            } else {
+                ++nA;
+                if (e2.vUpPeak  < aVUpMin)    aVUpMin   = e2.vUpPeak;
+                if (e2.accelPeak < aAccelMin) { aAccelMin = e2.accelPeak; aAccelLbl = e2.label; }
+                if (e2.rawUpPeak > aRawUp)    aRawUp    = e2.rawUpPeak;
+            }
+        }
+
+        if (nG > 0 && nA > 0) {
+            ImGui::Separator();
+            const float hard   = gVUp < aVUpMin ? 0.5f * (gVUp + aVUpMin) : gVUp * 1.15f;
+            const float fad    = 0.5f * (gAccel + aAccelMin);                     // between ground accel & gravity
+            const float launch = aRawUp > gRawUp + 0.5f ? 0.5f * (gRawUp + aRawUp)
+                                                        : cs_constants::LaunchSpeed();
+            const float farm   = gVUp * 0.35f > 1.0f ? gVUp * 0.35f : 1.0f;
+            const float gset   = gVUp * 0.70f > 1.5f ? gVUp * 0.70f : 1.5f;
+            const float sacc   = fad  * 0.70f;
+            const bool ovHard  = gVUp   >= aVUpMin;     // an air event dipped into ground territory
+            const bool ovAccel = gAccel >= aAccelMin;   // a ground scenario accelerates like a fall
+
+            auto row = [](const char* name, float val, const char* formula, bool overlap, const char* hint) {
+                ImGui::TextColored(overlap ? ImVec4(1, 0.5f, 0.5f, 1) : ImVec4(0.6f, 1, 0.6f, 1),
+                                   "%-17s %6.2f", name, val);
+                ImGui::SameLine(); ImGui::TextDisabled("<- %s", formula);
+                if (overlap) {
+                    ImGui::SameLine(); ImGui::TextColored(ImVec4(1, 0.6f, 0.3f, 1), "(!)");
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", hint);
+                }
+            };
+            row("HardFallSpeed", hard,   "mid(ground|vUp|max, air|vUp|min)", ovHard,
+                "an air event's |vUp| dipped below a ground event - record cleaner/bigger falls");
+            row("FallAccelDrop", fad,    "mid(ground accel, air accel)",     ovAccel,
+                "a ground scenario accelerates as hard as a fall - see the overlap line below");
+            row("LaunchSpeed",   launch, "mid(ground rawUp, air rawUp)",     false, "");
+            row("FallArmSpeed",      farm, "ground|vUp| x0.35",   false, "");
+            row("GroundSettleSpeed", gset, "ground|vUp| x0.70",   false, "");
+            row("SettleAccel",       sacc, "FallAccelDrop x0.70", false, "");
+
+            if (ovAccel && gAccelLbl >= 0 && aAccelLbl >= 0)
+                ImGui::TextColored(ImVec4(1, 0.6f, 0.3f, 1),
+                    "(!) accel overlap: ground '%s' (%.1f) >= air '%s' (%.1f) - widen AccelWindowSec or enable ClimbSlopeMax",
+                    sc[gAccelLbl].name, gAccel, sc[aAccelLbl].name, aAccelMin);
+
+            if (ImGui::Button("Apply all")) {   // HardRiseSpeed stays on its slider (recorder tracks |vUp|, not sign)
+                cs_constants::HardFallSpeed()     = hard;
+                cs_constants::FallAccelDrop()     = fad;
+                cs_constants::LaunchSpeed()       = launch;
+                cs_constants::FallArmSpeed()      = farm;
+                cs_constants::GroundSettleSpeed() = gset;
+                cs_constants::SettleAccel()       = sacc;
+            }
+            ImGui::SameLine();
+        } else if (L.count > 0) {
+            ImGui::TextDisabled("record >=1 GROUND and >=1 AIR event to derive");
+        }
+        if (ImGui::Button("Clear events")) airtuner::Recorded().clear();
     }
 
     // ---- Knobs (default closed) -------------------------------------
     if (ImGui::CollapsingHeader("Knobs (sliders)")) {
-        float& air  = cs_constants::AirSpeed();
-        float& flm  = cs_constants::FastLaunchMult();
-        float& csm  = cs_constants::ClimbSlopeMax();
-        double& vw  = cs_constants::VelWindowSec();
-        double& res = cs_constants::RiseEngageSec();
-        double& fes = cs_constants::FallEngageSec();
-        double& rls = cs_constants::ReleaseSec();
-        float& mvs  = cs_constants::MoveSpeed();
-        double& mrs = cs_constants::MoveReleaseSec();
         static const double kSecMin = 0.0, kSecMax = 0.5;
-
         ImGui::PushItemWidth(160.f);
-        ImGui::SliderFloat("kAirSpeed (|vUp| m/s)",      &air, 0.5f, 10.0f, "%.2f");
-        ImGui::SliderFloat("kFastLaunchMult (x air)",    &flm, 1.0f, 4.0f, "%.2f");
-        ImGui::SliderFloat("kClimbSlopeMax (vUp/horiz)", &csm, 0.0f, 3.0f, "%.2f"); // 0 = gate off
-        ImGui::SliderScalar("kVelWindowSec (s)",  ImGuiDataType_Double, &vw,  &kSecMin, &kSecMax, "%.3f");
-        ImGui::SliderScalar("kRiseEngageSec (s)", ImGuiDataType_Double, &res, &kSecMin, &kSecMax, "%.3f");
-        ImGui::SliderScalar("kFallEngageSec (s)", ImGuiDataType_Double, &fes, &kSecMin, &kSecMax, "%.3f");
-        ImGui::SliderScalar("kReleaseSec (s)",    ImGuiDataType_Double, &rls, &kSecMin, &kSecMax, "%.3f");
-        ImGui::SliderFloat("kMoveSpeed (horiz m/s)",     &mvs, 0.1f, 5.0f, "%.2f");
-        ImGui::SliderScalar("kMoveReleaseSec (s)", ImGuiDataType_Double, &mrs, &kSecMin, &kSecMax, "%.3f");
+
+        ImGui::TextDisabled("engage (vertical, horizontal-independent)");
+        float&  lspd = cs_constants::LaunchSpeed();
+        float&  hrsp = cs_constants::HardRiseSpeed();
+        float&  hfsp = cs_constants::HardFallSpeed();
+        float&  fadk = cs_constants::FallAccelDrop();
+        double& awnk = cs_constants::AccelWindowSec();
+        float&  fark = cs_constants::FallArmSpeed();
+        ImGui::SliderFloat("LaunchSpeed (raw vUp)",   &lspd, 2.0f, 14.0f, "%.2f");
+        ImGui::SliderFloat("HardRiseSpeed (+vUpEMA)", &hrsp, 2.0f, 14.0f, "%.2f");
+        ImGui::SliderFloat("HardFallSpeed (-vUpEMA)", &hfsp, 2.0f, 14.0f, "%.2f");
+        ImGui::SliderFloat("FallAccelDrop",           &fadk, 0.5f, 12.0f, "%.2f");
+        ImGui::SliderScalar("AccelWindowSec (s)", ImGuiDataType_Double, &awnk, &kSecMin, &kSecMax, "%.3f");
+        ImGui::SliderFloat("FallArmSpeed",          &fark, 0.0f, 5.0f, "%.2f");
+
+        ImGui::Separator();
+        ImGui::TextDisabled("release / landing");
+        float&  sack = cs_constants::SettleAccel();
+        float&  gstk = cs_constants::GroundSettleSpeed();
+        double& lcsk = cs_constants::LandConfirmSec();
+        double& rls  = cs_constants::ReleaseSec();
+        ImGui::SliderFloat("SettleAccel",           &sack, 0.1f, 6.0f, "%.2f");
+        ImGui::SliderFloat("GroundSettleSpeed",     &gstk, 0.5f, 6.0f, "%.2f");
+        ImGui::SliderScalar("LandConfirmSec (s)",   ImGuiDataType_Double, &lcsk, &kSecMin, &kSecMax, "%.3f");
+        ImGui::SliderScalar("ReleaseSec bkstp (s)", ImGuiDataType_Double, &rls,  &kSecMin, &kSecMax, "%.3f");
+
+        ImGui::Separator();
+        ImGui::TextDisabled("RTAPI prime / smoothing / move / optional slope");
+        double& pfsk = cs_constants::PrimeFallSec();
+        float&  pfck = cs_constants::PrimeFallScale();
+        double& vw   = cs_constants::VelWindowSec();
+        double& fes  = cs_constants::FallEngageSec();
+        float&  mvs  = cs_constants::MoveSpeed();
+        double& mrs  = cs_constants::MoveReleaseSec();
+        float&  csm  = cs_constants::ClimbSlopeMax();
+        ImGui::SliderScalar("PrimeFallSec (s)",     ImGuiDataType_Double, &pfsk, &kSecMin, &kSecMax, "%.3f");
+        ImGui::SliderFloat("PrimeFallScale (x)",    &pfck, 0.1f, 1.0f, "%.2f");
+        ImGui::SliderScalar("VelWindowSec (s)",     ImGuiDataType_Double, &vw,  &kSecMin, &kSecMax, "%.3f");
+        ImGui::SliderScalar("FallEngageSec (s)",    ImGuiDataType_Double, &fes, &kSecMin, &kSecMax, "%.3f");
+        ImGui::SliderFloat("MoveSpeed (horiz m/s)", &mvs, 0.1f, 5.0f, "%.2f");
+        ImGui::SliderScalar("MoveReleaseSec (s)",   ImGuiDataType_Double, &mrs, &kSecMin, &kSecMax, "%.3f");
+        ImGui::SliderFloat("ClimbSlopeMax (0=off)", &csm, 0.0f, 3.0f, "%.2f");
         ImGui::PopItemWidth();
     }
 
     // ---- Timers (default closed) ------------------------------------
     if (ImGui::CollapsingHeader("Timers")) {
-        const float ratio = s.horizSpeed > 0.01f ? s.vertVelEMA / s.horizSpeed : 0.f;
-        ImGui::Text("rise ratio %+.2f / %.2f   (dt %.1f ms, UITick d %u)",
-                    ratio, cs_constants::ClimbSlopeMax(), s.dt * 1000.0, s.uiTickDelta);
+        ImGui::Text("accel %+.2f  g~%.1f   (dt %.1f ms, UITick d %u)",
+                    s.accel, airtuner::MeasuredGravity(), s.dt * 1000.0, s.uiTickDelta);
         auto bar = [&](const char* label, double since, double span) {
             if (have && since >= 0.0) {
                 float frac = span > 0.0 ? (float)((now - since) / span) : 1.f;
@@ -306,8 +651,8 @@ inline void RenderAirborneTuner() {
                 ImGui::ProgressBar(frac, ImVec2(190.f, 0), b);
             } else ImGui::TextDisabled("%s -", label);
         };
-        bar("riseSince  ", s.riseSince,   cs_constants::RiseEngageSec());
         bar("fallSince  ", s.fallSince,   cs_constants::FallEngageSec());
+        bar("landSince  ", s.landSince,   cs_constants::LandConfirmSec());
         bar("groundSince", s.groundSince, cs_constants::ReleaseSec());
         bar("stillSince ", s.stillSince,  cs_constants::MoveReleaseSec());
     }
@@ -316,19 +661,40 @@ inline void RenderAirborneTuner() {
     if (ImGui::CollapsingHeader("Graphs")) {
         ImGui::TextDisabled("smoothed signals; history ~2s @ 60Hz");
         const ImVec2 plotSize(330, 52);
-        // Vertical velocity (smoothed), ±kAirSpeed lines.
+        // Vertical velocity (smoothed): orange +HardRiseSpeed / -HardFallSpeed (asymmetric),
+        // green ±GroundSettleSpeed (the bands the decision uses).
         {
             float buf[prof::kHistLen];
             int n = prof::FlattenRing(airtuner::VertVelHist(), buf);
-            const float air = cs_constants::AirSpeed();
-            float absMax = air * 2.f;
+            const float hrise = cs_constants::HardRiseSpeed();
+            const float hfall = cs_constants::HardFallSpeed();
+            const float gset = cs_constants::GroundSettleSpeed();
+            float absMax = (hfall > hrise ? hfall : hrise) * 1.3f;
             for (int i = 0; i < n; ++i) { float a = std::fabs(buf[i]); if (a > absMax) absMax = a; }
-            const float sMin = -absMax, sMax = absMax;
+            const float sMin = -absMax, sMax = absMax, span = sMax - sMin;
             char ov[48]; std::snprintf(ov, sizeof(ov), "vUp(sm)  cur %+.2f  \xc2\xb1%.1f m/s",
                                        n ? buf[n-1] : 0.f, absMax);
             ImGui::PlotLines("##vvplot", buf, n, 0, ov, sMin, sMax, plotSize);
-            devui::DrawThresholdOnLastPlot( air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
-            devui::DrawThresholdOnLastPlot(-air, sMin, sMax - sMin, IM_COL32(220, 70, 70, 200));
+            devui::DrawThresholdOnLastPlot( hrise, sMin, span, IM_COL32(240, 150, 40, 220));
+            devui::DrawThresholdOnLastPlot(-hfall, sMin, span, IM_COL32(240, 150, 40, 220));
+            devui::DrawThresholdOnLastPlot( gset, sMin, span, IM_COL32(120, 200, 120, 140));
+            devui::DrawThresholdOnLastPlot(-gset, sMin, span, IM_COL32(120, 200, 120, 140));
+        }
+        // Vertical accel (windowed): red -FallAccelDrop + green ±SettleAccel; measured-g readout.
+        {
+            float buf[prof::kHistLen];
+            int n = prof::FlattenRing(airtuner::AccelHist(), buf);
+            const float fad = cs_constants::FallAccelDrop();
+            const float sa  = cs_constants::SettleAccel();
+            float absMax = fad * 1.5f;
+            for (int i = 0; i < n; ++i) { float a = std::fabs(buf[i]); if (a > absMax) absMax = a; }
+            const float sMin = -absMax, sMax = absMax, span = sMax - sMin;
+            char ov[64]; std::snprintf(ov, sizeof(ov), "accel(win) cur %+.2f  g~%.1f",
+                                       n ? buf[n-1] : 0.f, airtuner::MeasuredGravity());
+            ImGui::PlotLines("##accplot", buf, n, 0, ov, sMin, sMax, plotSize);
+            devui::DrawThresholdOnLastPlot(-fad, sMin, span, IM_COL32(220, 70, 70, 220));
+            devui::DrawThresholdOnLastPlot( sa,  sMin, span, IM_COL32(120, 200, 120, 140));
+            devui::DrawThresholdOnLastPlot(-sa,  sMin, span, IM_COL32(120, 200, 120, 140));
         }
         // Horizontal speed (smoothed), kMoveSpeed line.
         {

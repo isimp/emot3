@@ -6,6 +6,7 @@ NexusLinkData* NexusLink  = nullptr;
 Mumble::Data*  MumbleLink = nullptr;
 
 HWND        g_GameHwnd       = nullptr;
+std::string g_AddonDir;
 std::string g_SettingsPath;
 std::string g_EmotesJsonPath;
 std::string g_MeMotesJsonPath;
