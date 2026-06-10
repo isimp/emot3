@@ -8,6 +8,7 @@
 #include "EmoteData.h"
 #include "EmoteAction.h"
 #include "Favorites.h"
+#include "RadialExport.h"  // RetargetExportsCategory (keep exported wheels linked on rename)
 #include "StringUtil.h"      // TrimWhitespace (category rename)
 #include "Icons.h"
 #include "IconDrawing.h"     // DrawStarIcon / DrawTrashIcon / cell overlays
@@ -1401,10 +1402,13 @@ bool RenderCategoryHeader(int categoryIdx, const char* name, bool searchActive) 
             else     TooltipText("common.name_empty");
         }
         auto commit = [&]() {
+            std::string oldName = cats[categoryIdx].Name;
             LOG_DEBUG("favorites: renamed category \"%s\" -> \"%s\"",
-                      cats[categoryIdx].Name.c_str(), trimmed.c_str());
+                      oldName.c_str(), trimmed.c_str());
             cats[categoryIdx].Name = trimmed;
             RequestSave(SaveKind::Settings);
+            // Keep any exported RadialMenus wheels linked to the renamed category.
+            RetargetExportsCategory(oldName, trimmed);
         };
         if (enter && !invalid) { commit(); s_renamingCat = -1; }
         else if (!active && ImGui::IsItemDeactivated()) {

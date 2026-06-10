@@ -7,6 +7,7 @@
 #include "SaveScheduler.h"   // RequestSave (debounced, off-thread settings writes)
 #include "PlusSettings.h"    // g_PlusSettings ("send while moving"; empty in base builds)
 #include "Layout.h"          // ToggleButton
+#include "Usage.h"           // usage::Reset (the Reset-usage button)
 #include "NexusShortcut.h"   // ApplyNexusShortcut on settings changes
 #include "Logging.h"         // LOG_TRACE (setting-change audit trail)
 #include "UpdateCheck.h"     // Plus update banner (PlusUpdateAvailable / OpenReleasesPage; stubs otherwise)
@@ -15,6 +16,7 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"  // PushItemFlag / ImGuiItemFlags_Disabled
 
+#include <algorithm>   // std::max (reset-usage modal button sizing)
 #include <string>
 #include <vector>
 // ---- Tab: General -----------------------------------------------------
@@ -228,6 +230,9 @@ void RenderGeneralOptionsTab() {
     if (g_Settings.QuickbarGreyUnusable) {
         ImGui::Indent();
 
+        // Airborne (jumps + falls) - its own toggle, MumbleLink-derived (no addon).
+        CheckboxWithSaveAndTooltip("opt.gen.airborne", &g_Settings.QuickbarAirborneDetection, /*defaultIsOn=*/true);
+
         CheckboxWithSaveAndTooltip("opt.gen.precise_state", &g_Settings.QuickbarPreciseStateDetection, /*defaultIsOn=*/true);
         // Live status: precise detection is a no-op without the RealTime API addon.
         if (RTApiConnected())
@@ -269,6 +274,53 @@ void RenderGeneralOptionsTab() {
     // Quickbar's category-build code surfaces the /me-mote category (next
     // checkpoint), but the toggle persists either way.
     CheckboxWithSaveAndTooltip("opt.gen.qb_cat_me_motes", &g_Settings.QuickbarShowMeMotesCategory, /*defaultIsOn=*/false);
+
+    // Synthetic usage categories (data/Usage.h) — derived from the usage log,
+    // not editable, so they live only in the Quickbar (no Library section).
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_recently_used", &g_Settings.QuickbarShowRecentlyUsedCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_frequent", &g_Settings.QuickbarShowFrequentCategory, /*defaultIsOn=*/false);
+
+    // Reset the usage history that feeds the two categories above. Its own section
+    // (like the Catalog tab's "Clear catalog") so the destructive action reads as
+    // separate from the category toggles. Modeled on Clear catalog (destructive
+    // button + centered confirm modal) but a MILDER red - clearing usage is
+    // recoverable (it re-accrues as you use emotes), not the catalog-wipe it rhymes
+    // with.
+    OptionsSection(L("opt.sec.usage"));
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.42f, 0.22f, 0.22f, 0.40f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.58f, 0.28f, 0.28f, 0.70f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.68f, 0.32f, 0.32f, 0.90f));
+        if (ImGui::Button(L("opt.gen.reset_usage")))
+            ImGui::OpenPopup("###resetusage");
+        ImGui::PopStyleColor(3);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.gen.reset_usage.tip"));
+
+        std::string resetTitle = std::string(L("opt.gen.reset_usage.title")) + "###resetusage";
+        ImVec2 ds = ImGui::GetIO().DisplaySize;
+        ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f),
+                                ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        if (ImGui::BeginPopupModal(resetTitle.c_str(), nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
+            ImGui::TextWrapped("%s", L("opt.gen.reset_usage.confirm"));
+            ImGui::PopTextWrapPos();
+            ImGui::TextDisabled("%s", L("opt.gen.reset_usage.note"));
+            ImGui::Spacing();
+            float btnW = std::max(ImGui::CalcTextSize(L("opt.gen.reset_usage.yes")).x,
+                                  ImGui::CalcTextSize(L("common.cancel")).x)
+                       + ImGui::GetStyle().FramePadding.x * 2.f + 8.f;
+            if (ImGui::Button(L("opt.gen.reset_usage.yes"), ImVec2(btnW, 0))) {
+                usage::Reset();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(L("common.cancel"), ImVec2(btnW, 0)))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+    }
 
     // Favorite categories are created and managed entirely in the Library now
     // (add via its "+ Category" bar; collapse / drag-reorder / rename / delete

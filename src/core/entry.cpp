@@ -27,6 +27,9 @@
 #include "EmoteData.h"
 #include "MeMotes.h"     // /me-motes domain (load/save lifecycle, see data/MeMotes.h)
 #include "Favorites.h"
+#include "Usage.h"        // usage log load/prune/save (Recently/Frequently used)
+#include "EmoteBinds.h"   // per-emote Nexus InputBinds (Sync/Deregister)
+#include "RadialExports.h" // staged RadialMenus wheels (scan at load; refs union into binds)
 #include "MainPanel.h"
 #include "NexusShortcut.h"
 #include "Quickbar.h"
@@ -51,7 +54,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
 
 extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.APIVersion  = NEXUS_API_VERSION;
-    AddonDef.Version     = { 1, 2, 2, 0 };
+    AddonDef.Version     = { 1, 3, 0, 0 };
     AddonDef.Author      = "Morlaed";
     AddonDef.Description = "Clickable emote panel with unlock tracking.";
     AddonDef.Load        = AddonLoad;
@@ -120,6 +123,22 @@ static void OnKeybind(const char* identifier, bool isRelease) {
     }
 }
 
+// Predicate for usage::PruneDead — is (type, id) still in its catalog? Locks the
+// right catalog mutex (PruneDead calls this WITHOUT holding the usage mutex, so
+// the lock order stays catalog-only here). Returns true (keep) when the catalog
+// is empty — it may be temporarily unloaded (e.g. a failed emotes.json), and we
+// must not wipe usage history that a later re-seed would make valid again.
+static bool UsageRefLive(EFavoriteRefType type, const std::string& id) {
+    if (type == EFavoriteRefType::Emote) {
+        std::lock_guard<std::mutex> lk(g_EmotesMutex);
+        if (g_Emotes.empty()) return true;
+        return FindEmote(id) != nullptr;
+    }
+    std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+    if (g_MeMotes.empty()) return true;
+    return FindMeMote(id) != nullptr;
+}
+
 // ---- Addon load / unload ----------------------------------------------
 
 // Build flavor, derived from the two additive gating macros, logged at load so a
@@ -179,6 +198,7 @@ void AddonLoad(AddonAPI* aApi) {
     const char* addonDir = APIDefs->Paths.GetAddonDirectory("emot3");
     if (addonDir) {
         CreateDirectoryA(addonDir, nullptr);
+        g_AddonDir        = addonDir;   // root, e.g. for the dev airborne-trace CSV
         g_SettingsPath    = std::string(addonDir) + "\\settings.json";
         g_EmotesJsonPath  = std::string(addonDir) + "\\emotes.json";
         g_MeMotesJsonPath = std::string(addonDir) + "\\me_motes.json";
@@ -194,6 +214,14 @@ void AddonLoad(AddonAPI* aApi) {
         // is created (and seeded with the included defaults) lazily by
         // LoadQuickbarPresets below, the first time it's missing.
         g_PresetsDir = std::string(addonDir) + "\\presets";
+
+        // Usage log (Recently/Frequently used) — its own file, written often, so
+        // it's kept out of settings.json. See data/Usage.h.
+        g_UsageJsonPath = std::string(addonDir) + "\\usage.json";
+
+        // Exported RadialMenus wheels — one subfolder per wheel. See
+        // data/RadialExports.h. Scanned by LoadRadialExports below.
+        g_RadialsDir = std::string(addonDir) + "\\radials";
 
 #ifdef EMOT3_PLUS
         // +plus settings live in their own plus.json (never touched by a base
@@ -270,6 +298,7 @@ void AddonLoad(AddonAPI* aApi) {
         }
         SetUiLanguage(g_Settings.UiLanguage);  // "auto" follows Nexus
         LoadQuickbarPresets();  // creates + seeds presets/ on first run
+        LoadRadialExports();    // scan radials/ so SyncEmoteBinds unions wheel refs
         // The icons/ folder is created empty on purpose: bundled artwork
         // is served directly from the DLL's resource section, so the only
         // reason for a file to appear in icons/ is a user-supplied
@@ -319,6 +348,12 @@ void AddonLoad(AddonAPI* aApi) {
     // surface any favorite/unlock id that no longer resolves. Log-only — stale
     // ids are kept so re-seeding the catalog restores them.
     ReconcileFavoritesWithCatalog();
+
+    // Usage log (Recently/Frequently used). Load after both catalogs so PruneDead
+    // can drop refs that no longer resolve (re-entrant-safe; statics re-init in
+    // Load). Prune is per-type catalog-empty-guarded inside UsageRefLive.
+    usage::Load(g_UsageJsonPath);
+    usage::PruneDead(&UsageRefLive);
 
     // New-bundled-emote notifier: diff the embedded table against the user's
     // snapshot and stage the first-run-style prompt (opened by MainPanel's
@@ -376,6 +411,10 @@ void AddonLoad(AddonAPI* aApi) {
     APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_MAIN, OnKeybind, "");
     APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_QB,   OnKeybind, "");
 
+    // Per-emote InputBinds for entries opted into a keybind (catalogs loaded
+    // above). Diff-based, so re-entrant-safe on a Nexus reload.
+    SyncEmoteBinds();
+
     LOG_INFO("emot3 v%d.%d.%d.%d (%s) loaded",
              AddonDef.Version.Major, AddonDef.Version.Minor,
              AddonDef.Version.Build, AddonDef.Version.Revision, Emot3BuildTag());
@@ -394,6 +433,7 @@ void AddonUnload() {
     RemoveNexusShortcut();
     APIDefs->InputBinds.Deregister(KB_TOGGLE_MAIN);
     APIDefs->InputBinds.Deregister(KB_TOGGLE_QB);
+    DeregisterAllEmoteBinds();  // drop every per-emote InputBind we registered
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Library##wnd");
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Quickbar##qb");
     APIDefs->WndProc.Deregister(WndProcCallback);
@@ -407,8 +447,10 @@ void AddonUnload() {
 #endif
     // Persist any pending debounced writes + ride-along nav state, then join the
     // writer thread. Always writes settings (nav state marks nothing dirty, so this
-    // is its guaranteed persist point). Replaces the old direct SaveSettings here.
+    // is its guaranteed persist point); catalogs flush if dirty. Replaces the old
+    // direct SaveSettings here.
     FlushSavesBlocking();
+    usage::Flush();  // usage.json — its own unload-only file (not in the scheduler)
 
     // Give in-flight workers up to ~500 ms to drain. SendOrFillEmote
     // tops out at ~250-400 ms per emote; IconBrowse blocks on the

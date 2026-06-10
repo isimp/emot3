@@ -16,13 +16,21 @@ them from the official ArenaNet artwork.
 
 - **Library** - search by name, command, or alias; filter by Core / Unlocked /
   Locked; group favorites into your own categories and drag them into order.
+- **Category options** — opt into ready-made Quickbar categories (Core,
+  Unlocked, Recently used, Frequently used) alongside your own favorites.
 - **Quickbar** - a slim window showing one category at a time, built for your
-  HUD: snap it to a clean grid, change scroll behaviour, customize to your liking.
+  HUD: snap it to a clean grid, change scroll behaviour, customize to your
+  liking.
 - **Quickbar presets** - save a look plus the bar's size and position, then swap
   between them from the addon's icon.
+- **Keybinds** - bind individual emotes and /me-mote variants as Nexus keybinds;
+  RadialMenus wheels can invoke them without you blocking a key.
+- **RadialMenus export** - export a favorites category as a wheel for the
+  [RadialMenus](https://github.com/RaidcoreGG/GW2-RadialMenus) addon; emot3
+  packages the files, you copy them into RadialMenus folder and hit reload.
 - **Your own catalog** - the emote list is a file you own, not hard-coded. Add,
-  edit, or remove any emote without waiting for an update. A built-in icon picker
-  lets you assign icons easily.
+  edit, or remove any emote without waiting for an update. A built-in icon
+  picker lets you assign icons easily.
 - **/me-motes** - your own custom `/me` chat emotes with up to three
   variants per entry; pick which to fire from the right-click menu.
 - **Multilingual** - emote commands in all four GW2 languages; UI in English and
@@ -33,22 +41,22 @@ them from the official ArenaNet artwork.
 <table>
 <tr>
 <td align="center" width="50%">
-  <a href="https://github.com/user-attachments/assets/5db7fd74-770c-429c-af1b-5946f9c24af6"><img src="https://github.com/user-attachments/assets/5db7fd74-770c-429c-af1b-5946f9c24af6" alt="Library" width="280"></a>
+  <a href="https://i.ibb.co/Rp8Wp47g/library.png"><img src="https://i.ibb.co/Rp8Wp47g/library.png" alt="Library" width="280"></a>
   <br><b>Library</b>
 </td>
 <td align="center" width="50%">
-  <a href="https://github.com/user-attachments/assets/8f9d20d1-245b-4191-98f6-29a67ebd7e7e"><img src="https://github.com/user-attachments/assets/8f9d20d1-245b-4191-98f6-29a67ebd7e7e" alt="Quickbar" width="280"></a>
+  <a href="https://i.ibb.co/C5wDH6Jg/quickbar.png"><img src="https://i.ibb.co/C5wDH6Jg/quickbar.png" alt="Quickbar" width="280"></a>
   <br><b>Quickbar</b>
 </td>
 </tr>
 <tr>
 <td align="center" width="50%">
-  <a href="https://github.com/user-attachments/assets/eb13f7ea-e0ad-46a0-93d9-f637211d2329"><img src="https://github.com/user-attachments/assets/eb13f7ea-e0ad-46a0-93d9-f637211d2329" alt="Catalog & Unlocks" width="280"></a>
-  <br><b>Catalog & Unlocks</b>
+  <a href="https://i.ibb.co/VWjWv5t9/emote-memote.png"><img src="https://i.ibb.co/VWjWv5t9/emote-memote.png" alt="Catalog & /me-motes" width="280"></a>
+  <br><b>Catalog & /me-motes</b>
 </td>
 <td align="center" width="50%">
-  <a href="https://github.com/user-attachments/assets/f08ea745-a2ff-406d-a91d-1d83378d971b"><img src="https://github.com/user-attachments/assets/f08ea745-a2ff-406d-a91d-1d83378d971b" alt="/me-motes" width="280"></a>
-  <br><b>/me-motes</b>
+  <a href="https://i.ibb.co/xtWfDKx0/unlocks-radialmenus.png"><img src="https://i.ibb.co/xtWfDKx0/unlocks-radialmenus.png" alt="Unlocks & RadialMenus" width="280"></a>
+  <br><b>Unlocks & RadialMenus</b>
 </td>
 </tr>
 </table>
@@ -57,7 +65,7 @@ them from the official ArenaNet artwork.
 
 emot3's emotes live in `addons/emot3/emotes.json` and are fully editable under
 *Options > Catalog*. Each emote has a slash command (sent on click), a display
-name, optional **aliases** (extra commands that also match it in search and help 
+name, optional **aliases** (extra commands that also match it in search and help
 the unlock sync), and an optional custom icon.
 
 ## /me-motes
@@ -78,17 +86,20 @@ emot3 auto-updates in-game through Nexus.
 
 ### Plus build (optional)
 
-`emot3_plus.dll` adds functionality stripped from the public build for antivirus 
-compatibility: send an emote while moving and mouse-wheel routing while the 
-Quickbar is click-through. To use it, download `emot3_plus-<version>.zip`
-from the [latest release](https://github.com/isimp/emot3/releases/latest), unzip
-`emot3_plus.dll` into `<GW2>/addons/`.
+`emot3_plus.dll` adds functionality stripped from the public build for antivirus
+compatibility: send an emote while moving and mouse-wheel routing while the
+Quickbar is click-through. The Plus build also gets a per-wheel **Sync** button
+in the RadialMenus tab that pushes emote changes directly into RadialMenus — no
+manual folder copy needed.
 
-It appears in Nexus as a separate **"emot3 (Plus)"** addon that shares the same
-`addons/emot3/` settings and catalog as the regular build, so **enable only one
-of the two at a time**. Plus does **not** auto-update (and is never overwritten
-by the public build) - but it notifies you when to grab a newer zip from the 
-releases page when an update is available.
+To use it, download `emot3_plus-<version>.zip` from the
+[latest release](https://github.com/isimp/emot3/releases/latest), unzip
+`emot3_plus.dll` into `<GW2>/addons/`. It appears in Nexus as a separate
+**"emot3 (Plus)"** addon that shares the same `addons/emot3/` settings and
+catalog as the regular build, so **enable only one of the two at a time**. Plus
+does **not** auto-update (and is never overwritten by the public build) - but it
+notifies you when to grab a newer zip from the releases page when an update is
+available.
 
 ## Notes
 
@@ -99,12 +110,12 @@ releases page when an update is available.
 - **Unlock tracking** is manual by default - right-click an unlockable emote to
   toggle. The Unlocks tab can also read your account from the GW2 API (via Hoard
   & Seek or your own key) to fill these in; it only ever adds unlocks
-- **Plus features** work by consuming Windows keyboard and mouse-wheel messages 
-  from inside the game process before they reach the game — 
-  see [`src/plus/SendSuppress.cpp`](src/plus/SendSuppress.cpp) and 
-  [`src/plus/QuickbarWheel.cpp`](src/plus/QuickbarWheel.cpp). That message-filtering 
-  pattern is indistinguishable from a keylogger to static analysis, which is why 
-  they're kept in a separate opt-in build.
+- **Plus features** work by consuming Windows keyboard and mouse-wheel messages
+  from inside the game process before they reach the game —
+  see [`src/plus/SendSuppress.cpp`](src/plus/SendSuppress.cpp) and
+  [`src/plus/QuickbarWheel.cpp`](src/plus/QuickbarWheel.cpp). That
+  message-filtering pattern is indistinguishable from a keylogger to static
+  analysis, which is why they're kept in a separate opt-in build.
 
 ## Contributing
 
@@ -115,8 +126,8 @@ issue or pull request. The bundled emote data lives in
 the [GW2 Wiki emote page](https://wiki.guildwars2.com/wiki/Emote) is the
 reference for per-language commands.
 
-**/me-mote translations** — Bundled /me-mote samples ship in English and German.
-To add a language, edit
+**/me-mote translations** — Bundled /me-mote samples ship in English and
+German. To add a language, edit
 [`resources/me_mote_data/me_motes_i18n.json`](resources/me_mote_data/me_motes_i18n.json).
 
 **UI translations** — Copy `resources/i18n/en.json` to `<code>.json`, set the
@@ -137,9 +148,9 @@ msbuild emot3.sln /p:Configuration=PlusDevTools /p:Platform=x64
 
 Output: `build\PlusDevTools\emot3_plusdevtools.dll`. Each configuration writes to
 its own `build\<Configuration>\` folder (x64-only, so the platform isn't in the
-path), so builds never clobber each other and switching configs stays incremental.
-The MSBuild pre-build target also runs `gen_rc.py` automatically, so the explicit
-step above is only needed for a clean first build.
+path), so builds never clobber each other and switching configs stays
+incremental. The MSBuild pre-build target also runs `gen_rc.py` automatically,
+so the explicit step above is only needed for a clean first build.
 
 ### Build configurations
 
@@ -179,9 +190,11 @@ AV-sensitive input-swallow conveniences, macro `EMOT3_PLUS`) and **+devtools**
   swimming, underwater, gliding, and flying).
 - [Hoard & Seek](https://github.com/PieOrCake/hoard_and_seek) — the GW2-API
   proxy emot3 can use to read your unlocks without ever handling your API key.
+- [RadialMenus](https://github.com/RaidcoreGG/GW2-RadialMenus) — the
+  wheel-menu addon emot3 can export favorites categories to.
 
 ## License
 
 [MIT](LICENSE) for emot3's code. ArenaNet retains copyright on the bundled
-official emote artwork — see the LICENSE file for the breakdown of which assets
-fall under MIT and which don't.
+official emote artwork — see the LICENSE file for the breakdown of which
+assets fall under MIT and which don't.

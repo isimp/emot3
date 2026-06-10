@@ -1,5 +1,9 @@
 #pragma once
 
+#include <string>
+
+enum class EFavoriteRefType;  // data/Settings.h (RadialMembershipNote param)
+
 // Shared helpers + per-tab entry points for the Options module. The Options
 // panel is split across Options.cpp (the AddonOptions dispatcher + lifecycle)
 // and OptionsGeneral / OptionsQuickbar / OptionsEmotes / OptionsUnlocks.cpp
@@ -31,6 +35,11 @@ bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
                       bool defaultIsOn, const char* disabledTipKey);
 
 #ifdef EMOT3_PLUS
+// Gold "Plus" tag rendered SameLine after a control, marking it an emot3 (Plus)
+// feature (hover explains the marker). Used by the Plus* checkboxes below and by the
+// RadialMenus tab's Deploy button.
+void PlusBadge();
+
 // +plus settings checkboxes - same look as the g_Settings helpers above, but
 // backed by g_PlusSettings / SavePlusSettings (plus.json) instead of g_Settings.
 // Used for the two shipped input-swallow toggles (Quickbar wheel routing,
@@ -48,6 +57,14 @@ bool PlusDisabledCheckbox(const char* labelKey, bool* state, bool enabled,
 // Muted section header + hairline that groups a tab's controls ("Layout",
 // "Window", "Look", ...) without the weight of a CollapsingHeader.
 void OptionsSection(const char* title);
+
+// Inline radial-membership note for the catalog editors' keybind row, SameLine after
+// the checkbox. When (type,id) is in >= 1 staged wheel it reads "- active via radial
+// 'X'" (no personal key needed) when the personal keybind is OFF, or "- also in radial
+// 'X'" when it's ON - so ticking the box visibly changes the note (it isn't dead).
+// No-op when the entry is in no wheel. Shared by the Emote and /me-mote editors.
+void RadialMembershipNote(EFavoriteRefType type, const std::string& id,
+                          bool hasPersonalKeybind);
 
 // The four Options tabs, one per TU, invoked by AddonOptions() in Options.cpp.
 void RenderGeneralOptionsTab();

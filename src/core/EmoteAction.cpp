@@ -10,6 +10,7 @@
 #include "PlusSettings.h"   // g_PlusSettings (whole header empty in base builds)
 #include "CharacterState.h" // CurrentEmoteBlock / EmoteBlockKey (mounted + RTAPI states)
 #include "Feedback.h"       // ShowFeedback - in-window refusal line (replaces SendAlert)
+#include "Usage.h"          // usage::Record - feeds the Recently/Frequently used categories
 #include "Profiling.h"      // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "send" path
 
 #include <Windows.h>
@@ -312,9 +313,20 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
     }).detach();
 }
 
+// Route a gated-send refusal to the right surface. InWindow keeps the existing
+// in-window overlay (a click while the panel is open); Alert uses Nexus' SendAlert
+// (a bind / RadialMenus wheel Invoke, where emot3's window is usually closed so the
+// overlay wouldn't be seen). Falls back to ShowFeedback if SendAlert is unavailable.
+static void EmitSendRefusal(const char* key, EFeedbackSink sink) {
+    if (sink == EFeedbackSink::Alert && APIDefs && APIDefs->UI.SendAlert)
+        APIDefs->UI.SendAlert(L(key));
+    else
+        ShowFeedback(L(key));
+}
+
 } // namespace
 
-void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
+void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink sink) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
     if (!APIDefs) return;
     std::string cmd = e.Command;
@@ -322,6 +334,11 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
     if (useSync)                     cmd += " *";
     const bool send        = g_Settings.SendOnClick;
     const bool swallowMode = EmoteSendSwallowActive();
+    // The held-printable-key / movement guard applies to clicks, keybinds, and radial
+    // invokes alike (only the +plus swallow drops it): a keybind/wheel-hotkey that's a
+    // bare printable key is still held during injection and would garble the command,
+    // so we refuse rather than send garbage - behaving like a default click.
+    const bool checkHeld   = !swallowMode;
 
     // "Close chat on send": if a GW2 text box is focused and the setting is on,
     // we'll close it (Escape) in the worker instead of refusing - so tell the gate
@@ -335,18 +352,30 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync) {
     // check - those are handled by the swallow - but keep the chat-unbound and
     // textbox-focused checks (the refined textbox guard stays).
     const char* skipKey = nullptr;
-    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/!swallowMode,
+    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/checkHeld,
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("Emote skipped (%s): %s", skipKey, cmd.c_str());
-        ShowFeedback(L(skipKey));
+        EmitSendRefusal(skipKey, sink);
         return;
+    }
+
+    // Real send/fill (gate passed) — record for Recently / Frequently used.
+    // Locked emotes (non-core + not in ManuallyUnlocked) are excluded: the game
+    // won't play them, so they shouldn't seed the usage categories. Checked
+    // inline off the already-resolved `e` (no extra catalog scan).
+    {
+        const bool unlocked = e.IsCore ||
+            std::find(g_Settings.ManuallyUnlocked.begin(),
+                      g_Settings.ManuallyUnlocked.end(), e.Id)
+                != g_Settings.ManuallyUnlocked.end();
+        if (unlocked) usage::Record(EFavoriteRefType::Emote, e.Id);
     }
 
     LOG_DEBUG("%s emote: %s", send ? "Sending" : "Filling", cmd.c_str());
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
 }
 
-void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
+void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sink) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
     if (!APIDefs) return;
 
@@ -373,6 +402,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
 
     const bool send        = g_Settings.MeMoteSendOnClick;  // independent of SendOnClick
     const bool swallowMode = EmoteSendSwallowActive();
+    const bool checkHeld   = !swallowMode;  // see SendOrFillEmote (gate applies to binds too)
 
     const bool closeChat = g_Settings.CloseChatOnSend &&
                            MumbleLink && MumbleLink->Context.IsTextboxFocused;
@@ -382,12 +412,15 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant) {
     // specific to slash-command emotes; they protect ANY chat injection from
     // garbling.
     const char* skipKey = nullptr;
-    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/!swallowMode,
+    if (ShouldSkipEmoteSend(&skipKey, /*checkHeldKeys=*/checkHeld,
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("/me-mote skipped (%s): %s", skipKey, cmd.c_str());
-        ShowFeedback(L(skipKey));
+        EmitSendRefusal(skipKey, sink);
         return;
     }
+
+    // Real send/fill (gate passed) — record for Recently / Frequently used.
+    usage::Record(EFavoriteRefType::MeMote, m.Id);
 
     LOG_DEBUG("%s /me-mote: %s", send ? "Sending" : "Filling", cmd.c_str());
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);

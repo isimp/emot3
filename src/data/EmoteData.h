@@ -41,6 +41,12 @@ struct Emote {
     // (an emote always sends its single Command). Bundled emotes seed these
     // from the GW2 wiki's command variants; users can edit them in the Catalog.
     std::vector<std::string> Aliases;
+
+    // Opt-in: register a Nexus InputBind for this emote so the user can bind a
+    // key to fire it directly (toggle in Options > Catalog), and so it's
+    // eligible for a RadialMenus wheel. Persisted as "keybind" in emotes.json.
+    // See core/EmoteBinds.
+    bool UserKeybind = false;
 };
 
 // Runtime emote catalog. All emotes (core + unlockable) live here, and

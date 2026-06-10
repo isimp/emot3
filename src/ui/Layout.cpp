@@ -1,5 +1,25 @@
 #include "Layout.h"
 
+#include "imgui/imgui_internal.h"  // PushItemFlag / ImGuiItemFlags_Disabled
+
+void RightAlignCursor(float width) {
+    float avail = ImGui::GetContentRegionAvail().x;
+    if (avail > width) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - width));
+}
+
+void RightAlignButtons(float w, int count) {
+    RightAlignCursor(w * count + ImGui::GetStyle().ItemSpacing.x * (count - 1));
+}
+
+void BeginDisabledCompat() {
+    ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+}
+void EndDisabledCompat() {
+    ImGui::PopStyleVar();
+    ImGui::PopItemFlag();
+}
+
 std::string Ellipsize(const std::string& name, float maxW) {
     if (ImGui::CalcTextSize(name.c_str()).x <= maxW) return name;
     std::string s = name;

@@ -2,7 +2,9 @@
 
 #include "Globals.h"    // g_SettingsPath
 #include "I18n.h"       // L
-#include "Settings.h"   // SaveSettings
+#include "Settings.h"   // SaveSettings, EFavoriteRefType
+#include "RadialExports.h"  // RadialWheelsContaining (the "via radial" note)
+#include "Layout.h"     // Ellipsize (truncate long wheel names in the note)
 #include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "PlusSettings.h" // SavePlusSettings (+plus toggles; empty in base builds)
 #include "Logging.h"    // LOG_TRACE (setting-change audit trail)
@@ -11,6 +13,7 @@
 #include "imgui/imgui_internal.h"  // PushItemFlag / ImGuiItemFlags_Disabled
 
 #include <string>
+#include <vector>
 
 namespace {
 // Compose "<labelKey>.on" / "<labelKey>.off" for the On/Off tooltip overloads.
@@ -48,14 +51,10 @@ bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
     // tooltip is the On/Off two-liner (<labelKey>.on/.off); when disabled it's
     // the prose disabledTipKey. Auto-saves; returns true only on an enabled
     // change so callers can chain extra work (e.g. ApplyNexusShortcut).
-    if (!enabled) {
-        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-    }
+    if (!enabled) BeginDisabledCompat();
     bool changed = ImGui::Checkbox(L(labelKey), state);
     if (!enabled) {
-        ImGui::PopStyleVar();
-        ImGui::PopItemFlag();
+        EndDisabledCompat();
         if (changed) { *state = !*state; changed = false; }
     }
     if (ImGui::IsItemHovered()) {
@@ -72,16 +71,15 @@ bool DisabledCheckbox(const char* labelKey, bool* state, bool enabled,
 }
 
 #ifdef EMOT3_PLUS
-namespace {
-// Gold "Plus" tag rendered on the same line, after a +plus setting's label, so it
-// visibly reads as an emot3 (Plus) feature in the Options UI. Same gold as the
-// update banner / chat-unbound warning. Hovering it explains the marker.
+// Gold "Plus" tag rendered on the same line, after a +plus control, so it visibly
+// reads as an emot3 (Plus) feature in the Options UI. Same gold as the update banner
+// / chat-unbound warning. Hovering it explains the marker. Exposed (declared in
+// OptionsCommon.h) so the RadialMenus Deploy button can tag itself too.
 void PlusBadge() {
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(0.85f, 0.75f, 0.35f, 1.0f), "Plus");
     if (ImGui::IsItemHovered()) TooltipText("opt.plus_badge");
 }
-}  // namespace
 
 bool PlusCheckbox(const char* labelKey, bool* state, bool defaultIsOn) {
     bool changed = ImGui::Checkbox(L(labelKey), state);
@@ -99,16 +97,12 @@ bool PlusDisabledCheckbox(const char* labelKey, bool* state, bool enabled,
                           bool defaultIsOn, const char* disabledTipKey) {
     // Same greyed-out-when-disabled dance as DisabledCheckbox, but persists to
     // plus.json (g_PlusSettings) rather than settings.json.
-    if (!enabled) {
-        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-    }
+    if (!enabled) BeginDisabledCompat();
     bool changed = ImGui::Checkbox(L(labelKey), state);
     bool cbHovered = ImGui::IsItemHovered();  // capture before the badge becomes the last item
     PlusBadge();                              // dims with the row while inside the alpha push
     if (!enabled) {
-        ImGui::PopStyleVar();
-        ImGui::PopItemFlag();
+        EndDisabledCompat();
         if (changed) { *state = !*state; changed = false; }
     }
     if (cbHovered) {
@@ -129,4 +123,23 @@ void OptionsSection(const char* title) {
     ImGui::Spacing();
     ImGui::TextDisabled("%s", title);
     ImGui::Separator();
+}
+
+void RadialMembershipNote(EFavoriteRefType type, const std::string& id,
+                          bool hasPersonalKeybind) {
+    std::vector<std::string> wheels = RadialWheelsContaining(type, id);
+    if (wheels.empty()) return;
+    ImGui::SameLine();
+    // "also in" when the user already has a personal key; "active via" when the wheel
+    // is the ONLY reason it's bound (so they know it works without ticking the box).
+    const char* oneKey  = hasPersonalKeybind ? "opt.radial.also_one"  : "opt.radial.via_one";
+    const char* manyKey = hasPersonalKeybind ? "opt.radial.also_many" : "opt.radial.via_many";
+    std::string note;
+    if (wheels.size() == 1)
+        note = std::string(L(oneKey)) + " '" + Ellipsize(wheels[0], 160.0f) + "'";
+    else
+        note = std::string(L(manyKey)) + " (" + std::to_string(wheels.size()) + ")";
+    ImGui::TextDisabled("- %s", note.c_str());
+    if (ImGui::IsItemHovered())
+        TooltipText(hasPersonalKeybind ? "opt.radial.also_tip" : "opt.radial.via_tip");
 }

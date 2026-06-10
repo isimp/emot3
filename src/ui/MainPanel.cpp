@@ -538,6 +538,7 @@ void AddonRender() {
     // applies completed results) - before the visibility early-returns below so
     // it ticks even when the window is hidden. Cheap no-op when idle.
     DrainUnlockSync();
+    // (usage.json now flushes via PumpSaves above, like every other config.)
     // Per-frame character-state update (the falling check = avatar height
     // velocity). Before the visibility early-returns below so the Quickbar's
     // grey/hide sees a fresh value even when the main window is hidden.

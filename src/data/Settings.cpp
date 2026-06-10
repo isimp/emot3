@@ -27,6 +27,7 @@ static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key f
     DevStateRow("show quickbar",      "%s", s.ShowQuickbar ? "on" : "off");
     DevStateRow("send on click",      "%s", s.SendOnClick ? "on" : "off");
     DevStateRow("grey unusable",      "%s", s.QuickbarGreyUnusable ? "on" : "off");
+    DevStateRow("airborne detection", "%s", s.QuickbarAirborneDetection ? "on" : "off");
     DevStateRow("precise detection",  "%s", s.QuickbarPreciseStateDetection ? "on" : "off");
     DevStateRow("unusable behavior",  "%d", (int)s.QuickbarUnusableBehavior);
     DevStateRow("qb category idx",    "%d", s.QuickbarCategoryIdx);
@@ -462,6 +463,7 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarGreyUnusable = GetBool(general, "quickbar_grey_unusable", s.QuickbarGreyUnusable);
     s.QuickbarPreciseStateDetection = GetBool(general, "quickbar_precise_state",
                                               s.QuickbarPreciseStateDetection);
+    s.QuickbarAirborneDetection = GetBool(general, "quickbar_airborne", s.QuickbarAirborneDetection);
     // Raw int; SanitizeSettings runs NormalizeUnusableBehavior to clamp it.
     s.QuickbarUnusableBehavior = (EUnusableBehavior)GetInt(general, "quickbar_unusable_behavior",
                                                            (int)s.QuickbarUnusableBehavior);
@@ -474,6 +476,8 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarShowUnlockedCategory    = GetBool(qbCats, "unlocked",     s.QuickbarShowUnlockedCategory);
     s.QuickbarShowUnlockedAllCategory = GetBool(qbCats, "unlocked_all", s.QuickbarShowUnlockedAllCategory);
     s.QuickbarShowMeMotesCategory     = GetBool(qbCats, "me_motes",     s.QuickbarShowMeMotesCategory);
+    s.QuickbarShowRecentlyUsedCategory = GetBool(qbCats, "recently_used", s.QuickbarShowRecentlyUsedCategory);
+    s.QuickbarShowFrequentCategory     = GetBool(qbCats, "frequent",      s.QuickbarShowFrequentCategory);
 
     const json& shortcut = GetObj(general, "nexus_shortcut");
     s.ShowNexusShortcut        = GetBool(shortcut, "show",                      s.ShowNexusShortcut);
@@ -630,6 +634,7 @@ std::string SerializeSettings() {
     f << "    \"show_target_dot\": "        << B(s.ShowTargetDot)     << ",\n";
     f << "    \"show_me_mote_indicator\": " << B(s.ShowMeMoteIndicator) << ",\n";
     f << "    \"quickbar_grey_unusable\": " << B(s.QuickbarGreyUnusable) << ",\n";
+    f << "    \"quickbar_airborne\": "      << B(s.QuickbarAirborneDetection) << ",\n";
     f << "    \"quickbar_precise_state\": " << B(s.QuickbarPreciseStateDetection) << ",\n";
     f << "    \"quickbar_unusable_behavior\": " << (int)s.QuickbarUnusableBehavior << ",\n";
     f << "    \"notify_new_bundled_emotes\": "  << B(s.NotifyNewBundledEmotes)   << ",\n";
@@ -639,7 +644,9 @@ std::string SerializeSettings() {
     f << "      \"mad_king\": "     << B(s.QuickbarShowMadKingCategory)     << ",\n";
     f << "      \"unlocked\": "     << B(s.QuickbarShowUnlockedCategory)    << ",\n";
     f << "      \"unlocked_all\": " << B(s.QuickbarShowUnlockedAllCategory) << ",\n";
-    f << "      \"me_motes\": "     << B(s.QuickbarShowMeMotesCategory)     << "\n";
+    f << "      \"me_motes\": "     << B(s.QuickbarShowMeMotesCategory)     << ",\n";
+    f << "      \"recently_used\": " << B(s.QuickbarShowRecentlyUsedCategory) << ",\n";
+    f << "      \"frequent\": "      << B(s.QuickbarShowFrequentCategory)     << "\n";
     f << "    },\n";
     f << "    \"nexus_shortcut\": {\n";
     f << "      \"show\": "                      << B(s.ShowNexusShortcut)        << ",\n";

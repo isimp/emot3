@@ -67,6 +67,16 @@ struct FavoriteRef {
     std::string      Id;
 };
 
+// Stable "<type-int>:<id>" key for a typed ref - the single source of truth for
+// the string used to compare/dedup refs across subsystems (usage log dedup,
+// radial drift snapshots). Inline so every caller shares one definition.
+inline std::string FavoriteRefKey(EFavoriteRefType type, const std::string& id) {
+    return std::to_string((int)type) + ":" + id;
+}
+inline std::string FavoriteRefKey(const FavoriteRef& r) {
+    return FavoriteRefKey(r.Type, r.Id);
+}
+
 struct FavoriteCategory {
     std::string                Name;
     // Type-tagged refs in user order. Migrated from the legacy
@@ -192,6 +202,12 @@ struct Settings {
     // Library always shows the /me-motes section when /me-motes exist; this
     // toggle only gates the Quickbar's category-cycle inclusion.
     bool                          QuickbarShowMeMotesCategory     = false;
+    // Synthetic usage categories (see data/Usage.h). Quickbar-only — they're
+    // non-editable by nature (derived from a usage log), so there's no Library
+    // section. Recently used = last distinct emotes/me-motes; Frequently used =
+    // by frequency over the bounded log. Opt-in like the other built-ins.
+    bool                          QuickbarShowRecentlyUsedCategory = false;
+    bool                          QuickbarShowFrequentCategory     = false;
     // When the mouse wheel cycles the active category (see EWheelCycle).
     // Defaults to OverBar - cycling when hovering the category bar is what
     // most users intuitively expect, while the icon list still scrolls.
@@ -223,13 +239,17 @@ struct Settings {
     // Quickbar categories.
     bool                          ShowMeMoteIndicator  = true;
     // Block emotes that can't currently be used: refuse the send (toast) + grey
-    // or hide the Quickbar. On by default. Always covers mounted (MumbleLink).
-    // With QuickbarPreciseStateDetection + the RealTime API addon it also covers
-    // downed / swimming / underwater / gliding / flying. See core/CharacterState.
+    // or hide the Quickbar. On by default. Always covers mounted (MumbleLink); the
+    // transient refusals (typing, moving) ride it too. Airborne and the RTAPI states
+    // are separate sub-toggles below. See core/CharacterState.
     bool                          QuickbarGreyUnusable = true;
-    // Extend the block to the precise can't-emote states above - requires the
-    // optional GW2 RealTime API addon (a no-op without it). Gated by
-    // QuickbarGreyUnusable. On by default; only does anything once RTAPI loads.
+    // Grey/refuse while AIRBORNE (jumps + falls) - MumbleLink-derived, needs no addon.
+    // Its own sub-toggle (gated by QuickbarGreyUnusable); on by default.
+    bool                          QuickbarAirborneDetection = true;
+    // Extend the block to the RTAPI-only states (downed / swimming / underwater /
+    // gliding / flying) - requires the optional GW2 RealTime API addon (a no-op
+    // without it). Gated by QuickbarGreyUnusable. On by default; only does anything
+    // once RTAPI loads.
     bool                          QuickbarPreciseStateDetection = true;
     // How a blocked state presents on the Quickbar: grey the buttons (default)
     // or hide the whole bar until the player can emote again. When active

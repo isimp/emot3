@@ -27,11 +27,6 @@ std::string StemOf(const std::string& fn) {
     return dot == std::string::npos ? fn : fn.substr(0, dot);
 }
 
-bool DirExists(const std::string& path) {
-    DWORD attr = GetFileAttributesA(path.c_str());
-    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
-}
-
 void EnsurePresetsDir() {
     if (g_PresetsDir.empty()) return;
     if (!DirExists(g_PresetsDir)) CreateDirectoryA(g_PresetsDir.c_str(), nullptr);

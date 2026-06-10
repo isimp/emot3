@@ -1,15 +1,18 @@
 #include "OptionsMeMotes.h"
 
 #include "Favorites.h"   // RemoveRefFromCategories on delete
+#include "Usage.h"        // usage::RemoveRef on delete (Recently/Frequently used)
 #include "Globals.h"
 #include "SaveScheduler.h"  // RequestSave (debounced, off-thread /me-mote writes)
 #include "I18n.h"        // L(), TooltipText
 #include "IconBrowse.h"  // ApplyIconPathToTarget (cross-catalog routing) + EIconTargetKind
 #include "IconPicker.h"  // OpenIconPicker ("Library..." button)
+#include "EmoteBinds.h"  // SyncEmoteBinds on a keybind toggle
 #include "Layout.h"      // PushDestructiveButtonStyles, PushInvalidInputStyle, DrawInvalidInputBorder, Ellipsize
 #include "Logging.h"
 #include "StringUtil.h"  // TrimWhitespace (shared helper)
 #include "MeMotes.h"
+#include "RadialExports.h"  // RadialContainsRef (tri-state keybind checkboxes)
 #include "OptionsCommon.h"   // OptionsSection
 #include "Profiling.h"   // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 #include "Icons.h"       // ResolveMeMoteIconSource + MeMoteIconSource (icon status tier)
@@ -420,9 +423,7 @@ void RenderMeMotesTab() {
         float wCollapse = ImGui::CalcTextSize(L("opt.em.collapse_all")).x + st.FramePadding.x * 2.f;
         float total     = wRescan + wExpand + wCollapse + st.ItemSpacing.x * 2.f;
         ImGui::SameLine();
-        float avail = ImGui::GetContentRegionAvail().x;
-        if (avail > total)
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
+        RightAlignCursor(total);
         if (ImGui::SmallButton(L("opt.icon.rescan"))) {
             s_mmIconStatus.clear();   // every row re-stats its icon status next render
             MarkMeMotesDirty();       // every visible cell re-resolves (memo drops on the epoch)
@@ -525,6 +526,7 @@ void RenderMeMotesTab() {
             }
 
             bool anyChanged = false;
+            bool keybindChanged = false;  // UserKeybind / variant toggle -> re-sync binds
 
             // ---- Name (REQUIRED) ----
             {
@@ -795,9 +797,70 @@ void RenderMeMotesTab() {
                 }
             }
 
+            // ---- Keybind (opt-in Nexus InputBinds — one per bound variant) ----
+            // Each ticked variant registers its own Nexus InputBind, so a hotkey
+            // or a RadialMenus wheel item can target that specific body. You/All
+            // are only bindable when that body is set.
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(L("opt.mm.lbl_keybind"));
+            ImGui::TableSetColumnIndex(1);
+            {
+                bool kd = false, ky = false, ka = false, hasYou = false, hasAll = false;
+                {
+                    std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                    if (const MeMote* m = FindMeMote(id)) {
+                        kd = m->KeybindDefault; ky = m->KeybindYou; ka = m->KeybindAll;
+                        hasYou = !m->TextYou.empty(); hasAll = !m->TextAll.empty();
+                    }
+                }
+                // One checkbox per variant. Disabled (greyed, still hoverable for
+                // the tooltip) when that body is empty. The setter writes the
+                // matching field under the mutex.
+                auto variantCheckbox = [&](EMeMoteVariant which, const char* lblKey,
+                                           bool cur, bool enabled) {
+                    if (!enabled) {
+                        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+                        ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
+                                            ImGui::GetStyle().Alpha * 0.5f);
+                    }
+                    bool v = enabled && cur;
+                    // Tri-state dash when this variant is bound ONLY via a radial wheel.
+                    const bool pushMixed = enabled && !cur &&
+                        RadialContainsRef(EFavoriteRefType::MeMote, id, which);
+                    if (pushMixed) ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
+                    bool clicked = ImGui::Checkbox(L(lblKey), &v);
+                    if (pushMixed) ImGui::PopItemFlag();
+                    if (clicked && enabled) {
+                        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                        if (MeMote* m = const_cast<MeMote*>(FindMeMote(id))) {
+                            switch (which) {
+                                case EMeMoteVariant::Default: m->KeybindDefault = v; break;
+                                case EMeMoteVariant::You:     m->KeybindYou     = v; break;
+                                case EMeMoteVariant::All:     m->KeybindAll     = v; break;
+                            }
+                            anyChanged = keybindChanged = true;
+                            LOG_DEBUG("/me-mote keybind toggle: id=%s", id.c_str());
+                        }
+                    }
+                    bool hov = ImGui::IsItemHovered();
+                    if (!enabled) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
+                    if (hov) TooltipText("opt.mm.keybind_help");
+                };
+                variantCheckbox(EMeMoteVariant::Default, "opt.mm.variant_default", kd, true);
+                ImGui::SameLine();
+                variantCheckbox(EMeMoteVariant::You,     "opt.mm.variant_you",     ky, hasYou);
+                ImGui::SameLine();
+                variantCheckbox(EMeMoteVariant::All,     "opt.mm.variant_all",     ka, hasAll);
+                // Radial-membership note; "also in" when any variant has a personal key.
+                RadialMembershipNote(EFavoriteRefType::MeMote, id, kd || ky || ka);
+            }
+
             ImGui::EndTable();
 
             if (anyChanged) Persist();
+            if (keybindChanged) SyncEmoteBinds();  // register/deregister the bind
         }
         ImGui::Unindent(10.f);
         ImGui::Spacing();
@@ -814,6 +877,7 @@ void RenderMeMotesTab() {
     // shift mid-loop.
     if (!deleteId.empty()) {
         DeleteMeMote(deleteId);      // erase + favorites cascade + persist + dirty
+        usage::RemoveRef(EFavoriteRefType::MeMote, deleteId);  // drop it from Recently/Frequently used
         s_rowOpen.erase(deleteId);   // UI-only: drop this row's expand + edit-buffer state
         s_rowBufs.erase(deleteId);
     }

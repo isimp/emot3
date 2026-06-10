@@ -45,18 +45,22 @@
   <ItemGroup>
     <ClCompile Include="core\entry.cpp">          <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\EmoteAction.cpp">    <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\EmoteBinds.cpp">     <Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\RadialExport.cpp">   <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\I18n.cpp">           <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\Globals.cpp">        <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\Logging.cpp">        <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\WinEncoding.cpp"> <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\AtomicFile.cpp">  <Filter>core</Filter></ClCompile>
     <ClCompile Include="core\SaveScheduler.cpp"><Filter>core</Filter></ClCompile>
+    <ClCompile Include="core\AirborneDetect.cpp"><Filter>core</Filter></ClCompile>
     <ClCompile Include="core\CharacterState.cpp"><Filter>core</Filter></ClCompile>
     <ClCompile Include="core\UnlockScan.cpp">    <Filter>core</Filter></ClCompile>
     <ClCompile Include="plus\UpdateCheck.cpp">   <Filter>plus</Filter></ClCompile>
     <ClCompile Include="plus\PlusSettings.cpp">   <Filter>plus</Filter></ClCompile>
     <ClCompile Include="plus\QuickbarWheel.cpp">  <Filter>plus</Filter></ClCompile>
     <ClCompile Include="plus\SendSuppress.cpp">   <Filter>plus</Filter></ClCompile>
+    <ClCompile Include="plus\RadialDeploy.cpp">   <Filter>plus</Filter></ClCompile>
     <ClCompile Include="devtools\DevTools.cpp">        <Filter>devtools</Filter></ClCompile>
     <ClCompile Include="devtools\DevStateInspector.cpp"><Filter>devtools</Filter></ClCompile>
     <ClCompile Include="devtools\NotifierDebug.cpp">   <Filter>devtools</Filter></ClCompile>
@@ -67,6 +71,8 @@
     <ClCompile Include="data\Favorites.cpp">      <Filter>data</Filter></ClCompile>
     <ClCompile Include="data\QuickbarPresets.cpp"><Filter>data</Filter></ClCompile>
     <ClCompile Include="data\Settings.cpp">       <Filter>data</Filter></ClCompile>
+    <ClCompile Include="data\Usage.cpp">          <Filter>data</Filter></ClCompile>
+    <ClCompile Include="data\RadialExports.cpp">  <Filter>data</Filter></ClCompile>
     <ClCompile Include="ui\Cells.cpp">            <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\IconBrowse.cpp">       <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\Icons.cpp">            <Filter>ui</Filter></ClCompile>
@@ -91,6 +97,7 @@
     <ClCompile Include="ui\IconDrawing.cpp">      <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OwnedScroll.cpp">      <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsMeMotes.cpp">   <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\OptionsRadial.cpp">    <Filter>ui</Filter></ClCompile>
     <ClCompile Include="..\vendor\imgui\imgui.cpp">         <Filter>vendor\imgui</Filter></ClCompile>
     <ClCompile Include="..\vendor\imgui\imgui_draw.cpp">    <Filter>vendor\imgui</Filter></ClCompile>
     <ClCompile Include="..\vendor\imgui\imgui_tables.cpp">  <Filter>vendor\imgui</Filter></ClCompile>
@@ -99,12 +106,16 @@
 
   <ItemGroup>
     <ClInclude Include="core\EmoteAction.h"> <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\EmoteBinds.h">  <Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\RadialExport.h"><Filter>core</Filter></ClInclude>
+    <ClInclude Include="core\AirborneDetect.h"><Filter>core</Filter></ClInclude>
     <ClInclude Include="core\CharacterState.h"><Filter>core</Filter></ClInclude>
     <ClInclude Include="core\UnlockScan.h">  <Filter>core</Filter></ClInclude>
     <ClInclude Include="plus\UpdateCheck.h"> <Filter>plus</Filter></ClInclude>
     <ClInclude Include="plus\PlusSettings.h">   <Filter>plus</Filter></ClInclude>
     <ClInclude Include="plus\QuickbarWheel.h"> <Filter>plus</Filter></ClInclude>
     <ClInclude Include="plus\SendSuppress.h">  <Filter>plus</Filter></ClInclude>
+    <ClInclude Include="plus\RadialDeploy.h">  <Filter>plus</Filter></ClInclude>
     <ClInclude Include="devtools\DevTools.h">      <Filter>devtools</Filter></ClInclude>
     <ClInclude Include="devtools\DevStateInspector.h"><Filter>devtools</Filter></ClInclude>
     <ClInclude Include="devtools\Profiling.h">     <Filter>devtools</Filter></ClInclude>
@@ -122,6 +133,8 @@
     <ClInclude Include="data\Favorites.h">   <Filter>data</Filter></ClInclude>
     <ClInclude Include="data\QuickbarPresets.h"><Filter>data</Filter></ClInclude>
     <ClInclude Include="data\Settings.h">    <Filter>data</Filter></ClInclude>
+    <ClInclude Include="data\Usage.h">       <Filter>data</Filter></ClInclude>
+    <ClInclude Include="data\RadialExports.h"><Filter>data</Filter></ClInclude>
     <ClInclude Include="ui\Cells.h">         <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\IconBrowse.h">    <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\Icons.h">         <Filter>ui</Filter></ClInclude>
@@ -149,6 +162,7 @@
     <ClInclude Include="ui\IconDrawing.h">   <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\OwnedScroll.h">   <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\OptionsMeMotes.h"><Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\OptionsRadial.h"> <Filter>ui</Filter></ClInclude>
     <ClInclude Include="..\vendor\imgui\imconfig.h">       <Filter>vendor\imgui</Filter></ClInclude>
     <ClInclude Include="..\vendor\imgui\imgui.h">          <Filter>vendor\imgui</Filter></ClInclude>
     <ClInclude Include="..\vendor\imgui\imgui_internal.h"> <Filter>vendor\imgui</Filter></ClInclude>

@@ -6,6 +6,7 @@
 #include "Settings.h"
 #include "EmoteData.h"
 #include "MeMotes.h"          // /me-motes Quickbar category + favorites mixing
+#include "Usage.h"            // Recently / Frequently used synthetic categories
 #include "CharacterState.h" // CurrentEmoteBlock / InCombatNow / g_QbBlockReason / g_QbUnusableKey
 #include "EmoteAction.h" // CurrentSendBusy / EmoteSendSwallowActive (grey-while-busy)
 #include "Feedback.h"    // SetActiveFeedbackSurface / DrawFeedbackOverlay
@@ -456,25 +457,32 @@ void QuickbarRender() {
     // The bar, the wheel-cycle count, the active-index clamp and the cell-
     // list build below all walk this one list, so favorites and built-ins
     // are handled uniformly. Rebuilt every frame (cheap; nothing cached).
-    enum class QbCatKind { Favorite, Core, MadKing, Unlocked, UnlockedAll, MeMotes };
+    enum class QbCatKind { Favorite, Core, Frequent, MadKing, Unlocked, UnlockedAll,
+                           MeMotes, RecentlyUsed };
     struct QbCat { QbCatKind kind; int favIdx; std::string name; };
     std::vector<QbCat> cats;
-    cats.reserve(g_Settings.FavoriteCategories.size() + 5);
+    cats.reserve(g_Settings.FavoriteCategories.size() + 7);
     if (g_Settings.QuickbarShowFavoriteCategories)
         for (int i = 0; i < (int)g_Settings.FavoriteCategories.size(); ++i)
             cats.push_back({ QbCatKind::Favorite, i, g_Settings.FavoriteCategories[i].Name });
-    // Synthetic built-ins, alphabetical by display name (Core, Mad King,
-    // Unlocked, Unlocked (all), /me-motes).
+    // Synthetic built-ins, in the SAME order as the Options > General "Quickbar
+    // categories" checkboxes (Core, Mad King, Unlocked, Unlocked (all),
+    // /me-motes, Recently used, Frequently used) so the bar/dropdown mirrors the
+    // settings list rather than an alphabetical reshuffle.
     if (g_Settings.QuickbarShowCoreCategory)
         cats.push_back({ QbCatKind::Core, -1, L("qb.cat_core") });
     if (g_Settings.QuickbarShowMadKingCategory)
         cats.push_back({ QbCatKind::MadKing, -1, L("qb.cat_mad_king") });
-    if (g_Settings.QuickbarShowMeMotesCategory)
-        cats.push_back({ QbCatKind::MeMotes, -1, L("qb.cat_me_motes") });
     if (g_Settings.QuickbarShowUnlockedCategory)
         cats.push_back({ QbCatKind::Unlocked, -1, L("qb.cat_unlocked") });
     if (g_Settings.QuickbarShowUnlockedAllCategory)
         cats.push_back({ QbCatKind::UnlockedAll, -1, L("qb.cat_unlocked_all") });
+    if (g_Settings.QuickbarShowMeMotesCategory)
+        cats.push_back({ QbCatKind::MeMotes, -1, L("qb.cat_me_motes") });
+    if (g_Settings.QuickbarShowRecentlyUsedCategory)
+        cats.push_back({ QbCatKind::RecentlyUsed, -1, L("qb.cat_recently_used") });
+    if (g_Settings.QuickbarShowFrequentCategory)
+        cats.push_back({ QbCatKind::Frequent, -1, L("qb.cat_frequent") });
 
     // Empty state — nothing to show (no favorites categories and every
     // built-in category turned off).
@@ -725,11 +733,33 @@ void QuickbarRender() {
         // category per frame — so skip the lock + populate for those.
         std::unordered_map<std::string, const MeMote*> meMotesById;
         if (activeCat.kind == QbCatKind::MeMotes ||
-            activeCat.kind == QbCatKind::Favorite) {
+            activeCat.kind == QbCatKind::Favorite ||
+            activeCat.kind == QbCatKind::RecentlyUsed ||
+            activeCat.kind == QbCatKind::Frequent) {
             std::lock_guard<std::mutex> lk(g_MeMotesMutex);
             meMotesById.reserve(g_MeMotes.size());
             for (const auto& mm : g_MeMotes) meMotesById[mm.Id] = &mm;
         }
+
+        // Resolve a usage/favorite ref to a read-only (favIdx -1) cell, routing
+        // by Type to the right catalog. Shared by the Recently/Frequently used
+        // categories; skips refs that no longer resolve (catalog edits),
+        // locked emotes (excluded from usage), or half-filled /me-motes.
+        auto appendUsageRef = [&](const FavoriteRef& ref) {
+            if (ref.Type == EFavoriteRefType::Emote) {
+                auto it = idx.byId.find(ref.Id);
+                if (it == idx.byId.end()) return;
+                const Emote* e = it->second;
+                const bool unlk = idx.unlocked(*e);
+                if (!unlk) return;  // locked emotes don't belong in usage categories
+                items.push_back({ e, nullptr, -1, unlk, std::string() });
+            } else {
+                auto it = meMotesById.find(ref.Id);
+                if (it == meMotesById.end() || !IsMeMoteRenderable(*it->second)) return;
+                items.push_back({ nullptr, it->second, -1, /*unlocked=*/true, std::string() });
+            }
+        };
+        constexpr size_t kUsageDisplayCap = 50;  // bound the synthetic category size
 
         if (activeCat.kind == QbCatKind::Favorite) {
             // Favorites: resolve the stored refs in the user's order. Each
@@ -767,6 +797,16 @@ void QuickbarRender() {
                 [](const CellInfo& a, const CellInfo& b) {
                     return a.m->Name < b.m->Name;
                 });
+        } else if (activeCat.kind == QbCatKind::RecentlyUsed) {
+            PROFILE_SCOPE("usage");  // dev perf overlay
+            // Newest-first, distinct — preserve recency order (no sort).
+            for (const auto& ref : usage::RecentlyUsed(kUsageDisplayCap))
+                appendUsageRef(ref);
+        } else if (activeCat.kind == QbCatKind::Frequent) {
+            PROFILE_SCOPE("usage");  // dev perf overlay
+            // Already frequency-ordered (tiebreak: most recent) — no sort.
+            for (const auto& ref : usage::Frequent(kUsageDisplayCap))
+                appendUsageRef(ref);
         } else {
             // Built-in Emote category: pull straight from the catalog by class,
             // read-only (favIdx -1), alphabetical by display name.
@@ -979,11 +1019,15 @@ void QuickbarRender() {
     }
     if (items.empty()) {
         // TextWrapped + a manual disabled color so narrow QB windows don't
-        // overflow horizontally with the hint text. The dedicated /me-motes
-        // category auto-fills from the catalog (not via right-click-to-add), so
-        // it points at Options > /me-motes instead of the favorites workflow.
-        const char* emptyKey = (activeCat.kind == QbCatKind::MeMotes)
-                                   ? "qb.empty_me_motes" : "qb.empty_category";
+        // overflow horizontally with the hint text. Each synthetic category that
+        // doesn't fill via right-click-to-add gets its own message instead of the
+        // favorites "right-click any emote in the Library to add" workflow text:
+        // /me-motes points at Options, and the usage categories explain they fill
+        // themselves as you use emotes.
+        const char* emptyKey = "qb.empty_category";
+        if      (activeCat.kind == QbCatKind::MeMotes)      emptyKey = "qb.empty_me_motes";
+        else if (activeCat.kind == QbCatKind::RecentlyUsed) emptyKey = "qb.empty_recently_used";
+        else if (activeCat.kind == QbCatKind::Frequent)     emptyKey = "qb.empty_frequent";
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
         ImGui::TextWrapped("%s", L(emptyKey));
         ImGui::PopStyleColor();

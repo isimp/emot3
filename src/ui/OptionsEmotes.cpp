@@ -9,11 +9,14 @@
 #include "EmoteData.h"
 #include "EmoteAction.h"
 #include "Favorites.h"
+#include "Usage.h"        // usage::RemoveRef / RemoveAllOfType on delete / clear
 #include "StringUtil.h"     // TrimWhitespace / IsAbsolutePath (shared helpers)
 #include "Icons.h"          // ResolveIconPath for icon-source status
 #include "Layout.h"         // ToggleButton, PushHighContrastButtonStyles
 #include "IconBrowse.h"
 #include "IconPicker.h"     // OpenIconPicker ("Library..." button)
+#include "EmoteBinds.h"     // SyncEmoteBinds on a keybind toggle
+#include "RadialExports.h"  // RadialContainsRef (tri-state keybind checkbox)
 #include "NexusShortcut.h"  // ApplyNexusShortcut on settings changes
 #include "Resources.h"      // kOfficialIcons / kAIIcons for icon-source status
 #include "Profiling.h"      // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
@@ -305,6 +308,7 @@ void RenderEmotesTab() {
 
     std::string deleteId;      // empty = nothing to delete this frame
     bool        emoteEdited = false;
+    bool        keybindEdited = false;  // a UserKeybind toggle -> re-sync Nexus binds
 
     // List toolbar: a muted emote count on the left, the Expand all /
     // Collapse all bulk toggles pinned to the right (right-aligned by
@@ -327,9 +331,7 @@ void RenderEmotesTab() {
         float wCollapse = ImGui::CalcTextSize(L("opt.em.collapse_all")).x + st.FramePadding.x * 2.f;
         float total     = wRescan + wExpand + wCollapse + st.ItemSpacing.x * 2.f;
         ImGui::SameLine();
-        float avail = ImGui::GetContentRegionAvail().x;
-        if (avail > total)
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - total));
+        RightAlignCursor(total);
         if (ImGui::SmallButton(L("opt.icon.rescan"))) {
             s_iconStatus.clear();   // every row re-stats its icon status next render
             MarkEmotesDirty();      // every visible cell re-resolves (memo drops on the epoch)
@@ -636,7 +638,8 @@ void RenderEmotesTab() {
                     // onOff: -1 = prose tooltip from tipKey; 0/1 = On/Off
                     // tooltip from <labelKey>.on/.off, default Off (0) / On (1).
                     auto flowCheckbox = [&](const char* labelKey, bool* value,
-                                            const char* tipKey, int onOff) {
+                                            const char* tipKey, int onOff,
+                                            bool mixed = false) {
                         const char* lbl = L(labelKey);
                         float w = ImGui::GetFrameHeight() + st.ItemInnerSpacing.x +
                                   ImGui::CalcTextSize(lbl).x;
@@ -647,7 +650,13 @@ void RenderEmotesTab() {
                         } else {
                             used = w;  // wrap to a new line in this cell
                         }
+                        // Tri-state: a dash (mixed) when the bind exists ONLY because a
+                        // radial references it (value off). Clicking promotes it to a
+                        // personal keybind (value on).
+                        const bool pushMixed = mixed && !*value;
+                        if (pushMixed) ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
                         if (ImGui::Checkbox(lbl, value)) emoteEdited = true;
+                        if (pushMixed) ImGui::PopItemFlag();
                         if (ImGui::IsItemHovered()) {
                             if (onOff < 0) {
                                 TooltipText(tipKey);
@@ -663,6 +672,16 @@ void RenderEmotesTab() {
                     flowCheckbox("opt.em.core", &e.IsCore, nullptr, /*onOff default Off=*/0);
                     flowCheckbox("opt.em.mad_king", &e.IsMadKing,
                                  "opt.em.mad_king_tooltip", -1);
+                    // Opt-in Nexus keybind (also makes it radial-exportable).
+                    // Snapshot to detect the change so we re-sync the binds.
+                    bool kbBefore = e.UserKeybind;
+                    const bool kbViaRadial =
+                        RadialContainsRef(EFavoriteRefType::Emote, e.Id, EMeMoteVariant::Default);
+                    flowCheckbox("opt.em.keybind", &e.UserKeybind, nullptr, /*Off*/0, kbViaRadial);
+                    if (e.UserKeybind != kbBefore) keybindEdited = true;
+                    // Radial-membership note; reads "also in" vs "active via" depending
+                    // on whether this emote also has its own (personal) keybind.
+                    RadialMembershipNote(EFavoriteRefType::Emote, e.Id, e.UserKeybind);
                 }
 
                 // ---- Icon ----
@@ -762,6 +781,7 @@ void RenderEmotesTab() {
 
     if (!deleteId.empty()) {
         DeleteEmote(deleteId);       // erase + favorites/manual-unlock cascade + persist + dirty
+        usage::RemoveRef(EFavoriteRefType::Emote, deleteId);  // drop it from Recently/Frequently used
         s_rowBufs.erase(deleteId);   // UI-only: drop the edit buffer for the now-gone row
     }
 
@@ -796,6 +816,7 @@ void RenderEmotesTab() {
         RequestSave(SaveKind::Emotes);
         MarkEmotesDirty();
     }
+    if (keybindEdited) SyncEmoteBinds();  // register/deregister the toggled bind
 
     // ===== Bundled emotes (uncommon: reseed) =====
     // Bottom of the tab, next to Clear catalog: both are catalog-wide
@@ -928,6 +949,7 @@ void RenderEmotesTab() {
                                cat.Refs.end());
             }
             g_Settings.ManuallyUnlocked.clear();
+            usage::RemoveAllOfType(EFavoriteRefType::Emote);  // drop emote usage history
             RequestSave(SaveKind::Emotes);
             RequestSave(SaveKind::Settings);
             MarkEmotesDirty();

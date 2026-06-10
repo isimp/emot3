@@ -6,6 +6,7 @@
 #include "Resources.h"    // bundled icon tables + TryLoadBundledIconBytes
 #include "Settings.h"     // g_Settings.UseAIIconFallback
 #include "I18n.h"         // L()
+#include "Layout.h"       // RightAlignCursor (shared)
 #include "Logging.h"      // LOG_WARNING (folder cap)
 #include "StringUtil.h"   // ToLower (shared helper)
 #include "WinEncoding.h"  // Utf8ToWide / WideToUtf8 (Unicode folder enumeration)
@@ -398,8 +399,7 @@ void RenderIconPicker() {
         float wDef   = ImGui::CalcTextSize(defLbl).x + fst.FramePadding.x * 2.f;
         float wCan   = ImGui::CalcTextSize(canLbl).x + fst.FramePadding.x * 2.f;
         float total  = wDef + wCan + fst.ItemSpacing.x;
-        float availW = ImGui::GetContentRegionAvail().x;
-        if (availW > total) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availW - total));
+        RightAlignCursor(total);
         if (ImGui::Button(defLbl)) {
             pick.clear();
             ApplyIconPathToTarget(s_kind, s_targetId, std::string());  // revert to default chain
