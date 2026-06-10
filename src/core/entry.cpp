@@ -54,7 +54,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
 
 extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.APIVersion  = NEXUS_API_VERSION;
-    AddonDef.Version     = { 1, 3, 0, 0 };
+    AddonDef.Version     = { 1, 3, 1, 0 };
     AddonDef.Author      = "Morlaed";
     AddonDef.Description = "Clickable emote panel with unlock tracking.";
     AddonDef.Load        = AddonLoad;
@@ -64,9 +64,11 @@ extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     // Public build (emot3.dll, the base Distribution config) - the ONLY build that
     // auto-updates. In-game updates come via Nexus' GitHub provider, which offers
     // one when a release's tag-version outranks AddonDef.Version above; keep the
-    // release tag in lockstep with that version. Signature is a unique negative
-    // int (self-hosted; no Raidcore listing).
-    AddonDef.Signature   = -135791;
+    // release tag in lockstep with that version. Signature is a unique 32-bit int -
+    // a full 4-byte / 8-hex value ("emt3" ASCII) so the Raidcore Nexus library
+    // accepts it (its form requires exactly 8 hex chars). The flavored builds below
+    // sit one below it; never reuse a signature another addon might hold.
+    AddonDef.Signature   = 0x656D7433;   // 'e''m''t''3'
     AddonDef.Name        = "emot3";
     AddonDef.Provider    = EUpdateProvider_GitHub;
     AddonDef.UpdateLink  = "https://github.com/isimp/emot3";
@@ -80,12 +82,13 @@ extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     // "emot3" config directory (GetAddonDirectory below) - same settings/catalog.
     AddonDef.Provider    = EUpdateProvider_None;
 #ifdef EMOT3_DEVTOOLS
-    // Any +devtools build (DevTools / PlusDevTools / Debug).
-    AddonDef.Signature   = -135793;
+    // Any +devtools build (DevTools / PlusDevTools / Debug). Distinct 8-hex sig
+    // (never listed - Provider=None - so it only needs to stay unique).
+    AddonDef.Signature   = 0x656D7431;
     AddonDef.Name        = "emot3 (Dev)";
 #else
     // Plus: input-swallow conveniences, no dev tools.
-    AddonDef.Signature   = -135792;
+    AddonDef.Signature   = 0x656D7432;
     AddonDef.Name        = "emot3 (Plus)";
 #endif
 #endif
