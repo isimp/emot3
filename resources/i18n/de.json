@@ -196,6 +196,8 @@
   "opt.radial.wizard_title": "Exportieren",
   "opt.radial.name_label": "Radname",
   "opt.radial.items_label": "Einträge",
+  "opt.radial.variant_you": " (Du)",
+  "opt.radial.variant_all": " (Alle)",
   "opt.radial.select_all": "Alle auswählen",
   "opt.radial.deselect_all": "Alle abwählen",
   "opt.radial.no_icon": "(kein Symbol)",

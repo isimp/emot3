@@ -199,6 +199,8 @@
   "opt.radial.wizard_title": "Export",
   "opt.radial.name_label": "Wheel name",
   "opt.radial.items_label": "Items",
+  "opt.radial.variant_you": " (you)",
+  "opt.radial.variant_all": " (all)",
   "opt.radial.select_all": "Select all",
   "opt.radial.deselect_all": "Deselect all",
   "opt.radial.no_icon": "(no icon)",

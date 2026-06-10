@@ -4,6 +4,7 @@
 #include "Keybinds.h"
 #include "Logging.h"
 #include "Settings.h"
+#include "SaveScheduler.h" // RequestSave (debounced settings persist)
 #include "QuickbarPresets.h"
 #include "Options.h"        // ApplyQbCloseOnEsc (preset apply re-registers it)
 #include "UpdateCheck.h"    // Plus update hint (PlusUpdateAvailable / OpenReleasesPage; stubs otherwise)
@@ -72,13 +73,14 @@ void ShortcutContextMenu() {
         g_Settings.ShowWindow = !g_Settings.ShowWindow;
         LOG_DEBUG("Shortcut menu > Library %s",
                   g_Settings.ShowWindow ? "shown" : "hidden");
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        // Visibility is ride-along nav state — persisted by the unload flush, like
+        // the Esc-close hook (which flips the bool with no save). No eager write.
     }
     if (ImGui::MenuItem(qbLabel)) {
         g_Settings.ShowQuickbar = !g_Settings.ShowQuickbar;
         LOG_DEBUG("Shortcut menu > Quickbar %s",
                   g_Settings.ShowQuickbar ? "shown" : "hidden");
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        // Ride-along nav state (see Library above) — no eager write.
     }
 
     // Quickbar presets submenu — apply one by name. The active preset (the one
@@ -99,7 +101,7 @@ void ShortcutContextMenu() {
                     ApplyQuickbarPreset(p);
                     ApplyQbCloseOnEsc();
                     LOG_DEBUG("Shortcut menu > applied preset '%s'", p.Name.c_str());
-                    if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+                    RequestSave(SaveKind::Settings);  // deliberate change — debounced persist
                 }
                 ImGui::PopID();
             }
