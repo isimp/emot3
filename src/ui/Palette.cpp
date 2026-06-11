@@ -15,6 +15,7 @@
 #include "Profiling.h"     // dev perf overlay
 
 #include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"  // BringWindowToDisplayFront (always-on-top)
 
 #include <algorithm>
 #include <atomic>
@@ -244,6 +245,11 @@ void PaletteRender() {
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
     if (!ImGui::Begin(PALETTE_WND_NAME, nullptr, flags)) { ImGui::End(); return; }
 
+    // Always on top: a focused window is normally frontmost anyway, but this
+    // covers the frames where another window was submitted later or a refocus
+    // is still in flight - the palette never renders underneath anything.
+    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+
     // Esc closes in ONE press. Handled here, not via Nexus' CloseOnEscape:
     // an active InputText eats the first Esc to deactivate-and-REVERT the
     // buffer (the query visibly jumped back to its pre-edit text) and only a
@@ -292,6 +298,16 @@ void PaletteRender() {
         "##palquery", L("pal.hint"), s_query, sizeof(s_query),
         ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
         ImGuiInputTextFlags_AutoSelectAll, QueryEditCb);
+
+    // Keep the query field ACTIVE for as long as the palette lives (re-arm
+    // whenever nothing is active - e.g. after Enter deactivated it, or a
+    // click on the window background). Type-ready at all times, and it's
+    // what makes the palette FIRST in the Esc chain: Nexus' escape-closing
+    // and the game's own Esc handling are both held off while a text input
+    // is active, so an Esc here can only ever mean "close the palette" -
+    // never "also close the Library" or "open the game menu".
+    if (!s_takeFocus && !ImGui::IsAnyItemActive())
+        ImGui::SetKeyboardFocusHere(-1);
 
     // Build this frame's rows. Filtering starts from the FIRST character
     // (unlike the Library's 2-char rule): the palette list is capped + ranked,
