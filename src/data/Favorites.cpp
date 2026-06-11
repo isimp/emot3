@@ -5,7 +5,6 @@
 #include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "EmoteData.h"   // g_Emotes / g_EmotesMutex, for the catalog reconcile
 #include "MeMotes.h"     // g_MeMotes / g_MeMotesMutex, /me-mote reconcile half
-#include "StringUtil.h"  // SanitizeFilename + MakeUniqueSlug (CategoryFolderNames)
 
 #include <algorithm>
 #include <mutex>
@@ -192,20 +191,4 @@ void ReconcileFavoritesWithCatalog() {
         LOG_INFO("Catalog reconcile: %d stale id(s) logged, none removed", stale);
 }
 
-// See Favorites.h. Batch (single used-set pass) so two categories that slug to
-// the same stem get distinct folders. No caller yet - scaffolding for the
-// upcoming per-category folder feature.
-std::vector<std::string> CategoryFolderNames() {
-    std::vector<std::string> out;
-    std::unordered_set<std::string> used;
-    out.reserve(g_Settings.FavoriteCategories.size());
-    for (const auto& cat : g_Settings.FavoriteCategories) {
-        std::string folder = MakeUniqueSlug(
-            SanitizeFilename(cat.Name, "category"),
-            [&](const std::string& stem) { return used.count(stem) != 0; });
-        used.insert(folder);
-        out.push_back(folder);
-    }
-    return out;
-}
 

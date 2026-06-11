@@ -54,7 +54,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
 
 extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.APIVersion  = NEXUS_API_VERSION;
-    AddonDef.Version     = { 1, 3, 1, 0 };
+    AddonDef.Version     = { 1, 3, 2, 0 };
     AddonDef.Author      = "Morlaed";
     AddonDef.Description = "Clickable emote panel with unlock tracking.";
     AddonDef.Load        = AddonLoad;
@@ -218,8 +218,9 @@ void AddonLoad(AddonAPI* aApi) {
         // LoadQuickbarPresets below, the first time it's missing.
         g_PresetsDir = std::string(addonDir) + "\\presets";
 
-        // Usage log (Recently/Frequently used) — its own file, written often, so
-        // it's kept out of settings.json. See data/Usage.h.
+        // Usage log (Recently/Frequently used) — its own file, changed often (an
+        // append per send) but written once at unload, so it's kept out of
+        // settings.json. See data/Usage.h.
         g_UsageJsonPath = std::string(addonDir) + "\\usage.json";
 
         // Exported RadialMenus wheels — one subfolder per wheel. See

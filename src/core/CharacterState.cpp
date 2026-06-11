@@ -141,6 +141,12 @@ bool InCombatNow() {
     return MumbleLink && MumbleLink->Context.IsInCombat;
 }
 
+// PvP / WvW. GW2 sets this in competitive game modes; emot3 hard-disables all emote
+// sending + hides the Quickbar there, unconditionally (no setting). See the header.
+bool InCompetitiveMode() {
+    return MumbleLink && MumbleLink->Context.IsCompetitive;
+}
+
 bool MovementActive() { return air::IsMoving(); }
 
 const char* RTApiDebugInfo() {
@@ -204,6 +210,8 @@ static DevStateRegistrar s_gameStateSection(DevStateCat::GameSignals, "Game stat
                 (NexusLink && NexusLink->IsGameplay) ? "yes" : "no");
     DevStateRow("IsMapOpen (Mumble)", "%s",
                 (haveMumble && MumbleLink->Context.IsMapOpen) ? "yes" : "no");
+    DevStateRow("competitive (Mumble)", "%s",
+                (haveMumble && MumbleLink->Context.IsCompetitive) ? "yes" : "no");
     DevStateRow("RTAPI connected",   "%s", RTApiConnected() ? "yes" : "no");
     // Raw RTAPI signals, so the precise-state blocks (downed/swim/underwater/
     // glide/fly) can be verified flag-by-flag once a working RTAPI is installed.

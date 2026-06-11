@@ -380,7 +380,7 @@ static void RenderEmptyCatalogDialog() {
     ImGui::PopStyleVar();
     if (addClicked && sel >= 0 && sel < (int)langs.size()) {
         SeedDefaultEmotes(langs[sel], s_secondary);
-        if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+        RequestSave(SaveKind::Emotes);
         MarkEmotesDirty();  // lazy: visible cells load their icons on next render
         // First-run: seed bundled /me-motes too so the catalog isn't an empty
         // "Add some under Options" hint. ClampMeMoteLanguage maps the emote
@@ -390,8 +390,8 @@ static void RenderEmptyCatalogDialog() {
         // returning user who already hit Restore won't see duplicates).
         g_MeMoteLanguage = ClampMeMoteLanguage(langs[sel]);
         int added = SeedBundledMeMotes(g_MeMoteLanguage);
-        if (added > 0 && !g_MeMotesJsonPath.empty()) {
-            SaveMeMotesJson(g_MeMotesJsonPath);
+        if (added > 0) {
+            RequestSave(SaveKind::MeMotes);
             MarkMeMotesDirty();
         }
     }
@@ -420,7 +420,7 @@ void DetectNewBundledEmotes() {
         // bundle silently so existing users aren't nagged about emotes that
         // predate the feature.
         g_Settings.KnownBundledEmotes = bundle;
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
         return;
     }
     if (!g_Settings.NotifyNewBundledEmotes) {
@@ -439,7 +439,7 @@ void DetectNewBundledEmotes() {
     } else {
         // Nothing to offer: catch the snapshot up so it stays tidy.
         g_Settings.KnownBundledEmotes = bundle;
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
 }
 
@@ -479,7 +479,7 @@ static void RenderNewEmotesDialog() {
     // bundle (so this batch never re-prompts), clear the staged state, close.
     auto finish = [&]() {
         g_Settings.KnownBundledEmotes = AllBundledEmoteIds();
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
         g_PromptNewBundledEmotes = false;
         g_NewBundledEmoteIds.clear();
         s_opened = false;
@@ -506,7 +506,7 @@ static void RenderNewEmotesDialog() {
                                                     : g_EmoteLanguage;
         int n = AddBundledEmotesByIds(g_NewBundledEmoteIds, lang);
         if (n > 0) {
-            if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+            RequestSave(SaveKind::Emotes);
             MarkEmotesDirty();  // lazy: new emotes load their icons on next render
         }
         LOG_INFO("notifier: user added %d new bundled emote(s)", n);
@@ -591,6 +591,20 @@ void AddonRender() {
     // New-bundled-emote notifier (only over a populated catalog; the empty-state
     // dialog above already covers a fresh install). Opens once when staged.
     RenderNewEmotesDialog();
+
+    // Competitive modes (PvP / WvW): sends are hard-refused (gate step 0) and the
+    // Quickbar is hidden outright, with no setting - so without a visible reason
+    // the addon just looks broken the first time someone enters a match. One
+    // amber line, same notice styling as the Plus update banner in Options >
+    // General; clears by itself when the player leaves (live MumbleLink bit).
+    if (InCompetitiveMode()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+        ImGui::TextWrapped("%s", L("mp.competitive_banner"));
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
 
     // ---- Toolbar ----
     // Three independent class filters as blue-tint toggle pills (Core /

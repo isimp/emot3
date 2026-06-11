@@ -427,7 +427,7 @@ bool LoadEmotesJson(const std::string& path) {
         for (const auto& p : parsed)
             if (p.Id == e.Id) { dup = true; break; }
         if (!dup) parsed.push_back(std::move(e));
-        else      changed = true;
+        else { changed = true; LOG_WARNING("emotes.json: dropped duplicate emote id \"%s\"", e.Id.c_str()); }
     }
 
     int coreCount = 0, unlockCount = 0;

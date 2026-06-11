@@ -78,6 +78,13 @@ EmoteBlock CurrentEmoteBlock();
 // in combat).
 bool InCombatNow();
 
+// True while the player is in a competitive game mode (PvP / WvW), from GW2's own
+// MumbleLink IsCompetitive bit. UNLIKE the EmoteBlock reasons above, this is an
+// UNCONDITIONAL compliance lockout with NO user setting: emot3 injects input to
+// send emotes, which stays fully disabled in competitive. Consumed directly by the
+// send gate (EmoteAction - refuses every surface) and the Quickbar (hides the bar).
+bool InCompetitiveMode();
+
 // True while the player is moving horizontally (any input, including mouse-walk),
 // derived from MumbleLink position velocity by the airborne detector. Feeds the
 // "grey / refuse while moving" gate alongside the held-key check, so mouse-only
