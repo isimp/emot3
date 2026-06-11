@@ -222,15 +222,26 @@ void PaletteRender() {
         return;
     }
 
-    // Spotlight semantics: losing window focus in any way (clicking the game
-    // world, another window, alt-tab) closes the palette - it's a transient
-    // prompt, not a panel to park. s_takeFocus graces the frames where focus
-    // was just requested but may not have applied yet.
-    if (!s_takeFocus &&
-        !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
-        s_open = false;
-        ImGui::End();
-        return;
+    // Spotlight semantics: the palette is a transient prompt, not a panel to
+    // park - clicking away or losing focus closes it. Two complementary
+    // signals, because one alone misses a case under Nexus:
+    //  - focus moved to ANOTHER ImGui window (or alt-tab): the focus check.
+    //  - a click on the GAME WORLD: that does NOT reliably clear ImGui's
+    //    focused window here, so treat any mouse-down ImGui doesn't capture
+    //    (= it landed on the game, not on any addon UI) as "clicked away".
+    // s_takeFocus graces the opening frame (focus not yet applied; a
+    // mouse-bound open click must not immediately re-close it).
+    if (!s_takeFocus) {
+        const bool clickedAway =
+            (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+             ImGui::IsMouseClicked(ImGuiMouseButton_Right)) &&
+            !io.WantCaptureMouse;
+        if (clickedAway ||
+            !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+            s_open = false;
+            ImGui::End();
+            return;
+        }
     }
 
     // Query field. EnterReturnsTrue -> send the selection. AutoSelectAll: a
