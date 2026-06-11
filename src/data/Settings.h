@@ -50,6 +50,11 @@ enum class EQbScrollIndicator { Off = 0, Hints = 1, Scrollbar = 2 };
 // custom slim scrollbar). Default Cells.
 enum class EQbScrollSnap { Off = 0, Cells = 1, Pages = 2 };
 
+// What the quick-send palette (ui/Palette.cpp) suggests while the query is
+// empty: the frequently-used / recently-used emotes (the usage log's two
+// views), or nothing.
+enum class EPaletteEmptyQuery { Frequent = 0, Recent = 1, Off = 2 };
+
 // Which catalog a FavoriteRef points into. Numeric for JSON stability —
 // settings.json stores "type": 0 for an Emote, "type": 1 for a /me-mote
 // (legacy "emote" / "me_mote" strings also accepted on load for forward
@@ -118,6 +123,17 @@ struct Settings {
     // Library /me-motes section — surfaces /me-motes (data/MeMotes.h). See the
     // /me-motes Quickbar toggle further down.
     bool                          MainMeMotesCollapsed  = false;
+    // ---- Quick-send palette (ui/Palette.cpp) ----
+    // Result-row cap (5..15). The palette never scrolls — past the cap it shows
+    // "+N more" and the answer is a longer query.
+    int                           PaletteMaxResults    = 9;
+    // What an empty query suggests (see EPaletteEmptyQuery above).
+    EPaletteEmptyQuery            PaletteEmptyQuery    = EPaletteEmptyQuery::Frequent;
+    // Open with the query cleared instead of the last query preselected.
+    bool                          PaletteClearOnOpen   = false;
+    // Palette size factor — window width + row/icon height (text stays the
+    // shared-atlas size). 0.8..1.5.
+    float                         PaletteScale         = 1.0f;
     EViewMode                     QuickbarViewMode     = EViewMode::Icon;
     float                         QuickbarIconScale    = 1.0f;
     bool                          QuickbarUseDropdown  = false;  // tabs (false) or dropdown (true)

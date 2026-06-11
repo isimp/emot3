@@ -411,10 +411,11 @@ void AddonLoad(AddonAPI* aApi) {
 
     // ESC closes the main window like other Nexus windows. The QB hook is
     // gated on the setting (default off — it's a HUD, not modal). The palette
-    // is modal-shaped, so ESC-close is unconditional there. The window-name
-    // strings must exactly match what we pass to ImGui::Begin.
+    // handles ESC itself (PaletteRender): the Nexus hook only fired after the
+    // query field had already eaten one ESC to deactivate-and-revert, so the
+    // palette reads the key directly for a one-press close. The window-name
+    // string must exactly match what we pass to ImGui::Begin.
     APIDefs->UI.RegisterCloseOnEscape("emot3 Library##wnd", &g_Settings.ShowWindow);
-    APIDefs->UI.RegisterCloseOnEscape(PALETTE_WND_NAME, PaletteOpenFlag());
     ApplyQbCloseOnEsc();
 
     // Keybinds registered with empty default — users assign their own via
@@ -449,7 +450,6 @@ void AddonUnload() {
     DeregisterAllEmoteBinds();  // drop every per-emote InputBind we registered
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Library##wnd");
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Quickbar##qb");
-    APIDefs->UI.DeregisterCloseOnEscape(PALETTE_WND_NAME);
     APIDefs->WndProc.Deregister(WndProcCallback);
     APIDefs->Renderer.Deregister(AddonRender);
     APIDefs->Renderer.Deregister(QuickbarRender);

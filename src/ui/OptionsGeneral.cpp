@@ -175,6 +175,58 @@ void RenderGeneralOptionsTab() {
                  /*defaultIsOn=*/false);
 #endif
 
+    // ===== Quick send palette =====
+    OptionsSection(L("opt.sec.palette"));
+
+    // Discoverability: the palette only exists behind its Nexus keybind
+    // (deliberately settings-free to open), so the section leads with where
+    // to assign one.
+    ImGui::TextDisabled("%s", L("opt.pal.bind_hint"));
+    ImGui::Spacing();
+
+    // Result-row cap. The palette never scrolls - more rows = taller window.
+    ImGui::SetNextItemWidth(200.f);
+    ImGui::SliderInt(L("opt.pal.max_results"), &g_Settings.PaletteMaxResults, 5, 15);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        LOG_TRACE("setting palette.max_results = %d", g_Settings.PaletteMaxResults);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemHovered()) TooltipText("opt.pal.max_results_tip");
+
+    // Size factor (window width + row height; same slider idiom as the icon
+    // scales: save on release, right-click resets).
+    ImGui::SetNextItemWidth(200.f);
+    ImGui::SliderFloat(L("opt.pal.scale"), &g_Settings.PaletteScale, 0.8f, 1.5f, "%.2fx");
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        LOG_TRACE("setting palette.scale = %.2f", g_Settings.PaletteScale);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        g_Settings.PaletteScale = 1.0f;
+        LOG_TRACE("setting palette.scale = %.2f (reset)", g_Settings.PaletteScale);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemHovered()) TooltipText("opt.pal.scale_tip");
+
+    // Empty-query suggestions: Frequently / Recently used (the usage log's two
+    // views, same labels as the Quickbar categories) or nothing.
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(L("opt.pal.empty_query"));
+    ImGui::SameLine();
+    int pq = (int)g_Settings.PaletteEmptyQuery;
+    const char* pqItems[] = { L("qb.cat_frequent"), L("qb.cat_recently_used"),
+                              L("tt.off") };
+    ImGui::SetNextItemWidth(160.f);
+    if (ImGui::Combo("##palempty", &pq, pqItems, IM_ARRAYSIZE(pqItems))) {
+        g_Settings.PaletteEmptyQuery = (EPaletteEmptyQuery)pq;
+        LOG_TRACE("setting palette.empty_query = %d", pq);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemHovered()) TooltipText("opt.pal.empty_query_tip");
+
+    CheckboxWithSaveAndTooltip("opt.pal.clear_on_open", &g_Settings.PaletteClearOnOpen,
+                               /*defaultIsOn=*/false);
+
     // ===== Icons =====
     OptionsSection(L("opt.sec.icons"));
 

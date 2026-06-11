@@ -33,14 +33,15 @@ bool s_takeFocus = false;   // one-shot: focus the query field (open / after Ent
 char s_query[64] = {};      // same cap as the Library search box
 int  s_sel       = 0;       // selected row index
 
-// Display cap. No scrolling on purpose: past this many rows the palette answer
-// is "type more", not "scroll" - a dim "+N more" line says the cap was hit.
-constexpr int kMaxRows = 9;
+// Display cap (g_Settings.PaletteMaxResults, clamped 5..15 at load). No
+// scrolling on purpose: past the cap the palette answer is "type more", not
+// "scroll" - a dim "+N more" line says the cap was hit.
+int MaxRows() { return g_Settings.PaletteMaxResults; }
 
 // One result row. COPIES of the catalog entries, not pointers: the list is
 // built under the catalog mutexes but rendered (and sent) after they drop, so
 // pointers into g_Emotes / g_MeMotes would dangle across an editor mutation.
-// At most ~2x kMaxRows small structs per frame while open - trivial.
+// At most ~2x MaxRows() small structs per frame while open - trivial.
 struct PalRow {
     bool   isMeMote = false;
     Emote  e;
@@ -59,12 +60,16 @@ bool IsManuallyUnlocked(const std::string& id) {
         != g_Settings.ManuallyUnlocked.end();
 }
 
-// Zero-query rows: the frequently-used list, resolved against the catalogs.
-// The two mutexes are deliberately taken in sequence, never nested (the
-// MainPanel build does the same) - resolution goes into order-preserving
-// slots so the usage ranking survives the two passes.
-void BuildFrequentRows(std::vector<PalRow>& rows) {
-    const std::vector<FavoriteRef>& freq = usage::Frequent(kMaxRows);
+// Zero-query rows: the frequently- or recently-used list (the user's
+// PaletteEmptyQuery pick), resolved against the catalogs. The two mutexes are
+// deliberately taken in sequence, never nested (the MainPanel build does the
+// same) - resolution goes into order-preserving slots so the usage ranking
+// survives the two passes.
+void BuildUsageRows(std::vector<PalRow>& rows) {
+    const bool recent = g_Settings.PaletteEmptyQuery == EPaletteEmptyQuery::Recent;
+    const std::vector<FavoriteRef>& freq =
+        recent ? usage::RecentlyUsed((size_t)MaxRows())
+               : usage::Frequent((size_t)MaxRows());
     std::vector<PalRow> slots(freq.size());
     std::vector<char>   ok(freq.size(), 0);
     {
@@ -93,7 +98,7 @@ void BuildFrequentRows(std::vector<PalRow>& rows) {
         }
     }
     for (size_t i = 0; i < slots.size(); ++i)
-        if (ok[i] && (int)rows.size() < kMaxRows) rows.push_back(std::move(slots[i]));
+        if (ok[i] && (int)rows.size() < MaxRows()) rows.push_back(std::move(slots[i]));
 }
 
 // Query rows: everything sendable that matches (locked emotes are excluded -
@@ -106,7 +111,7 @@ void BuildQueryRows(const std::string& needle, std::vector<PalRow>& rows,
     std::vector<PalRow> pre, rest;
     auto add = [&](PalRow&& r) {
         std::vector<PalRow>& dst = r.prefix ? pre : rest;
-        if ((int)dst.size() < kMaxRows) dst.push_back(std::move(r));
+        if ((int)dst.size() < MaxRows()) dst.push_back(std::move(r));
     };
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
@@ -142,7 +147,7 @@ void BuildQueryRows(const std::string& needle, std::vector<PalRow>& rows,
     }
     rows = std::move(pre);
     for (auto& r : rest) {
-        if ((int)rows.size() >= kMaxRows) break;
+        if ((int)rows.size() >= MaxRows()) break;
         rows.push_back(std::move(r));
     }
 }
@@ -162,11 +167,13 @@ int QueryEditCb(ImGuiInputTextCallbackData* data) {
 
 void TogglePalette() {
     s_open = !s_open;
-    if (s_open) { s_takeFocus = true; s_sel = 0; }
+    if (s_open) {
+        s_takeFocus = true;
+        s_sel = 0;
+        if (g_Settings.PaletteClearOnOpen) s_query[0] = '\0';
+    }
     LOG_DEBUG("Keybind: quick-send palette %s", s_open ? "opened" : "closed");
 }
-
-bool* PaletteOpenFlag() { return &s_open; }
 
 void ResetPalette() {
     s_open      = false;
@@ -192,7 +199,7 @@ void PaletteRender() {
     // re-centers on every open; NoMove keeps the spot predictable (there's
     // no title bar, so a background-drag would move it by accident).
     ImGuiIO& io = ImGui::GetIO();
-    const float kW = 460.f;
+    const float kW = 460.f * g_Settings.PaletteScale;
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.28f),
                             ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(kW, 0.f), ImVec2(kW, FLT_MAX));
@@ -202,6 +209,29 @@ void PaletteRender() {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
     if (!ImGui::Begin(PALETTE_WND_NAME, nullptr, flags)) { ImGui::End(); return; }
+
+    // Esc closes in ONE press. Handled here, not via Nexus' CloseOnEscape:
+    // an active InputText eats the first Esc to deactivate-and-REVERT the
+    // buffer (the query visibly jumped back to its pre-edit text) and only a
+    // second Esc reached the hook. Reading the key directly and closing this
+    // frame means the revert never renders.
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+        ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape), false)) {
+        s_open = false;
+        ImGui::End();
+        return;
+    }
+
+    // Spotlight semantics: losing window focus in any way (clicking the game
+    // world, another window, alt-tab) closes the palette - it's a transient
+    // prompt, not a panel to park. s_takeFocus graces the frames where focus
+    // was just requested but may not have applied yet.
+    if (!s_takeFocus &&
+        !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+        s_open = false;
+        ImGui::End();
+        return;
+    }
 
     // Query field. EnterReturnsTrue -> send the selection. AutoSelectAll: a
     // reopen restores the last query selected, so typing replaces it.
@@ -219,8 +249,13 @@ void PaletteRender() {
     const std::string needle = ToLower(TrimWhitespace(s_query));
     std::vector<PalRow> rows;
     int total = 0;
-    if (needle.empty()) { BuildFrequentRows(rows); total = (int)rows.size(); }
-    else                  BuildQueryRows(needle, rows, total);
+    if (needle.empty()) {
+        if (g_Settings.PaletteEmptyQuery != EPaletteEmptyQuery::Off)
+            BuildUsageRows(rows);
+        total = (int)rows.size();
+    } else {
+        BuildQueryRows(needle, rows, total);
+    }
 
     if (rows.empty()) s_sel = 0;
     else if (s_sel < 0) s_sel = 0;
@@ -229,7 +264,8 @@ void PaletteRender() {
     ImGui::Spacing();
 
     int activate = -1;
-    const float iconSz = ImGui::GetFontSize() + 6.f;
+    float iconSz = (ImGui::GetFontSize() + 6.f) * g_Settings.PaletteScale;
+    if (iconSz < ImGui::GetTextLineHeight()) iconSz = ImGui::GetTextLineHeight();
     // Only let a hover steal the selection when the mouse actually moved -
     // otherwise the row under a parked cursor wins every Up/Down keypress.
     const bool mouseMoved = io.MouseDelta.x != 0.f || io.MouseDelta.y != 0.f;
@@ -245,33 +281,41 @@ void PaletteRender() {
             ImGui::Dummy(ImVec2(iconSz, iconSz));  // async load: keep the column stable
         ImGui::SameLine();
 
-        // Side label (dim, right of the name): the matched alias when the hit
-        // came only via an alias (it shows nowhere else - the confusing case),
-        // else the command. Capped so a long one can't eat the name column.
-        const std::string& name = r.isMeMote ? r.m.Name : r.e.Name;
+        // Side label (dim, right-aligned): the matched alias when the hit came
+        // only via an alias (it shows nowhere else - the confusing case), else
+        // the command. The Selectable spans the FULL row (hover/selection
+        // highlight covers the side label too); the side text is then painted
+        // on top via the draw list, and the name is clipped so it can't run
+        // underneath it.
         std::string side = !r.aliasHit.empty() ? r.aliasHit
                          : (r.isMeMote ? std::string("/me") : r.e.Command);
         side = Ellipsize(side, kW * 0.35f);
         const float sideW = ImGui::CalcTextSize(side.c_str()).x;
-        float selW = ImGui::GetContentRegionAvail().x - sideW
-                   - ImGui::GetStyle().ItemSpacing.x;
-        if (selW < 60.f) selW = 60.f;
+        const float fullW = ImGui::GetContentRegionAvail().x;
+        const float pad   = ImGui::GetStyle().ItemSpacing.x;
+        float nameW = fullW - sideW - 2.f * pad;
+        if (nameW < 40.f) nameW = 40.f;
+        std::string name = Ellipsize(r.isMeMote ? r.m.Name : r.e.Name, nameW);
+        const ImVec2 rowPos = ImGui::GetCursorScreenPos();
         // "###" id: the visible text is user-authored (could contain "##"),
-        // so keep it out of the ImGui ID.
+        // so keep it out of the ImGui ID. Width 0 = span the row.
         if (ImGui::Selectable((name + "###row").c_str(), i == s_sel, 0,
-                              ImVec2(selW, iconSz)))
+                              ImVec2(0.f, iconSz)))
             activate = i;
         if (mouseMoved && ImGui::IsItemHovered()) s_sel = i;
-        ImGui::SameLine();
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY()
-                             + (iconSz - ImGui::GetTextLineHeight()) * 0.5f);
-        ImGui::TextDisabled("%s", side.c_str());
+        ImGui::GetWindowDrawList()->AddText(
+            ImVec2(rowPos.x + fullW - sideW - pad,
+                   rowPos.y + (iconSz - ImGui::GetTextLineHeight()) * 0.5f),
+            ImGui::GetColorU32(ImGuiCol_TextDisabled), side.c_str());
         ImGui::PopID();
     }
     ImGui::PopStyleVar();
 
     if (rows.empty()) {
-        ImGui::TextDisabled("%s", L(needle.empty() ? "pal.empty_usage" : "pal.no_match"));
+        if (!needle.empty())
+            ImGui::TextDisabled("%s", L("pal.no_match"));
+        else if (g_Settings.PaletteEmptyQuery != EPaletteEmptyQuery::Off)
+            ImGui::TextDisabled("%s", L("pal.empty_usage"));  // suggestions on, none yet
     } else if (total > (int)rows.size()) {
         char buf[64];
         std::snprintf(buf, sizeof(buf), L("pal.more"), total - (int)rows.size());

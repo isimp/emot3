@@ -183,6 +183,28 @@ bool SanitizeSettings(Settings& s) {
     clampScale(s.MainIconScale,     "main.icon_scale");
     clampScale(s.QuickbarIconScale, "quickbar.icon_scale");
 
+    // Palette knobs: row cap 5..15, size 0.8..1.5 (its own range - it scales
+    // the window, not just icons), empty-query enum to a known value.
+    {
+        int c = s.PaletteMaxResults < 5 ? 5 : (s.PaletteMaxResults > 15 ? 15 : s.PaletteMaxResults);
+        if (c != s.PaletteMaxResults) {
+            LOG_WARNING("settings: palette.max_results %d out of range -> clamped to %d",
+                        s.PaletteMaxResults, c);
+            s.PaletteMaxResults = c; changed = true;
+        }
+        float fc = s.PaletteScale < 0.8f ? 0.8f : (s.PaletteScale > 1.5f ? 1.5f : s.PaletteScale);
+        if (fc != s.PaletteScale) {
+            LOG_WARNING("settings: palette.scale %.2f out of range -> clamped to %.2f",
+                        s.PaletteScale, fc);
+            s.PaletteScale = fc; changed = true;
+        }
+        int q = (int)s.PaletteEmptyQuery;
+        if (q < 0 || q > 2) {
+            LOG_WARNING("settings: palette.empty_query %d invalid -> 0 (frequent)", q);
+            s.PaletteEmptyQuery = EPaletteEmptyQuery::Frequent; changed = true;
+        }
+    }
+
     // Filter toggles are plain bools - any stored value is valid, nothing
     // to clamp. (The old EEmoteFilter clamp lived here.)
     {
@@ -409,6 +431,13 @@ bool LoadSettings(const std::string& path) {
     s.MainUnlockedCollapsed = GetBool(main, "unlocked_collapsed", s.MainUnlockedCollapsed);
     s.MainMeMotesCollapsed  = GetBool(main, "me_motes_collapsed", s.MainMeMotesCollapsed);
 
+    const json& pal = GetObj(j, "palette");
+    s.PaletteMaxResults  = GetInt  (pal, "max_results",   s.PaletteMaxResults);
+    s.PaletteEmptyQuery  = (EPaletteEmptyQuery)GetInt(pal, "empty_query",
+                                                      (int)s.PaletteEmptyQuery);
+    s.PaletteClearOnOpen = GetBool (pal, "clear_on_open", s.PaletteClearOnOpen);
+    s.PaletteScale       = GetFloat(pal, "scale",         s.PaletteScale);
+
     const json& qb = GetObj(j, "quickbar");
     s.ShowQuickbar        = GetBool(qb, "show",                  s.ShowQuickbar);
     s.QuickbarCategoryIdx = GetInt (qb, "active_category_index", s.QuickbarCategoryIdx);
@@ -584,6 +613,13 @@ std::string SerializeSettings() {
     f << "    \"core_collapsed\": "     << B(s.MainCoreCollapsed)     << ",\n";
     f << "    \"unlocked_collapsed\": " << B(s.MainUnlockedCollapsed) << ",\n";
     f << "    \"me_motes_collapsed\": " << B(s.MainMeMotesCollapsed)  << "\n";
+    f << "  },\n";
+
+    f << "  \"palette\": {\n";
+    f << "    \"max_results\": "   << s.PaletteMaxResults      << ",\n";
+    f << "    \"empty_query\": "   << (int)s.PaletteEmptyQuery << ",\n";
+    f << "    \"clear_on_open\": " << B(s.PaletteClearOnOpen)  << ",\n";
+    f << "    \"scale\": "         << s.PaletteScale           << "\n";
     f << "  },\n";
 
     // --- quickbar ------------------------------------------------------
