@@ -8,6 +8,9 @@
 #include "nexus/Nexus.h"
 #include "mumble/Mumble.h"
 #include "imgui/imgui.h"
+#ifdef EMOT3_DEVTOOLS
+#include "imgui/imgui_internal.h"  // ImGuiContext::ActiveIdWindow/NavWindow (input-health inspector)
+#endif
 
 #include "Globals.h"
 #include "CharacterState.h" // RTAPI integration + can't-emote/combat state
@@ -587,6 +590,20 @@ static DevStateRegistrar s_inputHealth(DevStateCat::GameSignals, "Input / io hea
     DevStateRow("WantTextInput",       "%s", io.WantTextInput ? "yes" : "no");
     DevStateRow("WantCaptureKeyboard", "%s", io.WantCaptureKeyboard ? "yes" : "no");
     DevStateRow("WantCaptureMouse",    "%s", io.WantCaptureMouse ? "yes" : "no");
+    // WHO actually owns the keyboard. WantTextInput only says "some text
+    // field is active" - but every Nexus addon shares ONE ImGui context, so
+    // that field can belong to a different window than the one being typed
+    // into (the chars then land there, and the visible box stays empty).
+    // ActiveId window names the owner; if it isn't the window you're typing
+    // in, the keyboard was never yours.
+    {
+        ImGuiContext* ctx = ImGui::GetCurrentContext();
+        DevStateRow("ActiveId",        "0x%08X", ctx ? ctx->ActiveId : 0u);
+        DevStateRow("ActiveId window", "%s",
+                    (ctx && ctx->ActiveIdWindow) ? ctx->ActiveIdWindow->Name : "(none)");
+        DevStateRow("nav/focus window", "%s",
+                    (ctx && ctx->NavWindow) ? ctx->NavWindow->Name : "(none)");
+    }
     auto phys = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
     auto modRow = [](const char* name, bool ioDown, bool physDown) {
         DevStateRow(name, "io %s / phys %s%s",
