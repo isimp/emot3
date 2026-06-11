@@ -131,7 +131,7 @@ void RenderGeneralOptionsTab() {
         ApplyNexusShortcut();   // register or remove based on the new state
     }
 
-    // What a left-click on the icon opens (Library / Quickbar / quick send),
+    // What a left-click on the icon opens (Library / Quickbar / palette),
     // indented under the parent toggle and gated on the icon being shown —
     // meaningless without an icon to click on. Right-click always opens the
     // context menu. Replaced the old Library/Quickbar swap checkbox when the
@@ -207,7 +207,7 @@ void RenderGeneralOptionsTab() {
                  /*defaultIsOn=*/false);
 #endif
 
-    // ===== Quick send palette =====
+    // ===== Emote palette =====
     OptionsSection(L("opt.sec.palette"));
 
     // The whole section is wrapped in a group so engagement can drive the

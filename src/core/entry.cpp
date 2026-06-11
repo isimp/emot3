@@ -32,7 +32,7 @@
 #include "RadialExports.h" // staged RadialMenus wheels (scan at load; refs union into binds)
 #include "MainPanel.h"
 #include "NexusShortcut.h"
-#include "Palette.h"      // quick-send palette (render + keybind action + Esc flag)
+#include "Palette.h"      // emote palette (render + keybind action + WndProc seam)
 #include "Quickbar.h"
 #include "Options.h"
 #include "DevTools.h"     // dev-tools framework (overlays; only in EMOT3_DEVTOOLS builds)
@@ -108,7 +108,7 @@ extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
 // unbound after this rename and need to set them again.
 const char* const KB_TOGGLE_MAIN    = "Toggle Library";
 const char* const KB_TOGGLE_QB      = "Toggle Quickbar";
-const char* const KB_TOGGLE_PALETTE = "Toggle Quick Send";
+const char* const KB_TOGGLE_PALETTE = "Toggle Palette";
 
 // Nexus calls this when the user (or another addon) triggers one of our
 // registered keybinds. We act on press only — release is ignored so
@@ -525,7 +525,7 @@ static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
         case WM_LBUTTONDOWN: case WM_RBUTTONDOWN:
         case WM_MBUTTONDOWN: case WM_XBUTTONDOWN:
-            // Click-away close for the quick-send palette: a click on the game
+            // Click-away close for the palette: a click on the game
             // world never reaches ImGui's focus bookkeeping, so the palette
             // hit-tests every mouse-down against its own window rect (cheap
             // no-op while closed). Observe-only - never consumed. The

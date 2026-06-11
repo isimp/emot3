@@ -62,7 +62,7 @@ struct EmoteDragPayload {
 
 // The emote send-variant menu items (Send normally / on target / synchronized
 // / on target synchronized) — the right-click menu body shared by the cell
-// context menus here and the quick-send palette's row menu. Call between an
+// context menus here and the palette's row menu. Call between an
 // open BeginPopup*/EndPopup. Returns true when an item fired AND the send
 // actually dispatched (gate passed) — the palette closes on that.
 bool RenderSendVariants(const Emote& e);

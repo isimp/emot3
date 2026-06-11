@@ -26,7 +26,7 @@
 #include <string>
 #include <vector>
 
-const char* const PALETTE_WND_NAME = "emot3 Quick Send##pal";
+const char* const PALETTE_WND_NAME = "emot3 Palette##pal";
 
 namespace {
 
@@ -245,7 +245,7 @@ void TogglePalette() {
         s_mouseGuard   = true;   // the opening click must not click a row
         s_enterGuard   = true;   // a wedged Enter must not auto-send (see above)
     }
-    LOG_DEBUG("Keybind: quick-send palette %s", open ? "opened" : "closed");
+    LOG_DEBUG("Keybind: palette %s", open ? "opened" : "closed");
 }
 
 bool IsPaletteOpen() { return s_open.load(std::memory_order_relaxed); }

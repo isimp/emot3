@@ -1,6 +1,6 @@
 #pragma once
 
-// Quick-send palette: a keybound, spotlight-style popup - type to filter the
+// Emote palette: a keybound, spotlight-style popup - type to filter the
 // catalog (same predicate as the Library search, data/SearchMatch.h), Enter
 // sends the selected entry. Esc closes in one press (handled internally - the
 // Nexus CloseOnEscape hook only fired after the query field ate one Esc to

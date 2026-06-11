@@ -32,7 +32,7 @@ enum class EFeedbackSink { InWindow, Alert };
 // Whether the input is auto-submitted (Enter at the end) or left for the
 // user to finish is controlled by g_Settings.SendOnClick.
 // Returns true when the send/fill was dispatched, false on a gate refusal (or
-// no APIDefs). Most call sites ignore it; the quick-send palette closes on
+// no APIDefs). Most call sites ignore it; the emote palette closes on
 // success and stays open on a refusal.
 bool SendOrFillEmote(const Emote& e, bool useTarget, bool useSync,
                      EFeedbackSink sink = EFeedbackSink::InWindow);

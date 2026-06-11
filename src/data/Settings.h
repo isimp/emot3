@@ -50,7 +50,7 @@ enum class EQbScrollIndicator { Off = 0, Hints = 1, Scrollbar = 2 };
 // custom slim scrollbar). Default Cells.
 enum class EQbScrollSnap { Off = 0, Cells = 1, Pages = 2 };
 
-// What the quick-send palette (ui/Palette.cpp) suggests while the query is
+// What the palette (ui/Palette.cpp) suggests while the query is
 // empty: the frequently-used / recently-used emotes (the usage log's two
 // views), or nothing.
 enum class EPaletteEmptyQuery { Frequent = 0, Recent = 1, Off = 2 };
@@ -128,7 +128,7 @@ struct Settings {
     // Library /me-motes section — surfaces /me-motes (data/MeMotes.h). See the
     // /me-motes Quickbar toggle further down.
     bool                          MainMeMotesCollapsed  = false;
-    // ---- Quick-send palette (ui/Palette.cpp) ----
+    // ---- Emote palette (ui/Palette.cpp) ----
     // Result-row cap (5..15). The palette never scrolls — past the cap it shows
     // "+N more" and the answer is a longer query.
     int                           PaletteMaxResults    = 9;
@@ -288,7 +288,7 @@ struct Settings {
     // screen). On by default — it's the main entry point for the addon.
     bool                          ShowNexusShortcut    = true;
     // What a left-click on the icon opens — Library (default), Quickbar, or
-    // the quick-send palette. Replaced the old swap bool (legacy
+    // the emote palette. Replaced the old swap bool (legacy
     // "left_click_opens_quickbar" still maps on load). Right-click always
     // opens the context menu.
     EShortcutClick                ShortcutClickAction = EShortcutClick::Library;
