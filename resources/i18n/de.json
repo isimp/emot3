@@ -111,6 +111,7 @@
   "cells.blocked_typing": "Senden nicht möglich, solange ein Textfeld geöffnet ist.",
   "cells.blocked_moving": "Senden nicht möglich, während du dich bewegst.",
   "cells.blocked_combat": "Im Kampf ausgegraut.",
+  "cells.blocked_competitive": "In Wettkampfmodi deaktiviert (PvP/WvW).",
   "cells.send_normal": "Normal senden",
   "cells.send_target": "Auf Ziel senden",
   "cells.send_sync": "Synchronisiert senden",
