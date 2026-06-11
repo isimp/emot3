@@ -31,6 +31,17 @@ void TogglePalette();
 // open/close label on it.
 bool IsPaletteOpen();
 
+// Options-preview hooks, called per frame by OptionsGeneral's palette section
+// (interacting with those settings necessarily un-focuses the palette, which
+// would otherwise auto-close it - "hard to preview"):
+//  - GhostPulse: while a geometry control (rows / size / position) is hovered
+//    or dragged, a CLOSED palette renders as a non-interactive ghost at the
+//    configured spot, so the sliders preview live without opening it.
+//  - KeepAlivePulse: while the section is engaged, an OPEN palette's
+//    focus-loss / click-away auto-close stands down, so tuning it live works.
+void PaletteGhostPulse();
+void PaletteKeepAlivePulse();
+
 // WndProc seam (entry.cpp): observe-only mouse-down hook for click-away
 // closing. Clicks on the game world never reach ImGui's focus bookkeeping
 // under Nexus, so the palette hit-tests them itself against its last

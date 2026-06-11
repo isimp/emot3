@@ -41,6 +41,12 @@ int  s_sel       = 0;       // selected row index
 // re-pin of the query field would kill it. Render-thread only.
 bool s_ctxOpen   = false;
 
+// Options-preview pulses (see Palette.h). Frame stamps with a 1-frame
+// tolerance: the Options panel renders in a different callback phase than
+// the palette, so same-frame vs next-frame ordering must both count.
+int s_ghostFrame     = -1000;
+int s_keepAliveFrame = -1000;
+
 // ---- click-away detection (WndProc-fed) -------------------------------------
 // Clicking the game world must close the palette, but those clicks are
 // invisible to ImGui's focus bookkeeping under Nexus (and with the query field
@@ -225,6 +231,9 @@ void TogglePalette() {
 
 bool IsPaletteOpen() { return s_open.load(std::memory_order_relaxed); }
 
+void PaletteGhostPulse()     { s_ghostFrame     = ImGui::GetFrameCount(); }
+void PaletteKeepAlivePulse() { s_keepAliveFrame = ImGui::GetFrameCount(); }
+
 void PaletteNoteMouseDown(int xClient, int yClient) {
     if (!s_open.load(std::memory_order_relaxed)) return;
     if (!s_rectValid.load(std::memory_order_acquire)) return;  // opening click
@@ -237,21 +246,33 @@ void PaletteNoteMouseDown(int xClient, int yClient) {
 }
 
 void ResetPalette() {
-    s_open         = false;
-    s_takeFocus    = false;
-    s_sel          = 0;
-    s_query[0]     = '\0';
-    s_ctxOpen      = false;
-    s_closeRequest = false;
-    s_rectValid    = false;
+    s_open           = false;
+    s_takeFocus      = false;
+    s_sel            = 0;
+    s_query[0]       = '\0';
+    s_ctxOpen        = false;
+    s_closeRequest   = false;
+    s_rectValid      = false;
+    s_ghostFrame     = -1000;
+    s_keepAliveFrame = -1000;
 }
 
 void PaletteRender() {
+    // Options-preview state (see PaletteGhostPulse/KeepAlivePulse): while the
+    // user is engaged with the palette's option section, a CLOSED palette
+    // renders as a non-interactive ghost (geometry sliders preview live) and
+    // an OPEN one's auto-close stands down (clicking the slider is by
+    // definition a click outside the palette).
+    const int  fc        = ImGui::GetFrameCount();
+    const bool keepAlive = (fc - s_keepAliveFrame) <= 1;
+    const bool ghost     = !s_open.load() && (fc - s_ghostFrame) <= 1;
+
     // A WndProc click-away request (see PaletteNoteMouseDown) closes before
     // anything renders this frame. Always drained; discarded while a context
-    // menu is open (its clicks land outside the palette rect by design).
-    if (s_closeRequest.exchange(false) && !s_ctxOpen) s_open = false;
-    if (!s_open) return;
+    // menu is open (its clicks land outside the palette rect by design) or
+    // the options section is engaged.
+    if (s_closeRequest.exchange(false) && !s_ctxOpen && !keepAlive) s_open = false;
+    if (!s_open && !ghost) return;
     // Same per-frame suppressions as the Library, but a transient popup just
     // CLOSES on them (loading screen / character select / fullscreen map)
     // instead of waiting them out.
@@ -273,11 +294,12 @@ void PaletteRender() {
                                    io.DisplaySize.y * g_Settings.PaletteYPos),
                             ImGuiCond_Always, ImVec2(0.5f, 0.0f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(kW, 0.f), ImVec2(kW, FLT_MAX));
-    if (s_takeFocus) ImGui::SetNextWindowFocus();
-    const ImGuiWindowFlags flags =
+    if (s_takeFocus && !ghost) ImGui::SetNextWindowFocus();
+    ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
+    if (ghost) flags |= ImGuiWindowFlags_NoInputs;  // pure preview - never steals anything
     if (!ImGui::Begin(PALETTE_WND_NAME, nullptr, flags)) { ImGui::End(); return; }
 
     // Always on top: a focused window is normally frontmost anyway, but this
@@ -311,8 +333,10 @@ void PaletteRender() {
     //    masking io-side click checks too) - covered by the WndProc hit-test
     //    (PaletteNoteMouseDown), honored at the top of this function.
     // s_takeFocus graces the opening frame (focus not yet applied); an open
-    // context menu counts as "ours" even though it's a separate ImGui window.
-    if (!s_takeFocus && !s_ctxOpen &&
+    // context menu counts as "ours" even though it's a separate ImGui window;
+    // keepAlive covers tuning from the options section (focus is over there).
+    // A ghost has no focus to lose.
+    if (!ghost && !s_takeFocus && !s_ctxOpen && !keepAlive &&
         !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
         s_open = false;
         ImGui::End();
@@ -320,8 +344,9 @@ void PaletteRender() {
     }
 
     // Publish this frame's window rect for the WndProc click-away hit-test
-    // (client-space == ImGui screen-space under Nexus).
-    {
+    // (client-space == ImGui screen-space under Nexus). Open palette only -
+    // a ghost must not arm the hit-test.
+    if (!ghost) {
         const ImVec2 wp = ImGui::GetWindowPos();
         const ImVec2 ws = ImGui::GetWindowSize();
         s_rectX.store((int)wp.x, std::memory_order_relaxed);
@@ -350,9 +375,11 @@ void PaletteRender() {
     // NEVER re-arm while a mouse button is down: on the click frame the
     // field releases ActiveId, and a queued refocus would steal it back from
     // the mid-press row Selectable - whose press-on-RELEASE then never fires
-    // (that exact sequence ate left-click sends).
-    if (!s_takeFocus && !s_ctxOpen && !ImGui::IsAnyItemActive() &&
-        !ImGui::IsAnyMouseDown())
+    // (that exact sequence ate left-click sends). Also stands down for a
+    // ghost and while the options section is engaged (a re-pin would yank
+    // keyboard focus away from the controls being tuned).
+    if (!ghost && !keepAlive && !s_takeFocus && !s_ctxOpen &&
+        !ImGui::IsAnyItemActive() && !ImGui::IsAnyMouseDown())
         ImGui::SetKeyboardFocusHere(-1);
 
     // Build this frame's rows. Filtering starts from the FIRST character,

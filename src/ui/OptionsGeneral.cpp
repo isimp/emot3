@@ -9,6 +9,7 @@
 #include "Layout.h"          // ToggleButton
 #include "Usage.h"           // usage::Reset (the Reset-usage button)
 #include "NexusShortcut.h"   // ApplyNexusShortcut on settings changes
+#include "Palette.h"         // PaletteGhostPulse / KeepAlivePulse (live preview while tuning)
 #include "Logging.h"         // LOG_TRACE (setting-change audit trail)
 #include "UpdateCheck.h"     // Plus update banner (PlusUpdateAvailable / OpenReleasesPage; stubs otherwise)
 #include "Profiling.h"       // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
@@ -209,6 +210,13 @@ void RenderGeneralOptionsTab() {
     // ===== Quick send palette =====
     OptionsSection(L("opt.sec.palette"));
 
+    // The whole section is wrapped in a group so engagement can drive the
+    // palette's preview pulses below: geometry controls show a live ghost,
+    // and an open palette survives being tuned from over here (interacting
+    // with this window is otherwise exactly the focus loss that closes it).
+    ImGui::BeginGroup();
+    bool palGeo = false;  // a geometry control (rows / size / position) is engaged
+
     // Discoverability: the palette only exists behind its Nexus keybind
     // (deliberately settings-free to open), so the section leads with where
     // to assign one.
@@ -223,6 +231,7 @@ void RenderGeneralOptionsTab() {
         RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered()) TooltipText("opt.pal.max_results_tip");
+    palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
 
     // Size factor (window width + row height; same slider idiom as the icon
     // scales: save on release, right-click resets).
@@ -238,6 +247,7 @@ void RenderGeneralOptionsTab() {
         RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered()) TooltipText("opt.pal.scale_tip");
+    palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
 
     // Vertical anchor (fraction of screen height; horizontal stays centered).
     // The palette positions itself every frame, so dragging this with the
@@ -254,6 +264,7 @@ void RenderGeneralOptionsTab() {
         RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered()) TooltipText("opt.pal.y_pos_tip");
+    palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
 
     // Empty-query suggestions: Frequently / Recently used (the usage log's two
     // views, same labels as the Quickbar categories) or nothing.
@@ -281,6 +292,13 @@ void RenderGeneralOptionsTab() {
 
     CheckboxWithSaveAndTooltip("opt.pal.clear_on_open", &g_Settings.PaletteClearOnOpen,
                                /*defaultIsOn=*/true);
+
+    ImGui::EndGroup();
+    // Engagement -> preview pulses (see Palette.h). IsItemActive keeps a
+    // slider drag counted even when the mouse leaves the section rect.
+    const bool palSectionHovered = ImGui::IsItemHovered();
+    if (palGeo) PaletteGhostPulse();
+    if (palGeo || palSectionHovered) PaletteKeepAlivePulse();
 
     // ===== Icons =====
     OptionsSection(L("opt.sec.icons"));
