@@ -233,8 +233,32 @@ int QueryEditCb(ImGuiInputTextCallbackData* data) {
 
 }  // namespace
 
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+// Runtime state inspector section: the palette's transient state machine -
+// the open flag, the guard set, and the preview pulses. The guards are the
+// subtlest part of the feature (each shipped because of a real in-game bug),
+// so a "why didn't my click/Enter register?" report is answerable by reading
+// this live instead of re-deriving the state from behavior.
+static DevStateRegistrar s_palState(DevStateCat::Content, "Palette", [] {
+    DevStateRow("open",         "%s", s_open.load(std::memory_order_relaxed) ? "yes" : "no");
+    DevStateRow("query",        "\"%s\"", s_query);
+    DevStateRow("selected row", "%d", s_sel);
+    DevStateRow("context menu", "%s", s_ctxOpen ? "open" : "closed");
+    DevStateRow("mouse guard",  "%s", s_mouseGuard ? "ARMED (open-click swallow)" : "clear");
+    DevStateRow("enter guard",  "%s", s_enterGuard ? "ARMED (Enter not yet seen up)" : "clear");
+    DevStateRow("click-away rect", "%s%s",
+                s_rectValid.load(std::memory_order_relaxed) ? "armed" : "not armed",
+                s_closeRequest.load(std::memory_order_relaxed) ? " | close PENDING" : "");
+    const int fc = ImGui::GetFrameCount();
+    DevStateRow("options preview", "ghost %s / keep-alive %s",
+                (fc - s_ghostFrame)     <= 1 ? "PULSING" : "idle",
+                (fc - s_keepAliveFrame) <= 1 ? "PULSING" : "idle");
+});
+#endif  // EMOT3_DEVTOOLS
+
 void TogglePalette() {
-    const bool open = !s_open.load();
+    const bool open = !s_open.load(std::memory_order_relaxed);
     s_open = open;
     if (open) {
         s_takeFocus = true;
