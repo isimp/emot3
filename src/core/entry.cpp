@@ -36,6 +36,7 @@
 #include "Quickbar.h"
 #include "Options.h"
 #include "DevTools.h"     // dev-tools framework (overlays; only in EMOT3_DEVTOOLS builds)
+#include "DevStateInspector.h"  // "Input / io health" section below (dev builds only)
 
 // ---- DLL lifecycle ----------------------------------------------------
 
@@ -483,12 +484,30 @@ void AddonUnload() {
 
 // ---- WndProc hook -----------------------------------------------------
 
+#ifdef EMOT3_DEVTOOLS
+// Input-health probes for the inspector section below: observe-only counts of
+// the keyboard messages that reach OUR WndProc callback. Splits a "typing
+// shows nothing in a search box" report into "messages never reached the
+// addon chain at our position" vs "reached us but ImGui dropped them" (Nexus
+// dispatches addon callbacks BEFORE ImGui's input pump, first 0 wins - see
+// nexus-addon-dev.md "WndProc").
+static std::atomic<uint32_t> g_DbgCharMsgs{0};
+static std::atomic<uint32_t> g_DbgKeyDownMsgs{0};
+#endif
+
 static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     // First reason we hook WndProc: capture the game's HWND on the first
     // message so EmoteAction can target it without polling FindWindowA. (The
     // old keystroke-swallow during emote sends was replaced by the click-time
     // refusal in SendOrFillEmote - see EmoteAction.cpp's ShouldSkipEmoteSend.)
     if (!g_GameHwnd) g_GameHwnd = hWnd;
+
+#ifdef EMOT3_DEVTOOLS
+    if (uMsg == WM_CHAR)
+        g_DbgCharMsgs.fetch_add(1, std::memory_order_relaxed);
+    else if (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN)
+        g_DbgKeyDownMsgs.fetch_add(1, std::memory_order_relaxed);
+#endif
 
     // Observe held printable keys for the send / grey-while-moving gate, so it
     // doesn't poll the keyboard every frame (EmoteAction's held-key counter).
@@ -549,3 +568,44 @@ static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 #endif
     return uMsg;
 }
+
+#ifdef EMOT3_DEVTOOLS
+// "Typing into a search box randomly shows nothing" has two distinct causes
+// with identical symptoms; this section splits them live:
+//  (1) STARVED: something earlier in the dispatch chain (an addon callback /
+//      RawInput) consumed the WM_CHARs before ImGui's input pump - then the
+//      "io char queue" stays 0 while you type.
+//  (2) DROPPED: the chars reach ImGui (queue > 0) but InputText silently
+//      ignores them because a MODIFIER is stuck in io - ImGui discards
+//      character input while Ctrl (without Alt) or Super reads held, and a
+//      modifier whose key-UP was delivered elsewhere (alt-tab, Win+D, an
+//      overlay hotkey) stays "held" in io until it's next pressed in-game.
+//      The phys column reads the real key state, so a persistent
+//      "io DOWN / phys up" row is the smoking gun.
+static DevStateRegistrar s_inputHealth(DevStateCat::GameSignals, "Input / io health", [] {
+    ImGuiIO& io = ImGui::GetIO();
+    DevStateRow("WantTextInput",       "%s", io.WantTextInput ? "yes" : "no");
+    DevStateRow("WantCaptureKeyboard", "%s", io.WantCaptureKeyboard ? "yes" : "no");
+    DevStateRow("WantCaptureMouse",    "%s", io.WantCaptureMouse ? "yes" : "no");
+    auto phys = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
+    auto modRow = [](const char* name, bool ioDown, bool physDown) {
+        DevStateRow(name, "io %s / phys %s%s",
+                    ioDown ? "DOWN" : "up", physDown ? "DOWN" : "up",
+                    (ioDown && !physDown) ? "  <-- STUCK" : "");
+    };
+    modRow("Ctrl",  io.KeyCtrl,  phys(VK_CONTROL));
+    modRow("Shift", io.KeyShift, phys(VK_SHIFT));
+    modRow("Alt",   io.KeyAlt,   phys(VK_MENU));
+    modRow("Super", io.KeySuper, phys(VK_LWIN) || phys(VK_RWIN));
+    // This frame's queued characters (EndFrame clears the queue, so a
+    // mid-frame read sees the live batch) + a sticky last-seen so a brief
+    // burst is still catchable a moment later.
+    static int s_lastQ = 0, s_lastQFrame = -1;
+    const int q = io.InputQueueCharacters.Size;
+    if (q > 0) { s_lastQ = q; s_lastQFrame = ImGui::GetFrameCount(); }
+    DevStateRow("io char queue", "%d now (last %d, %d frames ago)", q, s_lastQ,
+                s_lastQFrame < 0 ? -1 : ImGui::GetFrameCount() - s_lastQFrame);
+    DevStateRow("WM_CHAR @ our WndProc",    "%u", g_DbgCharMsgs.load(std::memory_order_relaxed));
+    DevStateRow("WM_KEYDOWN @ our WndProc", "%u", g_DbgKeyDownMsgs.load(std::memory_order_relaxed));
+});
+#endif  // EMOT3_DEVTOOLS
