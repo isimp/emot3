@@ -129,8 +129,9 @@ struct Settings {
     int                           PaletteMaxResults    = 9;
     // What an empty query suggests (see EPaletteEmptyQuery above).
     EPaletteEmptyQuery            PaletteEmptyQuery    = EPaletteEmptyQuery::Frequent;
-    // Open with the query cleared instead of the last query preselected.
-    bool                          PaletteClearOnOpen   = false;
+    // Open with the query cleared (default) instead of the last query
+    // preselected.
+    bool                          PaletteClearOnOpen   = true;
     // Palette size factor — window width + row/icon height (text stays the
     // shared-atlas size). 0.8..1.5.
     float                         PaletteScale         = 1.0f;

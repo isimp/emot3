@@ -222,10 +222,18 @@ void RenderGeneralOptionsTab() {
         LOG_TRACE("setting palette.empty_query = %d", pq);
         RequestSave(SaveKind::Settings);
     }
-    if (ImGui::IsItemHovered()) TooltipText("opt.pal.empty_query_tip");
+    if (ImGui::IsItemHovered()) {
+        static const TooltipOption kPalEmptyOpts[] = {
+            { "qb.cat_frequent",      "opt.pal.empty_frequent.desc", true  },
+            { "qb.cat_recently_used", "opt.pal.empty_recent.desc",   false },
+            { "tt.off",               "opt.pal.empty_off.desc",      false },
+        };
+        TooltipOptions("opt.pal.empty_query_tip", kPalEmptyOpts,
+                       IM_ARRAYSIZE(kPalEmptyOpts));
+    }
 
     CheckboxWithSaveAndTooltip("opt.pal.clear_on_open", &g_Settings.PaletteClearOnOpen,
-                               /*defaultIsOn=*/false);
+                               /*defaultIsOn=*/true);
 
     // ===== Icons =====
     OptionsSection(L("opt.sec.icons"));
