@@ -65,7 +65,7 @@ struct ImDrawList;  // fwd-decl: the overlay draws into a caller-supplied list
 // Which of our windows is currently rendering. Set by SetActiveFeedbackSurface
 // so ShowFeedback can tag a message's origin, and passed to DrawFeedbackOverlay
 // so each window only draws messages that originated in it.
-enum class FeedbackSurface { None, MainPanel, Quickbar };
+enum class FeedbackSurface { None, MainPanel, Quickbar, Palette };
 
 // Call once at the top of each window's render (QuickbarRender / AddonRender).
 void SetActiveFeedbackSurface(FeedbackSurface surface);

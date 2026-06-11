@@ -60,6 +60,12 @@
   "common.clear": "Löschen",
   "common.none": "Keine",
 
+  "pal.hint": "Tippen, um Emotes zu suchen...",
+  "pal.empty_usage": "Sende Emotes, dann erscheinen hier deine meistgenutzten.",
+  "pal.no_match": "Kein Treffer.",
+  "pal.more": "+%d weitere - tippe weiter, um einzugrenzen.",
+  "pal.footer": "Enter sendet - Esc schließt.",
+
   "mp.icon_scale_tooltip": "Symbolgröße. Rechtsklick setzt auf Standard zurück (1.00x).",
   "mp.quickbar": "Quickbar",
   "mp.quickbar_tooltip": "Öffnet oder schließt die Quickbar - ein separates Fenster, das jeweils eine Kategorie zeigt.",

@@ -32,6 +32,7 @@
 #include "RadialExports.h" // staged RadialMenus wheels (scan at load; refs union into binds)
 #include "MainPanel.h"
 #include "NexusShortcut.h"
+#include "Palette.h"      // quick-send palette (render + keybind action + Esc flag)
 #include "Quickbar.h"
 #include "Options.h"
 #include "DevTools.h"     // dev-tools framework (overlays; only in EMOT3_DEVTOOLS builds)
@@ -105,8 +106,9 @@ extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
 // are also the persistent storage key for each binding — anyone who
 // had a key assigned under the old identifiers will see those slots
 // unbound after this rename and need to set them again.
-const char* const KB_TOGGLE_MAIN = "Toggle Library";
-const char* const KB_TOGGLE_QB   = "Toggle Quickbar";
+const char* const KB_TOGGLE_MAIN    = "Toggle Library";
+const char* const KB_TOGGLE_QB      = "Toggle Quickbar";
+const char* const KB_TOGGLE_PALETTE = "Toggle Quick Send";
 
 // Nexus calls this when the user (or another addon) triggers one of our
 // registered keybinds. We act on press only — release is ignored so
@@ -123,6 +125,8 @@ static void OnKeybind(const char* identifier, bool isRelease) {
         LOG_DEBUG("Keybind: Quickbar %s",
                   g_Settings.ShowQuickbar ? "shown" : "hidden");
         // Window visibility is navigation state — rides along (no eager save).
+    } else if (std::strcmp(identifier, KB_TOGGLE_PALETTE) == 0) {
+        TogglePalette();  // transient popup - nothing persisted at all
     }
 }
 
@@ -394,6 +398,7 @@ void AddonLoad(AddonAPI* aApi) {
 
     APIDefs->Renderer.Register(ERenderType_Render,        AddonRender);
     APIDefs->Renderer.Register(ERenderType_Render,        QuickbarRender);
+    APIDefs->Renderer.Register(ERenderType_Render,        PaletteRender);
     APIDefs->Renderer.Register(ERenderType_OptionsRender, AddonOptions);
 #ifdef EMOT3_DEVTOOLS
     // Dev tools: build the registry once, then one render callback draws every
@@ -405,15 +410,18 @@ void AddonLoad(AddonAPI* aApi) {
     APIDefs->WndProc.Register(WndProcCallback);
 
     // ESC closes the main window like other Nexus windows. The QB hook is
-    // gated on the setting (default off — it's a HUD, not modal). The
-    // window-name string must exactly match what we pass to ImGui::Begin.
+    // gated on the setting (default off — it's a HUD, not modal). The palette
+    // is modal-shaped, so ESC-close is unconditional there. The window-name
+    // strings must exactly match what we pass to ImGui::Begin.
     APIDefs->UI.RegisterCloseOnEscape("emot3 Library##wnd", &g_Settings.ShowWindow);
+    APIDefs->UI.RegisterCloseOnEscape(PALETTE_WND_NAME, PaletteOpenFlag());
     ApplyQbCloseOnEsc();
 
     // Keybinds registered with empty default — users assign their own via
     // the Nexus keybind UI without risking conflicts.
-    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_MAIN, OnKeybind, "");
-    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_QB,   OnKeybind, "");
+    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_MAIN,    OnKeybind, "");
+    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_QB,      OnKeybind, "");
+    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_PALETTE, OnKeybind, "");
 
     // Per-emote InputBinds for entries opted into a keybind (catalogs loaded
     // above). Diff-based, so re-entrant-safe on a Nexus reload.
@@ -437,13 +445,17 @@ void AddonUnload() {
     RemoveNexusShortcut();
     APIDefs->InputBinds.Deregister(KB_TOGGLE_MAIN);
     APIDefs->InputBinds.Deregister(KB_TOGGLE_QB);
+    APIDefs->InputBinds.Deregister(KB_TOGGLE_PALETTE);
     DeregisterAllEmoteBinds();  // drop every per-emote InputBind we registered
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Library##wnd");
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Quickbar##qb");
+    APIDefs->UI.DeregisterCloseOnEscape(PALETTE_WND_NAME);
     APIDefs->WndProc.Deregister(WndProcCallback);
     APIDefs->Renderer.Deregister(AddonRender);
     APIDefs->Renderer.Deregister(QuickbarRender);
+    APIDefs->Renderer.Deregister(PaletteRender);
     APIDefs->Renderer.Deregister(AddonOptions);
+    ResetPalette();  // a Nexus reload must not resurrect a stale palette
     ShutdownCharacterState();  // unsubscribe the RTAPI addon load/unload events
     ShutdownUnlockScan();      // unsubscribe the Hoard & Seek response event
 #ifdef EMOT3_DEVTOOLS

@@ -63,6 +63,12 @@
   "common.clear": "Clear",
   "common.none": "None",
 
+  "pal.hint": "Type to search emotes...",
+  "pal.empty_usage": "Send emotes and your frequently used ones will appear here.",
+  "pal.no_match": "No match.",
+  "pal.more": "+%d more - keep typing to narrow it down.",
+  "pal.footer": "Enter sends - Esc closes.",
+
   "mp.icon_scale_tooltip": "Icon scale. Right-click to reset to default (1.00x).",
   "mp.quickbar": "Quickbar",
   "mp.quickbar_tooltip": "Open or close the Quickbar - a separate window showing one category at a time.",
