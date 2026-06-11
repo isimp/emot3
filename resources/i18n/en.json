@@ -75,7 +75,7 @@
   "opt.pal.scale": "Size",
   "opt.pal.scale_tip": "Palette size (window width and row height). Right-click to reset to default (1.00x).",
   "opt.pal.y_pos": "Vertical position",
-  "opt.pal.y_pos_tip": "How far down the screen the palette opens (fraction of the screen height). Moves an open palette live. Right-click to reset to default (0.28).",
+  "opt.pal.y_pos_tip": "How far down the screen the palette opens (fraction of the screen height). Moves an open palette live. Right-click to reset to default (0.20).",
   "opt.pal.empty_query": "Suggest while empty:",
   "opt.pal.empty_query_tip": "What the palette suggests before you type anything.",
   "opt.pal.empty_frequent.desc": "the emotes you send most often, based on your usage history.",

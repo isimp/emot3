@@ -253,13 +253,13 @@ void RenderGeneralOptionsTab() {
     // The palette positions itself every frame, so dragging this with the
     // palette open moves it live.
     ImGui::SetNextItemWidth(200.f);
-    ImGui::SliderFloat(L("opt.pal.y_pos"), &g_Settings.PaletteYPos, 0.05f, 0.85f, "%.2f");
+    ImGui::SliderFloat(L("opt.pal.y_pos"), &g_Settings.PaletteYPos, 0.f, 0.8f, "%.2f");
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         LOG_TRACE("setting palette.y_pos = %.2f", g_Settings.PaletteYPos);
         RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-        g_Settings.PaletteYPos = 0.28f;
+        g_Settings.PaletteYPos = 0.2f;
         LOG_TRACE("setting palette.y_pos = %.2f (reset)", g_Settings.PaletteYPos);
         RequestSave(SaveKind::Settings);
     }

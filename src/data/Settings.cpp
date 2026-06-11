@@ -203,7 +203,7 @@ bool SanitizeSettings(Settings& s) {
             LOG_WARNING("settings: palette.empty_query %d invalid -> 0 (frequent)", q);
             s.PaletteEmptyQuery = EPaletteEmptyQuery::Frequent; changed = true;
         }
-        float fy = s.PaletteYPos < 0.05f ? 0.05f : (s.PaletteYPos > 0.85f ? 0.85f : s.PaletteYPos);
+        float fy = s.PaletteYPos < 0.f ? 0.f : (s.PaletteYPos > 0.8f ? 0.8f : s.PaletteYPos);
         if (fy != s.PaletteYPos) {
             LOG_WARNING("settings: palette.y_pos %.2f out of range -> clamped to %.2f",
                         s.PaletteYPos, fy);

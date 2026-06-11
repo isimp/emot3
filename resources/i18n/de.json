@@ -72,7 +72,7 @@
   "opt.pal.scale": "Größe",
   "opt.pal.scale_tip": "Größe der Palette (Fensterbreite und Zeilenhöhe). Rechtsklick setzt auf Standard zurück (1.00x).",
   "opt.pal.y_pos": "Vertikale Position",
-  "opt.pal.y_pos_tip": "Wie weit unten auf dem Bildschirm die Palette öffnet (Anteil der Bildschirmhöhe). Verschiebt eine offene Palette live. Rechtsklick setzt auf Standard zurück (0.28).",
+  "opt.pal.y_pos_tip": "Wie weit unten auf dem Bildschirm die Palette öffnet (Anteil der Bildschirmhöhe). Verschiebt eine offene Palette live. Rechtsklick setzt auf Standard zurück (0.20).",
   "opt.pal.empty_query": "Vorschläge bei leerer Suche:",
   "opt.pal.empty_query_tip": "Was die Palette vorschlägt, bevor du etwas tippst.",
   "opt.pal.empty_frequent.desc": "die Emotes, die du am häufigsten sendest, basierend auf deinem Nutzungsverlauf.",
