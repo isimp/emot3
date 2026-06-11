@@ -17,6 +17,7 @@
 #include "imgui/imgui.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cfloat>
 #include <cstdio>
 #include <mutex>
@@ -28,10 +29,24 @@ const char* const PALETTE_WND_NAME = "emot3 Quick Send##pal";
 namespace {
 
 // ---- transient state (all reset by ResetPalette) ---------------------------
-bool s_open      = false;
+std::atomic<bool> s_open{false};  // atomic: read by the WndProc thread below
 bool s_takeFocus = false;   // one-shot: focus the query field (open / after Enter-refusal)
 char s_query[64] = {};      // same cap as the Library search box
 int  s_sel       = 0;       // selected row index
+
+// ---- click-away detection (WndProc-fed) -------------------------------------
+// Clicking the game world must close the palette, but those clicks are
+// invisible to ImGui's focus bookkeeping under Nexus (and with the query field
+// active, io.WantCaptureMouse stays true regardless of where the mouse is, so
+// an io-side check can't see them either). entry.cpp's WndProc forwards every
+// mouse-down to PaletteNoteMouseDown (observe-only, never consumed); the point
+// is hit-tested against the window rect the render thread published last
+// frame. Outside = close request, honored at the top of the next render.
+// s_rectValid stays false until the first frame after opening, so a
+// mouse-button-bound open click can't land on a stale rect and re-close it.
+std::atomic<bool> s_closeRequest{false};
+std::atomic<bool> s_rectValid{false};
+std::atomic<int>  s_rectX{0}, s_rectY{0}, s_rectW{0}, s_rectH{0};
 
 // Display cap (g_Settings.PaletteMaxResults, clamped 5..15 at load). No
 // scrolling on purpose: past the cap the palette answer is "type more", not
@@ -166,23 +181,42 @@ int QueryEditCb(ImGuiInputTextCallbackData* data) {
 }  // namespace
 
 void TogglePalette() {
-    s_open = !s_open;
-    if (s_open) {
+    const bool open = !s_open.load();
+    s_open = open;
+    if (open) {
         s_takeFocus = true;
         s_sel = 0;
         if (g_Settings.PaletteClearOnOpen) s_query[0] = '\0';
+        s_closeRequest = false;  // a stale request must not close the new open
+        s_rectValid    = false;  // no rect until the first frame renders
     }
-    LOG_DEBUG("Keybind: quick-send palette %s", s_open ? "opened" : "closed");
+    LOG_DEBUG("Keybind: quick-send palette %s", open ? "opened" : "closed");
+}
+
+void PaletteNoteMouseDown(int xClient, int yClient) {
+    if (!s_open.load(std::memory_order_relaxed)) return;
+    if (!s_rectValid.load(std::memory_order_acquire)) return;  // opening click
+    const int x = s_rectX.load(std::memory_order_relaxed);
+    const int y = s_rectY.load(std::memory_order_relaxed);
+    const int w = s_rectW.load(std::memory_order_relaxed);
+    const int h = s_rectH.load(std::memory_order_relaxed);
+    if (xClient < x || yClient < y || xClient >= x + w || yClient >= y + h)
+        s_closeRequest.store(true, std::memory_order_release);
 }
 
 void ResetPalette() {
-    s_open      = false;
-    s_takeFocus = false;
-    s_sel       = 0;
-    s_query[0]  = '\0';
+    s_open         = false;
+    s_takeFocus    = false;
+    s_sel          = 0;
+    s_query[0]     = '\0';
+    s_closeRequest = false;
+    s_rectValid    = false;
 }
 
 void PaletteRender() {
+    // A WndProc click-away request (see PaletteNoteMouseDown) closes before
+    // anything renders this frame.
+    if (s_closeRequest.exchange(false)) s_open = false;
     if (!s_open) return;
     // Same per-frame suppressions as the Library, but a transient popup just
     // CLOSES on them (loading screen / character select / fullscreen map)
@@ -225,23 +259,29 @@ void PaletteRender() {
     // Spotlight semantics: the palette is a transient prompt, not a panel to
     // park - clicking away or losing focus closes it. Two complementary
     // signals, because one alone misses a case under Nexus:
-    //  - focus moved to ANOTHER ImGui window (or alt-tab): the focus check.
-    //  - a click on the GAME WORLD: that does NOT reliably clear ImGui's
-    //    focused window here, so treat any mouse-down ImGui doesn't capture
-    //    (= it landed on the game, not on any addon UI) as "clicked away".
-    // s_takeFocus graces the opening frame (focus not yet applied; a
-    // mouse-bound open click must not immediately re-close it).
-    if (!s_takeFocus) {
-        const bool clickedAway =
-            (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
-             ImGui::IsMouseClicked(ImGuiMouseButton_Right)) &&
-            !io.WantCaptureMouse;
-        if (clickedAway ||
-            !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
-            s_open = false;
-            ImGui::End();
-            return;
-        }
+    //  - focus moved to ANOTHER ImGui window (or alt-tab): this focus check.
+    //  - a click on the GAME WORLD: invisible to ImGui's focus bookkeeping
+    //    (and io.WantCaptureMouse stays true while the query field is active,
+    //    masking io-side click checks too) - covered by the WndProc hit-test
+    //    (PaletteNoteMouseDown), honored at the top of this function.
+    // s_takeFocus graces the opening frame (focus not yet applied).
+    if (!s_takeFocus &&
+        !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+        s_open = false;
+        ImGui::End();
+        return;
+    }
+
+    // Publish this frame's window rect for the WndProc click-away hit-test
+    // (client-space == ImGui screen-space under Nexus).
+    {
+        const ImVec2 wp = ImGui::GetWindowPos();
+        const ImVec2 ws = ImGui::GetWindowSize();
+        s_rectX.store((int)wp.x, std::memory_order_relaxed);
+        s_rectY.store((int)wp.y, std::memory_order_relaxed);
+        s_rectW.store((int)ws.x, std::memory_order_relaxed);
+        s_rectH.store((int)ws.y, std::memory_order_relaxed);
+        s_rectValid.store(true, std::memory_order_release);
     }
 
     // Query field. EnterReturnsTrue -> send the selection. AutoSelectAll: a

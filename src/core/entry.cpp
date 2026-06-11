@@ -523,6 +523,16 @@ static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             if (LOWORD(wParam) == WA_INACTIVE) ClearHeldKeys();
             else                               ReseedHeldKeys();
             break;
+        case WM_LBUTTONDOWN: case WM_RBUTTONDOWN:
+        case WM_MBUTTONDOWN: case WM_XBUTTONDOWN:
+            // Click-away close for the quick-send palette: a click on the game
+            // world never reaches ImGui's focus bookkeeping, so the palette
+            // hit-tests every mouse-down against its own window rect (cheap
+            // no-op while closed). Observe-only - never consumed. The
+            // (short) casts are GET_X/Y_LPARAM (client coords sign-extend).
+            PaletteNoteMouseDown((int)(short)LOWORD(lParam),
+                                 (int)(short)HIWORD(lParam));
+            break;
         default: break;
     }
 

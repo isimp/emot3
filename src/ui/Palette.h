@@ -25,6 +25,14 @@ void PaletteRender();
 // Keybind action: open (focusing the search field) or close.
 void TogglePalette();
 
+// WndProc seam (entry.cpp): observe-only mouse-down hook for click-away
+// closing. Clicks on the game world never reach ImGui's focus bookkeeping
+// under Nexus, so the palette hit-tests them itself against its last
+// published window rect. xClient/yClient are client-space coords from the
+// message lParam. Safe to call from the window thread (atomics inside);
+// cheap no-op while the palette is closed.
+void PaletteNoteMouseDown(int xClient, int yClient);
+
 // Reset transient state (open flag + query). Called from AddonUnload so a
 // Nexus reload doesn't resurrect a stale palette (load-time state must be
 // re-initialisable - see the registry-reset note in entry.cpp).
