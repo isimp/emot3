@@ -435,6 +435,7 @@ void PaletteRender() {
     if (s_mouseGuard && !ImGui::IsAnyMouseDown()) s_mouseGuard = false;
 
     int activate = -1;
+    ImVec2 selAnchor(0.f, 0.f);  // selected row's top-center (keyboard-send feedback anchor)
     float iconSz = (ImGui::GetFontSize() + 6.f) * g_Settings.PaletteScale;
     if (iconSz < ImGui::GetTextLineHeight()) iconSz = ImGui::GetTextLineHeight();
     // Only let a hover steal the selection when the mouse actually moved -
@@ -454,6 +455,7 @@ void PaletteRender() {
         const float  rowW   = ImGui::GetContentRegionAvail().x;
         const ImVec2 rowMin = ImGui::GetCursorScreenPos();
         const ImVec2 rowMax = ImVec2(rowMin.x + rowW, rowMin.y + iconSz);
+        if (i == s_sel) selAnchor = ImVec2(rowMin.x + rowW * 0.5f, rowMin.y);
         if (ImGui::InvisibleButton("row", ImVec2(rowW, iconSz)) && !s_mouseGuard)
             activate = i;   // fires on click-release, like a Quickbar icon
         const bool rowHovered = !s_ctxOpen && ImGui::IsItemHovered();
@@ -558,6 +560,12 @@ void PaletteRender() {
     }
     if (activate >= 0 && activate < (int)rows.size()) {
         const PalRow& r = rows[activate];
+        // A keyboard-driven send has no meaningful cursor position - anchor a
+        // refusal pill at the SELECTED ROW (where the eye is) instead of
+        // wherever the mouse happens to be parked. Click sends keep the
+        // default cursor anchor. One-shot + frame-scoped (see Feedback.h).
+        if (enter)
+            SetNextFeedbackAnchor(selAnchor.x, selAnchor.y);
         // Left-click Library semantics: targetable honors the user's
         // send-on-target setting, never sync'd. The full gate applies; on a
         // refusal the palette stays open (the overlay names the reason) and
