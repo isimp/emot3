@@ -223,6 +223,8 @@ void TogglePalette() {
     LOG_DEBUG("Keybind: quick-send palette %s", open ? "opened" : "closed");
 }
 
+bool IsPaletteOpen() { return s_open.load(std::memory_order_relaxed); }
+
 void PaletteNoteMouseDown(int xClient, int yClient) {
     if (!s_open.load(std::memory_order_relaxed)) return;
     if (!s_rectValid.load(std::memory_order_acquire)) return;  // opening click

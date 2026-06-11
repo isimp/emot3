@@ -135,6 +135,7 @@
   "cells.blocked_moving": "Can't send while moving.",
   "cells.blocked_combat": "Greyed out in combat.",
   "cells.blocked_competitive": "Disabled in competitive modes (PvP/WvW).",
+  "cells.blocked_palette": "The quick send palette is open.",
   "cells.send_normal": "Send normally",
   "cells.send_target": "Send on target",
   "cells.send_sync": "Send synchronized",
@@ -621,6 +622,8 @@
   "opt.em.aliases_tooltip": "Alternate slash commands for search and unlock sync. Not sent - the Command above always fires.",
   "opt.em.clear_icon_tooltip": "Clear custom path. Status drops back to the next available source (folder override, bundle, fallback).",
 
+  "shortcut.pal_open": "Open quick send",
+  "shortcut.pal_close": "Close quick send",
   "shortcut.presets": "Quickbar preset",
   "shortcut.update_available": "Update to emot3 (Plus) %s",
   "shortcut.update_copy_tooltip": "Copies the download link to your clipboard.",

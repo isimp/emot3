@@ -5,6 +5,7 @@
 #include "Logging.h"
 #include "Settings.h"
 #include "SaveScheduler.h" // RequestSave (debounced settings persist)
+#include "Palette.h"        // TogglePalette / IsPaletteOpen (quick-send menu item)
 #include "QuickbarPresets.h"
 #include "Options.h"        // ApplyQbCloseOnEsc (preset apply re-registers it)
 #include "UpdateCheck.h"    // Plus update hint (PlusUpdateAvailable / OpenReleasesPage; stubs otherwise)
@@ -81,6 +82,18 @@ void ShortcutContextMenu() {
         LOG_DEBUG("Shortcut menu > Quickbar %s",
                   g_Settings.ShowQuickbar ? "shown" : "hidden");
         // Ride-along nav state (see Library above) — no eager write.
+    }
+    // Quick-send palette — same open/close label flip as the two windows
+    // above, but a transient popup: nothing persisted. The selecting click
+    // can't immediately click-away-close it (the palette's hit rect is only
+    // armed after its first rendered frame).
+    const char* palLabel = IsPaletteOpen()
+        ? L("shortcut.pal_close")
+        : L("shortcut.pal_open");
+    if (ImGui::MenuItem(palLabel)) {
+        TogglePalette();
+        LOG_DEBUG("Shortcut menu > quick send %s",
+                  IsPaletteOpen() ? "opened" : "closed");
     }
 
     // Quickbar presets submenu — apply one by name. The active preset (the one

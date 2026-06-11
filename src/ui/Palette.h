@@ -25,6 +25,12 @@ void PaletteRender();
 // Keybind action: open (focusing the search field) or close.
 void TogglePalette();
 
+// True while the palette window is open. Other surfaces step back from it:
+// the Quickbar feeds this into its unusable presentation (grey / hide /
+// untouched per the user's setting), and the Nexus shortcut menu flips its
+// open/close label on it.
+bool IsPaletteOpen();
+
 // WndProc seam (entry.cpp): observe-only mouse-down hook for click-away
 // closing. Clicks on the game world never reach ImGui's focus bookkeeping
 // under Nexus, so the palette hit-tests them itself against its last

@@ -132,6 +132,7 @@
   "cells.blocked_moving": "Senden nicht möglich, während du dich bewegst.",
   "cells.blocked_combat": "Im Kampf ausgegraut.",
   "cells.blocked_competitive": "In Wettkampfmodi deaktiviert (PvP/WvW).",
+  "cells.blocked_palette": "Die Schnellsende-Palette ist geöffnet.",
   "cells.send_normal": "Normal senden",
   "cells.send_target": "Auf Ziel senden",
   "cells.send_sync": "Synchronisiert senden",
@@ -620,6 +621,8 @@
   "opt.em.aliases_tooltip": "Alternative Slash-Befehle für Suche und Freischaltsynchronisation. Werden nicht gesendet - der Befehl oben wird immer verwendet.",
   "opt.em.clear_icon_tooltip": "Eigenen Pfad löschen. Der Status fällt auf die nächste verfügbare Quelle zurück (Ordner-Override, Bündel, Ersatz).",
 
+  "shortcut.pal_open": "Schnellsenden öffnen",
+  "shortcut.pal_close": "Schnellsenden schließen",
   "shortcut.presets": "Quickbar-Profil",
   "shortcut.update_available": "Auf emot3 (Plus) %s aktualisieren",
   "shortcut.update_copy_tooltip": "Kopiert den Download-Link in die Zwischenablage.",
