@@ -22,11 +22,16 @@
 void RenderPaletteOptionsTab() {
     PROFILE_SCOPE("opt.palette");  // dev perf overlay
 
-    // Everything is wrapped in one group so hovering ANYWHERE in the tab
-    // keeps an open palette alive (and the geometry controls additionally
-    // show the ghost). Declared up top because the toggle below is part of
-    // the preview surface too.
-    ImGui::BeginGroup();
+    // While this tab is visible, an open palette NEVER auto-closes - the tab
+    // is the management/preview surface, so the keep-alive pulses
+    // unconditionally every frame the tab renders. (It originally pulsed on
+    // the group's IsItemHovered, but ImGui reports hover as FALSE while any
+    // item is ACTIVE - so the pulse died mid-click on the very toggle button
+    // that closes the palette, the keep-alive expired during the press, and
+    // the focus-close raced the click: visible flicker. Closing from here is
+    // the button / Esc / keybind, never a click-away.)
+    PaletteKeepAlivePulse();
+
     bool palGeo = false;  // a geometry control (rows / size / position) is engaged
 
     // Primary visibility toggle at the top - same affordance + styling as
@@ -136,11 +141,7 @@ void RenderPaletteOptionsTab() {
     CheckboxWithSaveAndTooltip("opt.pal.clear_on_open", &g_Settings.PaletteClearOnOpen,
                                /*defaultIsOn=*/true);
 
-    ImGui::EndGroup();
-    // Engagement -> preview pulses (see Palette.h). IsItemActive keeps a
-    // slider drag counted even when the mouse leaves the tab rect; the group
-    // hover keeps an OPEN palette alive while the user is anywhere in here.
-    const bool tabHovered = ImGui::IsItemHovered();
+    // Geometry engagement -> ghost preview (see Palette.h). IsItemActive
+    // keeps a slider drag counted even when the mouse leaves the tab rect.
     if (palGeo) PaletteGhostPulse();
-    if (palGeo || tabHovered) PaletteKeepAlivePulse();
 }
