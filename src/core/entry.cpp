@@ -8,7 +8,6 @@
 #include "nexus/Nexus.h"
 #include "mumble/Mumble.h"
 #include "imgui/imgui.h"
-#include "imgui/imgui_internal.h"  // ImGuiContext::ActiveIdWindow (input rescue + input-health inspector)
 
 #include "Globals.h"
 #include "CharacterState.h" // RTAPI integration + can't-emote/combat state
@@ -37,7 +36,6 @@
 #include "Quickbar.h"
 #include "Options.h"
 #include "DevTools.h"     // dev-tools framework (overlays; only in EMOT3_DEVTOOLS builds)
-#include "DevStateInspector.h"  // "Input / io health" section below (dev builds only)
 
 // ---- DLL lifecycle ----------------------------------------------------
 
@@ -49,9 +47,6 @@ HMODULE         hSelf    = nullptr;
 void AddonLoad(AddonAPI* aApi);
 void AddonUnload();
 static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-static void InputRescueReplay();  // stranded-keystroke rescue (defined below)
-static void InputRescueStash();
-static void InputRescueReset();
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) hSelf = hModule;
@@ -401,13 +396,6 @@ void AddonLoad(AddonAPI* aApi) {
     // the render callbacks so the first frame's PumpSaves has a live writer.
     StartSaveWriter();
 
-    // Stranded-keystroke rescue (see InputRescueStash above): replay FIRST so
-    // re-queued characters precede this frame's widgets; stash LAST (below,
-    // after the dev overlays) so every emot3 InputText has run before it
-    // judges leftovers. Reset here - a Nexus reload must not replay stale
-    // characters from the previous session.
-    InputRescueReset();
-    APIDefs->Renderer.Register(ERenderType_Render,        InputRescueReplay);
     APIDefs->Renderer.Register(ERenderType_Render,        AddonRender);
     APIDefs->Renderer.Register(ERenderType_Render,        QuickbarRender);
     APIDefs->Renderer.Register(ERenderType_Render,        PaletteRender);
@@ -419,7 +407,6 @@ void AddonLoad(AddonAPI* aApi) {
     RegisterBuiltinDevTools();
     APIDefs->Renderer.Register(ERenderType_Render,        RenderDevToolOverlays);
 #endif
-    APIDefs->Renderer.Register(ERenderType_Render,        InputRescueStash);
     APIDefs->WndProc.Register(WndProcCallback);
 
     // ESC closes the main window like other Nexus windows. The QB hook is
@@ -464,11 +451,9 @@ void AddonUnload() {
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Library##wnd");
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Quickbar##qb");
     APIDefs->WndProc.Deregister(WndProcCallback);
-    APIDefs->Renderer.Deregister(InputRescueReplay);
     APIDefs->Renderer.Deregister(AddonRender);
     APIDefs->Renderer.Deregister(QuickbarRender);
     APIDefs->Renderer.Deregister(PaletteRender);
-    APIDefs->Renderer.Deregister(InputRescueStash);
     APIDefs->Renderer.Deregister(AddonOptions);
     ResetPalette();  // a Nexus reload must not resurrect a stale palette
     ShutdownCharacterState();  // unsubscribe the RTAPI addon load/unload events
@@ -498,85 +483,12 @@ void AddonUnload() {
 
 // ---- WndProc hook -----------------------------------------------------
 
-#ifdef EMOT3_DEVTOOLS
-// Input-health probes for the inspector section below: observe-only counts of
-// the keyboard messages that reach OUR WndProc callback. Splits a "typing
-// shows nothing in a search box" report into "messages never reached the
-// addon chain at our position" vs "reached us but ImGui dropped them" (Nexus
-// dispatches addon callbacks BEFORE ImGui's input pump, first 0 wins - see
-// nexus-addon-dev.md "WndProc").
-static std::atomic<uint32_t> g_DbgCharMsgs{0};
-static std::atomic<uint32_t> g_DbgKeyDownMsgs{0};
-#endif
-
-// ---- Stranded-keystroke rescue ------------------------------------------
-// Root cause of the "search boxes randomly swallow keys" bug, established
-// with the Input/io-health inspector: the game pumps WndProc on its WINDOW
-// thread while ImGui's frame runs on the RENDER thread, so a WM_CHAR can be
-// queued into io MID-frame - after the active InputText already consumed-and-
-// cleared the queue for that frame. Nothing consumes the late arrival, and
-// ImGui's EndFrame() then wipes the queue: the keystroke is silently lost.
-// ActiveId / focus / WantTextInput / modifiers all read healthy throughout
-// (nothing is wrong with them - it's pure arrival timing), which is exactly
-// the observed signature: io char queue briefly shows N>0 late in a frame,
-// N keystrokes vanish, everything else unchanged.
-//
-// Rescue: a render callback registered LAST stashes whatever still sits in
-// the queue - but only when the keyboard owner is one of OUR windows (name
-// "emot3 *"), because by then every emot3 InputText has provably run and
-// anything left is doomed; fields owned by other windows (another addon, the
-// Nexus options panel, the game) may legitimately consume later or next
-// frame, so their strays are not ours to touch. A second callback registered
-// FIRST re-queues the stash ahead of new input at the top of the next frame.
-// Net effect: one frame of latency instead of a lost keystroke.
-//
-// Render-thread only (both callbacks); bounded stash; cleared on load so a
-// Nexus reload can't replay stale characters.
-static ImWchar  s_rescueChars[16];
-static int      s_rescueCount = 0;
-static uint32_t g_RescuedTotal = 0;  // lifetime count (inspector row)
-
-static void InputRescueReset() { s_rescueCount = 0; }
-
-static void InputRescueReplay() {
-    if (s_rescueCount == 0) return;
-    ImGuiIO& io = ImGui::GetIO();
-    // Prepend: the stash is chronologically OLDER than anything that arrived
-    // between frames and is already sitting in the queue.
-    for (int i = 0; i < s_rescueCount; ++i)
-        io.InputQueueCharacters.insert(io.InputQueueCharacters.Data + i,
-                                       s_rescueChars[i]);
-    s_rescueCount = 0;
-}
-
-static void InputRescueStash() {
-    ImGuiContext* ctx = ImGui::GetCurrentContext();
-    if (!ctx) return;
-    ImGuiIO& io = ImGui::GetIO();
-    if (io.InputQueueCharacters.Size == 0) return;
-    if (!ctx->ActiveIdWindow) return;
-    if (std::strncmp(ctx->ActiveIdWindow->Name, "emot3", 5) != 0) return;
-    int n = 0;
-    for (int i = 0; i < io.InputQueueCharacters.Size && s_rescueCount < 16; ++i, ++n)
-        s_rescueChars[s_rescueCount++] = io.InputQueueCharacters[i];
-    io.InputQueueCharacters.resize(0);  // EndFrame would wipe them anyway
-    g_RescuedTotal += (uint32_t)n;
-    LOG_DEBUG("input rescue: %d stranded char(s) re-queued for next frame", n);
-}
-
 static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     // First reason we hook WndProc: capture the game's HWND on the first
     // message so EmoteAction can target it without polling FindWindowA. (The
     // old keystroke-swallow during emote sends was replaced by the click-time
     // refusal in SendOrFillEmote - see EmoteAction.cpp's ShouldSkipEmoteSend.)
     if (!g_GameHwnd) g_GameHwnd = hWnd;
-
-#ifdef EMOT3_DEVTOOLS
-    if (uMsg == WM_CHAR)
-        g_DbgCharMsgs.fetch_add(1, std::memory_order_relaxed);
-    else if (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN)
-        g_DbgKeyDownMsgs.fetch_add(1, std::memory_order_relaxed);
-#endif
 
     // Observe held printable keys for the send / grey-while-moving gate, so it
     // doesn't poll the keyboard every frame (EmoteAction's held-key counter).
@@ -637,61 +549,3 @@ static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 #endif
     return uMsg;
 }
-
-#ifdef EMOT3_DEVTOOLS
-// "Typing into a search box randomly shows nothing" has two distinct causes
-// with identical symptoms; this section splits them live:
-//  (1) STARVED: something earlier in the dispatch chain (an addon callback /
-//      RawInput) consumed the WM_CHARs before ImGui's input pump - then the
-//      "io char queue" stays 0 while you type.
-//  (2) DROPPED: the chars reach ImGui (queue > 0) but InputText silently
-//      ignores them because a MODIFIER is stuck in io - ImGui discards
-//      character input while Ctrl (without Alt) or Super reads held, and a
-//      modifier whose key-UP was delivered elsewhere (alt-tab, Win+D, an
-//      overlay hotkey) stays "held" in io until it's next pressed in-game.
-//      The phys column reads the real key state, so a persistent
-//      "io DOWN / phys up" row is the smoking gun.
-static DevStateRegistrar s_inputHealth(DevStateCat::GameSignals, "Input / io health", [] {
-    ImGuiIO& io = ImGui::GetIO();
-    DevStateRow("WantTextInput",       "%s", io.WantTextInput ? "yes" : "no");
-    DevStateRow("WantCaptureKeyboard", "%s", io.WantCaptureKeyboard ? "yes" : "no");
-    DevStateRow("WantCaptureMouse",    "%s", io.WantCaptureMouse ? "yes" : "no");
-    // WHO actually owns the keyboard. WantTextInput only says "some text
-    // field is active" - but every Nexus addon shares ONE ImGui context, so
-    // that field can belong to a different window than the one being typed
-    // into (the chars then land there, and the visible box stays empty).
-    // ActiveId window names the owner; if it isn't the window you're typing
-    // in, the keyboard was never yours.
-    {
-        ImGuiContext* ctx = ImGui::GetCurrentContext();
-        DevStateRow("ActiveId",        "0x%08X", ctx ? ctx->ActiveId : 0u);
-        DevStateRow("ActiveId window", "%s",
-                    (ctx && ctx->ActiveIdWindow) ? ctx->ActiveIdWindow->Name : "(none)");
-        DevStateRow("nav/focus window", "%s",
-                    (ctx && ctx->NavWindow) ? ctx->NavWindow->Name : "(none)");
-    }
-    auto phys = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
-    auto modRow = [](const char* name, bool ioDown, bool physDown) {
-        DevStateRow(name, "io %s / phys %s%s",
-                    ioDown ? "DOWN" : "up", physDown ? "DOWN" : "up",
-                    (ioDown && !physDown) ? "  <-- STUCK" : "");
-    };
-    modRow("Ctrl",  io.KeyCtrl,  phys(VK_CONTROL));
-    modRow("Shift", io.KeyShift, phys(VK_SHIFT));
-    modRow("Alt",   io.KeyAlt,   phys(VK_MENU));
-    modRow("Super", io.KeySuper, phys(VK_LWIN) || phys(VK_RWIN));
-    // This frame's queued characters (EndFrame clears the queue, so a
-    // mid-frame read sees the live batch) + a sticky last-seen so a brief
-    // burst is still catchable a moment later.
-    static int s_lastQ = 0, s_lastQFrame = -1;
-    const int q = io.InputQueueCharacters.Size;
-    if (q > 0) { s_lastQ = q; s_lastQFrame = ImGui::GetFrameCount(); }
-    DevStateRow("io char queue", "%d now (last %d, %d frames ago)", q, s_lastQ,
-                s_lastQFrame < 0 ? -1 : ImGui::GetFrameCount() - s_lastQFrame);
-    DevStateRow("WM_CHAR @ our WndProc",    "%u", g_DbgCharMsgs.load(std::memory_order_relaxed));
-    DevStateRow("WM_KEYDOWN @ our WndProc", "%u", g_DbgKeyDownMsgs.load(std::memory_order_relaxed));
-    // Each tick here is a keystroke that would have been silently lost to the
-    // mid-frame-arrival race (see InputRescueStash) and was saved instead.
-    DevStateRow("rescued chars (lifetime)", "%u", g_RescuedTotal);
-});
-#endif  // EMOT3_DEVTOOLS
