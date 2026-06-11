@@ -379,56 +379,68 @@ void PaletteRender() {
     // otherwise the row under a parked cursor wins every Up/Down keypress.
     const bool mouseMoved = io.MouseDelta.x != 0.f || io.MouseDelta.y != 0.f;
     bool anyCtx = false;  // a row context menu is open THIS frame
-    ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.f, 0.5f));
     for (int i = 0; i < (int)rows.size(); ++i) {
         const PalRow& r = rows[i];
         ImGui::PushID(i);
 
-        const ImVec2 rowStart = ImGui::GetCursorScreenPos();  // icon included
-        Texture* t = r.isMeMote ? EnsureMeMoteTexture(r.m) : EnsureEmoteTexture(r.e);
-        if (t && t->Resource)
-            ImGui::Image((ImTextureID)t->Resource, ImVec2(iconSz, iconSz));
-        else
-            ImGui::Dummy(ImVec2(iconSz, iconSz));  // async load: keep the column stable
-        ImGui::SameLine();
-
-        // Side label (dim, right-aligned): the matched alias when the hit came
-        // only via an alias (it shows nowhere else - the confusing case), else
-        // the command. The Selectable spans the FULL row (hover/selection
-        // highlight covers the side label too); the side text is then painted
-        // on top via the draw list, and the name is clipped so it can't run
-        // underneath it.
-        std::string side = !r.aliasHit.empty() ? r.aliasHit
-                         : (r.isMeMote ? std::string("/me") : r.e.Command);
-        side = Ellipsize(side, kW * 0.35f);
-        const float sideW = ImGui::CalcTextSize(side.c_str()).x;
-        const float fullW = ImGui::GetContentRegionAvail().x;
-        const float pad   = ImGui::GetStyle().ItemSpacing.x;
-        float nameW = fullW - sideW - 2.f * pad;
-        if (nameW < 40.f) nameW = 40.f;
-        std::string name = Ellipsize(r.isMeMote ? r.m.Name : r.e.Name, nameW);
-        const ImVec2 rowPos = ImGui::GetCursorScreenPos();
-        // "###" id: the visible text is user-authored (could contain "##"),
-        // so keep it out of the ImGui ID. Width 0 = span the row.
-        if (ImGui::Selectable((name + "###row").c_str(), i == s_sel, 0,
-                              ImVec2(0.f, iconSz)))
-            activate = i;
-        ImGui::GetWindowDrawList()->AddText(
-            ImVec2(rowPos.x + fullW - sideW - pad,
-                   rowPos.y + (iconSz - ImGui::GetTextLineHeight()) * 0.5f),
-            ImGui::GetColorU32(ImGuiCol_TextDisabled), side.c_str());
-
-        // Hover + right-click work on the WHOLE row (icon included) - an
-        // item-hover test would miss the icon column. Both suspended while a
-        // context menu is open (the popup can overlap rows underneath).
-        const bool rowHovered = !s_ctxOpen && ImGui::IsMouseHoveringRect(
-            rowStart,
-            ImVec2(rowPos.x + fullW, rowStart.y + iconSz));
+        // ONE InvisibleButton spans the whole row (icon included); highlight,
+        // icon, name, and side label are all drawn manually on top. One item =
+        // one consistent hit-area for click, hover, and highlight. (The
+        // earlier Selectable-next-to-Image split left the icon column outside
+        // both the highlight and ImGui's hover state, so the hover and
+        // selected cues could visibly disagree about the same row.)
+        const float  rowW   = ImGui::GetContentRegionAvail().x;
+        const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+        const ImVec2 rowMax = ImVec2(rowMin.x + rowW, rowMin.y + iconSz);
+        if (ImGui::InvisibleButton("row", ImVec2(rowW, iconSz)))
+            activate = i;   // fires on click-release, like a Quickbar icon
+        const bool rowHovered = !s_ctxOpen && ImGui::IsItemHovered();
         if (mouseMoved && rowHovered) s_sel = i;
         if (rowHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             s_sel = i;
             ImGui::OpenPopup("palctx");
         }
+
+        // Highlight: ONE rect per row with explicit precedence - pressed
+        // (HeaderActive) > selected (Header; what Enter sends - follows the
+        // mouse while it moves, the arrows otherwise) > parked-mouse hover on
+        // a non-selected row (HeaderHovered, dimmer). A row never shows two
+        // stacked/disagreeing states.
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImU32 bg = 0;
+        if (ImGui::IsItemActive() && rowHovered)
+            bg = ImGui::GetColorU32(ImGuiCol_HeaderActive);
+        else if (i == s_sel)
+            bg = ImGui::GetColorU32(ImGuiCol_Header);
+        else if (rowHovered)
+            bg = ImGui::GetColorU32(ImGuiCol_HeaderHovered);
+        if (bg)
+            dl->AddRectFilled(rowMin, rowMax, bg,
+                              ImGui::GetStyle().FrameRounding);
+
+        // Icon (lazy cache; blank slot while the async load is in flight).
+        Texture* t = r.isMeMote ? EnsureMeMoteTexture(r.m) : EnsureEmoteTexture(r.e);
+        if (t && t->Resource)
+            dl->AddImage((ImTextureID)t->Resource, rowMin,
+                         ImVec2(rowMin.x + iconSz, rowMin.y + iconSz));
+
+        // Name + dim side label (the matched alias when the hit came only via
+        // an alias - it shows nowhere else, the confusing case - otherwise the
+        // command). The name is clipped so it can't run under the
+        // right-aligned side text.
+        const float pad = ImGui::GetStyle().ItemSpacing.x;
+        std::string side = !r.aliasHit.empty() ? r.aliasHit
+                         : (r.isMeMote ? std::string("/me") : r.e.Command);
+        side = Ellipsize(side, kW * 0.35f);
+        const float sideW = ImGui::CalcTextSize(side.c_str()).x;
+        float nameW = rowW - iconSz - sideW - 3.f * pad;
+        if (nameW < 40.f) nameW = 40.f;
+        const std::string name = Ellipsize(r.isMeMote ? r.m.Name : r.e.Name, nameW);
+        const float textY = rowMin.y + (iconSz - ImGui::GetTextLineHeight()) * 0.5f;
+        dl->AddText(ImVec2(rowMin.x + iconSz + pad, textY),
+                    ImGui::GetColorU32(ImGuiCol_Text), name.c_str());
+        dl->AddText(ImVec2(rowMax.x - sideW - pad, textY),
+                    ImGui::GetColorU32(ImGuiCol_TextDisabled), side.c_str());
 
         // Send-alternatives menu: the Library's shared variant body (target /
         // sync for emotes; You / All for /me-motes - Default stays the Enter /
@@ -448,7 +460,6 @@ void PaletteRender() {
         }
         ImGui::PopID();
     }
-    ImGui::PopStyleVar();
 
     // Context-menu lifecycle: when the menu closes (Esc, outside click, item
     // click), re-arm the query field so the palette is type-ready again - and
