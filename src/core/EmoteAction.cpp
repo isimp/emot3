@@ -9,6 +9,7 @@
 #include "SendSuppress.h"   // keyboard swallow during emote injection (stub in base builds)
 #include "PlusSettings.h"   // g_PlusSettings (whole header empty in base builds)
 #include "CharacterState.h" // CurrentEmoteBlock / EmoteBlockKey (mounted + RTAPI states)
+#include "AirborneDetect.h" // cs_constants::MoveSpeed (the calibrated moving threshold)
 #include "Feedback.h"       // ShowFeedback - in-window refusal line (replaces SendAlert)
 #include "Usage.h"          // usage::Record - feeds the Recently/Frequently used categories
 #include "Profiling.h"      // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "send" path
@@ -16,6 +17,7 @@
 #include <Windows.h>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <string>
 #include <thread>
 
@@ -177,6 +179,19 @@ SendBusy CurrentSendBusy(bool checkHeldKeys, bool ignoreTextbox) {
     //    checkHeldKeys is false ("send while moving" mode handles it via the swallow).
     if (checkHeldKeys && (AnyPrintableKeyHeld() || MovementActive()))
         return SendBusy::KeysHeld;
+
+    // Swallow mode (checkHeldKeys = false): held keys and autorun are both
+    // HANDLED there (the swallow consumes key-repeats and the chat focus
+    // pauses key-movement; the injection worker cancels autorun) - but
+    // MOUSE-walk is not interruptible: chat focus doesn't pause it and we
+    // can't release the user's physical mouse buttons, so the game would
+    // silently eat the emote. Refuse/grey it like refuse mode does. Cost:
+    // two GetAsyncKeyState calls, short-circuited behind "actually moving"
+    // (so steady frames never pay them - see the no-per-frame-polling rule).
+    if (!checkHeldKeys && MovementActive() &&
+        (GetAsyncKeyState(VK_LBUTTON) & 0x8000) &&
+        (GetAsyncKeyState(VK_RBUTTON) & 0x8000))
+        return SendBusy::KeysHeld;
     return SendBusy::None;
 }
 
@@ -236,6 +251,56 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
         // no time, and SendToGameOnly bypasses our WndProc so our own injected
         // chars are never consumed.
         SendSuppressScope suppress(swallowMode);
+
+        // ---- Autorun interruption (swallow mode only) -----------------------
+        // Autorun is a game-side TOGGLE, not a held key: the swallow can't stop
+        // it and the chat focus doesn't pause it, so the character keeps moving
+        // and the game eats the emote. Cancel it via the remap-proof game bind
+        // (same Press/Release pattern as UiChatCommand below). The toggle state
+        // is unreadable, so NEVER toggle blindly - only when the movement can't
+        // be explained any other way: horizontally moving with no printable key
+        // held and no mouse-walk (both mouse buttons would mean the toggle
+        // turns autorun ON instead - that case is refused at the gate). Not
+        // re-enabled afterwards: resuming movement would cancel the emote.
+        // Only reachable in +plus (swallowMode is constant false in base);
+        // without swallow mode a moving send never gets this far (gate).
+        if (swallowMode && MumbleLink && !g_Unloading.load() &&
+            APIDefs->GameBinds.IsBound(EGameBinds_MoveAutoRun)) {
+            // Horizontal speed over a 50 ms window, read straight from the
+            // MumbleLink shared memory (worker thread - the render-thread
+            // detector isn't safely readable from here). Y is up; X/Z ground.
+            auto horizSpeed = []() -> float {
+                if (!MumbleLink) return 0.f;
+                const float x0 = MumbleLink->AvatarPosition.X;
+                const float z0 = MumbleLink->AvatarPosition.Z;
+                Sleep(50);
+                const float dx = MumbleLink->AvatarPosition.X - x0;
+                const float dz = MumbleLink->AvatarPosition.Z - z0;
+                return std::sqrt(dx * dx + dz * dz) / 0.05f;
+            };
+            const bool keysHeld  = AnyPrintableKeyHeld();
+            const bool mouseWalk = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) &&
+                                   (GetAsyncKeyState(VK_RBUTTON) & 0x8000);
+            if (!keysHeld && !mouseWalk) {
+                const float v0 = horizSpeed();
+                if (v0 > cs_constants::MoveSpeed()) {
+                    LOG_DEBUG("autorun-cancel: %.2f m/s with no keys/buttons -> MoveAutoRun toggle", v0);
+                    APIDefs->GameBinds.Press(EGameBinds_MoveAutoRun);
+                    Sleep(60);
+                    if (g_Unloading.load()) return;
+                    APIDefs->GameBinds.Release(EGameBinds_MoveAutoRun);
+                    // Let the character settle before chat opens (each probe
+                    // sleeps 50 ms; <=400 ms total, proceed on timeout - the
+                    // emote may still land if the game stops us in time).
+                    float v = v0;
+                    for (int i = 0; i < 8 && v > cs_constants::MoveSpeed(); ++i) {
+                        if (g_Unloading.load()) return;
+                        v = horizSpeed();
+                    }
+                    LOG_DEBUG("autorun-cancel: settled at %.2f m/s", v);
+                }
+            }
+        }
 
         // Bail before each APIDefs deref if Nexus is tearing the addon
         // down (g_Unloading set in AddonUnload). Without this, a worker
@@ -315,6 +380,36 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
             Sleep(10);
             if (g_Unloading.load()) return;
             APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYUP, VK_RETURN, upLP);
+        }
+
+        // ---- Resume still-held keys (swallow mode + auto-send only) ---------
+        // Opening the chat box made the game drop its movement-key state, and
+        // after it closes the game IGNORES the held key's auto-repeats (repeat
+        // bit set) - so a key held through the send needed a physical re-press
+        // to resume moving. Synthesize that re-press: one FRESH WM_KEYDOWN
+        // (repeat bit clear) per key still physically down. The game maps
+        // VK -> bind itself, so remaps are honored; the user's real release
+        // arrives later and passes through (key-ups are never consumed). VK
+        // scan is one-shot per send, not per frame (same class as
+        // ReseedHeldKeys). Space is deliberately excluded (a synthetic press
+        // would JUMP); a non-movement key held through an emote send getting
+        // one re-press is the documented accepted risk. Skipped in fill mode
+        // (!autoSend): chat stays open there and the keys would type into it.
+        if (swallowMode && autoSend) {
+            Sleep(30);  // let the Enter dispatch settle / the chat box close
+            if (g_Unloading.load()) return;
+            int n = 0;
+            auto repress = [&](int vk) {
+                if (!(GetAsyncKeyState(vk) & 0x8000)) return;
+                const DWORD  sc   = MapVirtualKey((UINT)vk, MAPVK_VK_TO_VSC);
+                const LPARAM down = (LPARAM)((sc << 16) | 1);  // bit 30 clear = fresh press
+                APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYDOWN, (WPARAM)vk, down);
+                ++n;
+            };
+            for (int vk = 'A'; vk <= 'Z'; ++vk) repress(vk);
+            for (int vk = '0'; vk <= '9'; ++vk) repress(vk);
+            repress(VK_UP); repress(VK_DOWN); repress(VK_LEFT); repress(VK_RIGHT);
+            if (n) LOG_DEBUG("post-send: re-pressed %d still-held key(s)", n);
         }
     }).detach();
 }
