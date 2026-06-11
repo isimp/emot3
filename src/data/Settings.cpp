@@ -209,6 +209,12 @@ bool SanitizeSettings(Settings& s) {
                         s.PaletteYPos, fy);
             s.PaletteYPos = fy; changed = true;
         }
+        float fx = s.PaletteXPos < 0.1f ? 0.1f : (s.PaletteXPos > 0.9f ? 0.9f : s.PaletteXPos);
+        if (fx != s.PaletteXPos) {
+            LOG_WARNING("settings: palette.x_pos %.2f out of range -> clamped to %.2f",
+                        s.PaletteXPos, fx);
+            s.PaletteXPos = fx; changed = true;
+        }
         int sc = (int)s.ShortcutClickAction;
         if (sc < 0 || sc > 2) {
             LOG_WARNING("settings: shortcut.left_click_opens %d invalid -> 0 (library)", sc);
@@ -449,6 +455,7 @@ bool LoadSettings(const std::string& path) {
     s.PaletteClearOnOpen = GetBool (pal, "clear_on_open", s.PaletteClearOnOpen);
     s.PaletteScale       = GetFloat(pal, "scale",         s.PaletteScale);
     s.PaletteYPos        = GetFloat(pal, "y_pos",         s.PaletteYPos);
+    s.PaletteXPos        = GetFloat(pal, "x_pos",         s.PaletteXPos);
 
     const json& qb = GetObj(j, "quickbar");
     s.ShowQuickbar        = GetBool(qb, "show",                  s.ShowQuickbar);
@@ -639,7 +646,8 @@ std::string SerializeSettings() {
     f << "    \"empty_query\": "   << (int)s.PaletteEmptyQuery << ",\n";
     f << "    \"clear_on_open\": " << B(s.PaletteClearOnOpen)  << ",\n";
     f << "    \"scale\": "         << s.PaletteScale           << ",\n";
-    f << "    \"y_pos\": "         << s.PaletteYPos            << "\n";
+    f << "    \"y_pos\": "         << s.PaletteYPos            << ",\n";
+    f << "    \"x_pos\": "         << s.PaletteXPos            << "\n";
     f << "  },\n";
 
     // --- quickbar ------------------------------------------------------

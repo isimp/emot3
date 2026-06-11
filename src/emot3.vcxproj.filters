@@ -83,6 +83,7 @@
     <ClCompile Include="ui\Options.cpp">          <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsCommon.cpp">    <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsGeneral.cpp">   <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\OptionsPalette.cpp">   <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsQuickbar.cpp">  <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsEmotes.cpp">    <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsUnlocks.cpp">   <Filter>ui</Filter></ClCompile>

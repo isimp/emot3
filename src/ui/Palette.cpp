@@ -383,7 +383,7 @@ void PaletteRender() {
     // and a resolution change re-centers automatically.
     ImGuiIO& io = ImGui::GetIO();
     const float kW = 380.f * g_Settings.PaletteScale;
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f,
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * g_Settings.PaletteXPos,
                                    io.DisplaySize.y * g_Settings.PaletteYPos),
                             ImGuiCond_Always, ImVec2(0.5f, 0.0f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(kW, 0.f), ImVec2(kW, FLT_MAX));

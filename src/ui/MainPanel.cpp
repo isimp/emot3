@@ -11,6 +11,7 @@
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
 #include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
+#include "Palette.h"          // TogglePalette / IsPaletteOpen (toolbar "P" button)
 #include "SearchMatch.h"      // MatchEmoteSearch / MatchMeMoteSearch (shared with the palette)
 #include "StringUtil.h"       // TrimWhitespace (new-category entry) + ToLower (search needle)
 #include "Icons.h"
@@ -690,13 +691,17 @@ void AddonRender() {
             TooltipText("mp.icon_scale_tooltip");
     }
 
-    // Quickbar toggle, right-aligned on this same row.
+    // Quickbar + Palette toggles, right-aligned on this same row. Short "QB" /
+    // "P" labels so the pair still fits beside the scale slider at the
+    // window's min width; the tooltips carry the full names.
     {
         const ImGuiStyle& style = ImGui::GetStyle();
-        std::string qbLabel = L("mp.quickbar");
-        float qbBtnW = ImGui::CalcTextSize(qbLabel.c_str()).x + style.FramePadding.x * 2.f;
-        float rightX = ImGui::GetWindowContentRegionMax().x - qbBtnW
-                     - style.ItemInnerSpacing.x;
+        std::string qbLabel  = L("mp.quickbar");   // "QB"
+        std::string palLabel = L("mp.palette");    // "P"
+        float qbBtnW  = ImGui::CalcTextSize(qbLabel.c_str()).x  + style.FramePadding.x * 2.f;
+        float palBtnW = ImGui::CalcTextSize(palLabel.c_str()).x + style.FramePadding.x * 2.f;
+        float rightX = ImGui::GetWindowContentRegionMax().x - qbBtnW - palBtnW
+                     - style.ItemSpacing.x - style.ItemInnerSpacing.x;
         if (rightX > ImGui::GetCursorPosX()) {
             ImGui::SameLine(rightX);
         } else {
@@ -707,6 +712,16 @@ void AddonRender() {
         ToggleButton(qbLabel.c_str(), &g_Settings.ShowQuickbar);
         if (ImGui::IsItemHovered())
             TooltipText("mp.quickbar_tooltip");
+        ImGui::SameLine();
+        // The palette's open state is transient (nothing persisted): the
+        // ToggleButton runs on a local copy for the lit-while-open look, and
+        // a change routes through TogglePalette (which owns the real state +
+        // the open guards).
+        bool palOpen = IsPaletteOpen();
+        if (ToggleButton(palLabel.c_str(), &palOpen))
+            TogglePalette();
+        if (ImGui::IsItemHovered())
+            TooltipText("mp.palette_tooltip");
     }
 
     // Search with an X clear button on the right. Filters from the first

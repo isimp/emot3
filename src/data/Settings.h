@@ -141,8 +141,11 @@ struct Settings {
     // shared-atlas size). 0.8..1.5.
     float                         PaletteScale         = 1.0f;
     // Vertical anchor of the palette's top edge, as a fraction of the screen
-    // height (0.0..0.8). Horizontal stays centered.
+    // height (0.0..0.8).
     float                         PaletteYPos          = 0.2f;
+    // Horizontal anchor of the palette's CENTER, as a fraction of the screen
+    // width (0.1..0.9; 0.5 = centered).
+    float                         PaletteXPos          = 0.5f;
     EViewMode                     QuickbarViewMode     = EViewMode::Icon;
     float                         QuickbarIconScale    = 1.0f;
     bool                          QuickbarUseDropdown  = false;  // tabs (false) or dropdown (true)
