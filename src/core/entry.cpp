@@ -218,8 +218,9 @@ void AddonLoad(AddonAPI* aApi) {
         // LoadQuickbarPresets below, the first time it's missing.
         g_PresetsDir = std::string(addonDir) + "\\presets";
 
-        // Usage log (Recently/Frequently used) — its own file, written often, so
-        // it's kept out of settings.json. See data/Usage.h.
+        // Usage log (Recently/Frequently used) — its own file, changed often (an
+        // append per send) but written once at unload, so it's kept out of
+        // settings.json. See data/Usage.h.
         g_UsageJsonPath = std::string(addonDir) + "\\usage.json";
 
         // Exported RadialMenus wheels — one subfolder per wheel. See

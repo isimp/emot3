@@ -223,8 +223,8 @@ void SeedWizardFromCategory(const std::string& category) {
                     s_wizItems.push_back(std::move(w));
                 };
                 pushVar(EMeMoteVariant::Default, "", true);
-                if (hasYou) pushVar(EMeMoteVariant::You, " (you)", false);
-                if (hasAll) pushVar(EMeMoteVariant::All, " (all)", false);
+                if (hasYou) pushVar(EMeMoteVariant::You, L("opt.radial.variant_you"), false);
+                if (hasAll) pushVar(EMeMoteVariant::All, L("opt.radial.variant_all"), false);
             }
         }
         break;

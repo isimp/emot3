@@ -380,7 +380,7 @@ static void RenderEmptyCatalogDialog() {
     ImGui::PopStyleVar();
     if (addClicked && sel >= 0 && sel < (int)langs.size()) {
         SeedDefaultEmotes(langs[sel], s_secondary);
-        if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+        RequestSave(SaveKind::Emotes);
         MarkEmotesDirty();  // lazy: visible cells load their icons on next render
         // First-run: seed bundled /me-motes too so the catalog isn't an empty
         // "Add some under Options" hint. ClampMeMoteLanguage maps the emote
@@ -390,8 +390,8 @@ static void RenderEmptyCatalogDialog() {
         // returning user who already hit Restore won't see duplicates).
         g_MeMoteLanguage = ClampMeMoteLanguage(langs[sel]);
         int added = SeedBundledMeMotes(g_MeMoteLanguage);
-        if (added > 0 && !g_MeMotesJsonPath.empty()) {
-            SaveMeMotesJson(g_MeMotesJsonPath);
+        if (added > 0) {
+            RequestSave(SaveKind::MeMotes);
             MarkMeMotesDirty();
         }
     }
@@ -420,7 +420,7 @@ void DetectNewBundledEmotes() {
         // bundle silently so existing users aren't nagged about emotes that
         // predate the feature.
         g_Settings.KnownBundledEmotes = bundle;
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
         return;
     }
     if (!g_Settings.NotifyNewBundledEmotes) {
@@ -439,7 +439,7 @@ void DetectNewBundledEmotes() {
     } else {
         // Nothing to offer: catch the snapshot up so it stays tidy.
         g_Settings.KnownBundledEmotes = bundle;
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
     }
 }
 
@@ -479,7 +479,7 @@ static void RenderNewEmotesDialog() {
     // bundle (so this batch never re-prompts), clear the staged state, close.
     auto finish = [&]() {
         g_Settings.KnownBundledEmotes = AllBundledEmoteIds();
-        if (!g_SettingsPath.empty()) SaveSettings(g_SettingsPath);
+        RequestSave(SaveKind::Settings);
         g_PromptNewBundledEmotes = false;
         g_NewBundledEmoteIds.clear();
         s_opened = false;
@@ -506,7 +506,7 @@ static void RenderNewEmotesDialog() {
                                                     : g_EmoteLanguage;
         int n = AddBundledEmotesByIds(g_NewBundledEmoteIds, lang);
         if (n > 0) {
-            if (!g_EmotesJsonPath.empty()) SaveEmotesJson(g_EmotesJsonPath);
+            RequestSave(SaveKind::Emotes);
             MarkEmotesDirty();  // lazy: new emotes load their icons on next render
         }
         LOG_INFO("notifier: user added %d new bundled emote(s)", n);
