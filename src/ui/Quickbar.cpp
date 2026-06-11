@@ -109,6 +109,13 @@ void QuickbarRender() {
     if (!g_Settings.ShowQuickbar) return;
     PROFILE_SCOPE("qb.frame");  // dev perf overlay
 
+    // Competitive modes (PvP / WvW): hard-hide the bar, unconditionally (no setting).
+    // emot3 injects input to send emotes; in competitive that stays fully disabled (the
+    // send gate refuses every surface too). Sits ABOVE the QuickbarGreyUnusable /
+    // QuickbarUnusableBehavior machinery so the grey/hide preference can't weaken it.
+    // GW2's own MumbleLink IsCompetitive bit.
+    if (InCompetitiveMode()) return;
+
     // Combat behavior (its own Quickbar setting, off/grey/hide). Emotes still
     // WORK in combat everywhere else, so this is Quickbar-only - never a send
     // block on the main panel or the shared gate. Hide pulls the bar now (like
