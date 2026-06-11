@@ -333,6 +333,7 @@
     <ClInclude Include="data\IconPath.h" />
     <ClInclude Include="data\MeMotes.h" />
     <ClInclude Include="data\QuickbarPresets.h" />
+    <ClInclude Include="data\SearchMatch.h" />
     <ClInclude Include="data\Settings.h" />
     <ClInclude Include="data\Usage.h" />
     <ClInclude Include="data\RadialExports.h" />
