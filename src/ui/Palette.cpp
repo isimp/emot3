@@ -351,10 +351,10 @@ void PaletteRender() {
         !ImGui::IsAnyMouseDown())
         ImGui::SetKeyboardFocusHere(-1);
 
-    // Build this frame's rows. Filtering starts from the FIRST character
-    // (unlike the Library's 2-char rule): the palette list is capped + ranked,
-    // so a 1-char query is already useful and the early feedback matters more
-    // than scan cost (the catalog is small).
+    // Build this frame's rows. Filtering starts from the FIRST character,
+    // same as the Library search (its old 2-char activation rule was
+    // removed): the list is capped + ranked, so a 1-char query is already
+    // useful and the scan cost is trivial (the catalog is small).
     const std::string needle = ToLower(TrimWhitespace(s_query));
     std::vector<PalRow> rows;
     int total = 0;

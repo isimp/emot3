@@ -709,20 +709,10 @@ void AddonRender() {
             TooltipText("mp.quickbar_tooltip");
     }
 
-    // Search with an X clear button on the right.
-    //
-    // Filtering activates only at 2+ characters - a single keystroke
-    // would match roughly half the catalog and isn't useful, and
-    // letting the filter fire at 1 char makes the category empty-
-    // state messages say "no emotes match the search" the instant the
-    // user has typed one letter, which reads as a lie.
-    //
-    // The rule is surfaced three ways so the user doesn't have to
-    // discover it by accident:
-    //   - The placeholder ends with "(2+ chars)".
-    //   - The input field has a hover tooltip that spells it out.
-    //   - When the user has typed exactly one character, a muted
-    //     line below the row prompts them to type one more.
+    // Search with an X clear button on the right. Filters from the first
+    // character (the old 2-char activation rule + its one-more-character
+    // hint were removed - the palette filters from the first keystroke and
+    // the two surfaces should feel the same).
     const float clearW = 24.f;
     ImGui::SetNextItemWidth(-(clearW + ImGui::GetStyle().ItemSpacing.x));
     ImGui::InputTextWithHint("##search", L("mp.search_hint"),
@@ -739,15 +729,6 @@ void AddonRender() {
         if (ImGui::IsItemHovered() && hasText) TooltipText("mp.clear_search");
     }
 
-    // Inline prompt for the 1-char case. Renders on its own line so
-    // the layout stays stable when it appears and disappears, and so
-    // it reads as a hint about the field above rather than crowding
-    // the X button. Hidden the rest of the time.
-    bool oneCharOnly = g_SearchBuf[0] != '\0' && g_SearchBuf[1] == '\0';
-    if (oneCharOnly) {
-        ImGui::TextDisabled("%s", L("mp.search_one_more"));
-    }
-
     ImGui::Separator();
 
     // ---- Build display lists (lock held) ----
@@ -755,10 +736,8 @@ void AddonRender() {
 
     // Single source of truth for "is the search filter actually
     // running this frame?" - read by both passes() below and the
-    // empty-state-message lambdas further down. Threshold is 2 chars
-    // so the messages don't talk about "the search" when only one
-    // letter has been typed (filter is silent in that state).
-    const bool searchActive = (search.size() >= 2);
+    // empty-state-message lambdas further down.
+    const bool searchActive = !search.empty();
 
     // Per-frame lookup tables, populated once under the lock below. Building
     // these turns the list-build from O(N^2 log N) - it used to call the
