@@ -533,6 +533,13 @@ static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             PaletteNoteMouseDown((int)(short)LOWORD(lParam),
                                  (int)(short)HIWORD(lParam));
             break;
+        case WM_LBUTTONUP: case WM_RBUTTONUP:
+        case WM_MBUTTONUP: case WM_XBUTTONUP:
+            // Button-up side of the palette's same-click toggle suppression
+            // (the Nexus icon invokes the toggle on RELEASE - see Palette.h).
+            // Observe-only.
+            PaletteNoteMouseUp();
+            break;
         default: break;
     }
 

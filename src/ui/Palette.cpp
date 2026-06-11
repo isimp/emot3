@@ -18,6 +18,8 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"  // BringWindowToDisplayFront (always-on-top)
 
+#include <Windows.h>  // GetTickCount64 (same-click toggle suppression)
+
 #include <algorithm>
 #include <atomic>
 #include <cfloat>
@@ -77,6 +79,18 @@ int s_keepAliveFrame = -1000;
 std::atomic<bool> s_closeRequest{false};
 std::atomic<bool> s_rectValid{false};
 std::atomic<int>  s_rectX{0}, s_rectY{0}, s_rectW{0}, s_rectH{0};
+
+// Same-click toggle suppression. Clicking the Nexus quick-access icon while
+// the palette is open races two correct behaviors: the mouse-DOWN lands
+// outside the palette (click-away / focus-loss closes it), then Nexus invokes
+// the toggle bind on the mouse-RELEASE - which now sees "closed" and REOPENS.
+// So a close caused by an in-flight click ARMS suppression; the matching
+// button release converts it to a short grace window; a toggle-OPEN arriving
+// armed or inside the window is the same physical click and is swallowed
+// once. Keyboard-caused closes (Esc, toggle, send) never arm, so keybind
+// reopens are never delayed.
+std::atomic<bool>     s_closedByClick{false};
+std::atomic<uint64_t> s_suppressOpenUntil{0};
 
 // Display cap (g_Settings.PaletteMaxResults, clamped 5..15 at load). No
 // scrolling on purpose: past the cap the palette answer is "type more", not
@@ -250,6 +264,10 @@ static DevStateRegistrar s_palState(DevStateCat::Content, "Palette", [] {
     DevStateRow("click-away rect", "%s%s",
                 s_rectValid.load(std::memory_order_relaxed) ? "armed" : "not armed",
                 s_closeRequest.load(std::memory_order_relaxed) ? " | close PENDING" : "");
+    DevStateRow("same-click suppress", "%s",
+                s_closedByClick.load(std::memory_order_relaxed) ? "ARMED (click in flight)"
+                : GetTickCount64() < s_suppressOpenUntil.load(std::memory_order_relaxed)
+                    ? "grace window" : "clear");
     const int fc = ImGui::GetFrameCount();
     DevStateRow("options preview", "ghost %s / keep-alive %s",
                 (fc - s_ghostFrame)     <= 1 ? "PULSING" : "idle",
@@ -259,6 +277,20 @@ static DevStateRegistrar s_palState(DevStateCat::Content, "Palette", [] {
 
 void TogglePalette() {
     const bool open = !s_open.load(std::memory_order_relaxed);
+    if (open) {
+        // Same-click suppression (see s_closedByClick): if the palette was
+        // JUST closed by the very click whose release is now invoking this
+        // toggle (the Nexus icon case), opening again would make the icon
+        // feel like "reopen" instead of a toggle - swallow this one.
+        const bool sameClick =
+            s_closedByClick.exchange(false, std::memory_order_acq_rel) ||
+            GetTickCount64() < s_suppressOpenUntil.load(std::memory_order_relaxed);
+        if (sameClick) {
+            s_suppressOpenUntil.store(0, std::memory_order_relaxed);
+            LOG_DEBUG("Keybind: palette toggle-open suppressed (same click that closed it)");
+            return;
+        }
+    }
     s_open = open;
     if (open) {
         s_takeFocus = true;
@@ -277,6 +309,15 @@ bool IsPaletteOpen() { return s_open.load(std::memory_order_relaxed); }
 void PaletteGhostPulse()     { s_ghostFrame     = ImGui::GetFrameCount(); }
 void PaletteKeepAlivePulse() { s_keepAliveFrame = ImGui::GetFrameCount(); }
 
+void PaletteNoteMouseUp() {
+    // The click that closed the palette has completed; the icon's toggle
+    // invoke (if this was the icon) arrives within the next frame or two -
+    // keep suppressing it for a short grace, then forget.
+    if (s_closedByClick.exchange(false, std::memory_order_acq_rel))
+        s_suppressOpenUntil.store(GetTickCount64() + 150,
+                                  std::memory_order_relaxed);
+}
+
 void PaletteNoteMouseDown(int xClient, int yClient) {
     if (!s_open.load(std::memory_order_relaxed)) return;
     if (!s_rectValid.load(std::memory_order_acquire)) return;  // opening click
@@ -293,13 +334,15 @@ void ResetPalette() {
     s_takeFocus      = false;
     s_sel            = 0;
     s_query[0]       = '\0';
-    s_ctxOpen        = false;
-    s_mouseGuard     = false;
-    s_enterGuard     = false;
-    s_closeRequest   = false;
-    s_rectValid      = false;
-    s_ghostFrame     = -1000;
-    s_keepAliveFrame = -1000;
+    s_ctxOpen           = false;
+    s_mouseGuard        = false;
+    s_enterGuard        = false;
+    s_closeRequest      = false;
+    s_rectValid         = false;
+    s_closedByClick     = false;
+    s_suppressOpenUntil = 0;
+    s_ghostFrame        = -1000;
+    s_keepAliveFrame    = -1000;
 }
 
 void PaletteRender() {
@@ -315,8 +358,13 @@ void PaletteRender() {
     // A WndProc click-away request (see PaletteNoteMouseDown) closes before
     // anything renders this frame. Always drained; discarded while a context
     // menu is open (its clicks land outside the palette rect by design) or
-    // the options section is engaged.
-    if (s_closeRequest.exchange(false) && !s_ctxOpen && !keepAlive) s_open = false;
+    // the options section is engaged. A real close here is click-caused by
+    // definition - arm the same-click toggle suppression.
+    if (s_closeRequest.exchange(false) && !s_ctxOpen && !keepAlive &&
+        s_open.load(std::memory_order_relaxed)) {
+        s_open          = false;
+        s_closedByClick = true;
+    }
     if (!s_open && !ghost) return;
     // Same per-frame suppressions as the Library, but a transient popup just
     // CLOSES on them (loading screen / character select / fullscreen map)
@@ -384,6 +432,9 @@ void PaletteRender() {
     if (!ghost && !s_takeFocus && !s_ctxOpen && !keepAlive &&
         !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
         s_open = false;
+        // Click on another ImGui window (the Nexus icon included) - arm the
+        // same-click toggle suppression; a non-click focus loss doesn't.
+        if (ImGui::IsAnyMouseDown()) s_closedByClick = true;
         ImGui::End();
         return;
     }

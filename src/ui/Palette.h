@@ -50,6 +50,13 @@ void PaletteKeepAlivePulse();
 // cheap no-op while the palette is closed.
 void PaletteNoteMouseDown(int xClient, int yClient);
 
+// WndProc seam, button-UP side: completes the same-click toggle suppression.
+// A close caused by a click's mouse-DOWN (click-away / focus shift) must not
+// be undone by the toggle bind that the SAME click's release invokes (the
+// Nexus quick-access icon) - the release converts the armed state into a
+// short grace window that swallows exactly that one toggle-open.
+void PaletteNoteMouseUp();
+
 // Reset transient state (open flag + query). Called from AddonUnload so a
 // Nexus reload doesn't resurrect a stale palette (load-time state must be
 // re-initialisable - see the registry-reset note in entry.cpp).
