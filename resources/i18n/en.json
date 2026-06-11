@@ -71,6 +71,7 @@
   "mp.clear_search": "Clear search",
   "mp.search_one_more": "Type 1 more character to start filtering.",
   "mp.search_match_alias": "Matches your search via alias: %s",
+  "mp.competitive_banner": "Emote sending is disabled in competitive modes (PvP/WvW), and the Quickbar is hidden. Everything comes back automatically when you leave.",
   "mp.cat_exists": "Category \"%s\" already exists.",
   "mp.add_category": "+ Category",
   "mp.category_help": "Drag emotes to reorder within a category. Drag the header to reorder categories. Right-click a header to rename or delete.",
