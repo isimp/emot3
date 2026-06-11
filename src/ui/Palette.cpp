@@ -10,6 +10,7 @@
 #include "EmoteAction.h"   // SendOrFill* (returns sent-vs-refused)
 #include "Usage.h"         // usage::Frequent (the zero-query list)
 #include "Icons.h"         // EnsureEmoteTexture / EnsureMeMoteTexture (lazy cache)
+#include "Cells.h"         // RenderSendVariants (shared right-click menu body)
 #include "Layout.h"        // Ellipsize (side label cap)
 #include "Feedback.h"      // surface tagging + the refusal overlay
 #include "Profiling.h"     // dev perf overlay
@@ -34,6 +35,11 @@ std::atomic<bool> s_open{false};  // atomic: read by the WndProc thread below
 bool s_takeFocus = false;   // one-shot: focus the query field (open / after Enter-refusal)
 char s_query[64] = {};      // same cap as the Library search box
 int  s_sel       = 0;       // selected row index
+// True while a row's right-click menu was open last frame. The close / focus /
+// Esc / click-away checks and the focus pin all stand down while it's set: the
+// popup IS the focused window, its clicks land outside the palette rect, and a
+// re-pin of the query field would kill it. Render-thread only.
+bool s_ctxOpen   = false;
 
 // ---- click-away detection (WndProc-fed) -------------------------------------
 // Clicking the game world must close the palette, but those clicks are
@@ -168,6 +174,29 @@ void BuildQueryRows(const std::string& needle, std::vector<PalRow>& rows,
     }
 }
 
+// /me-mote send-variant menu items (You / All; Default is the left-click /
+// Enter default, omitted exactly like the Library cell menu). Items render
+// disabled-but-visible when their body is empty - discoverable, matching
+// Cells.cpp's sendVariantItem. Returns true when a variant actually sent.
+bool MeMoteVariantItems(const MeMote& m) {
+    bool sent = false;
+    auto item = [&](EMeMoteVariant v, const char* key, bool enabled) {
+        if (!enabled) {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+        }
+        if (ImGui::MenuItem(L(key)) && enabled)
+            sent = SendOrFillMeMote(m, v) || sent;
+        if (!enabled) {
+            ImGui::PopStyleVar();
+            ImGui::PopItemFlag();
+        }
+    };
+    item(EMeMoteVariant::You, "cells.send_you", !m.TextYou.empty());
+    item(EMeMoteVariant::All, "cells.send_all", !m.TextAll.empty());
+    return sent;
+}
+
 // Up/Down move the selection while the query field keeps focus (the console
 // idiom - the user never leaves the text field). Clamped against the row
 // count in the render (the list isn't built yet when this runs).
@@ -210,14 +239,16 @@ void ResetPalette() {
     s_takeFocus    = false;
     s_sel          = 0;
     s_query[0]     = '\0';
+    s_ctxOpen      = false;
     s_closeRequest = false;
     s_rectValid    = false;
 }
 
 void PaletteRender() {
     // A WndProc click-away request (see PaletteNoteMouseDown) closes before
-    // anything renders this frame.
-    if (s_closeRequest.exchange(false)) s_open = false;
+    // anything renders this frame. Always drained; discarded while a context
+    // menu is open (its clicks land outside the palette rect by design).
+    if (s_closeRequest.exchange(false) && !s_ctxOpen) s_open = false;
     if (!s_open) return;
     // Same per-frame suppressions as the Library, but a transient popup just
     // CLOSES on them (loading screen / character select / fullscreen map)
@@ -234,7 +265,7 @@ void PaletteRender() {
     // re-centers on every open; NoMove keeps the spot predictable (there's
     // no title bar, so a background-drag would move it by accident).
     ImGuiIO& io = ImGui::GetIO();
-    const float kW = 460.f * g_Settings.PaletteScale;
+    const float kW = 380.f * g_Settings.PaletteScale;
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.28f),
                             ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(kW, 0.f), ImVec2(kW, FLT_MAX));
@@ -255,7 +286,8 @@ void PaletteRender() {
     // buffer (the query visibly jumped back to its pre-edit text) and only a
     // second Esc reached the hook. Reading the key directly and closing this
     // frame means the revert never renders.
-    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+    if (!s_ctxOpen &&
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
         ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape), false)) {
         s_open = false;
         ImGui::End();
@@ -270,8 +302,9 @@ void PaletteRender() {
     //    (and io.WantCaptureMouse stays true while the query field is active,
     //    masking io-side click checks too) - covered by the WndProc hit-test
     //    (PaletteNoteMouseDown), honored at the top of this function.
-    // s_takeFocus graces the opening frame (focus not yet applied).
-    if (!s_takeFocus &&
+    // s_takeFocus graces the opening frame (focus not yet applied); an open
+    // context menu counts as "ours" even though it's a separate ImGui window.
+    if (!s_takeFocus && !s_ctxOpen &&
         !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
         s_open = false;
         ImGui::End();
@@ -306,7 +339,7 @@ void PaletteRender() {
     // and the game's own Esc handling are both held off while a text input
     // is active, so an Esc here can only ever mean "close the palette" -
     // never "also close the Library" or "open the game menu".
-    if (!s_takeFocus && !ImGui::IsAnyItemActive())
+    if (!s_takeFocus && !s_ctxOpen && !ImGui::IsAnyItemActive())
         ImGui::SetKeyboardFocusHere(-1);
 
     // Build this frame's rows. Filtering starts from the FIRST character
@@ -336,11 +369,13 @@ void PaletteRender() {
     // Only let a hover steal the selection when the mouse actually moved -
     // otherwise the row under a parked cursor wins every Up/Down keypress.
     const bool mouseMoved = io.MouseDelta.x != 0.f || io.MouseDelta.y != 0.f;
+    bool anyCtx = false;  // a row context menu is open THIS frame
     ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.f, 0.5f));
     for (int i = 0; i < (int)rows.size(); ++i) {
         const PalRow& r = rows[i];
         ImGui::PushID(i);
 
+        const ImVec2 rowStart = ImGui::GetCursorScreenPos();  // icon included
         Texture* t = r.isMeMote ? EnsureMeMoteTexture(r.m) : EnsureEmoteTexture(r.e);
         if (t && t->Resource)
             ImGui::Image((ImTextureID)t->Resource, ImVec2(iconSz, iconSz));
@@ -369,14 +404,49 @@ void PaletteRender() {
         if (ImGui::Selectable((name + "###row").c_str(), i == s_sel, 0,
                               ImVec2(0.f, iconSz)))
             activate = i;
-        if (mouseMoved && ImGui::IsItemHovered()) s_sel = i;
         ImGui::GetWindowDrawList()->AddText(
             ImVec2(rowPos.x + fullW - sideW - pad,
                    rowPos.y + (iconSz - ImGui::GetTextLineHeight()) * 0.5f),
             ImGui::GetColorU32(ImGuiCol_TextDisabled), side.c_str());
+
+        // Hover + right-click work on the WHOLE row (icon included) - an
+        // item-hover test would miss the icon column. Both suspended while a
+        // context menu is open (the popup can overlap rows underneath).
+        const bool rowHovered = !s_ctxOpen && ImGui::IsMouseHoveringRect(
+            rowStart,
+            ImVec2(rowPos.x + fullW, rowStart.y + iconSz));
+        if (mouseMoved && rowHovered) s_sel = i;
+        if (rowHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            s_sel = i;
+            ImGui::OpenPopup("palctx");
+        }
+
+        // Send-alternatives menu: the Library's shared variant body (target /
+        // sync for emotes; You / All for /me-motes - Default stays the Enter /
+        // left-click default). A successful variant send closes the palette
+        // like Enter does; a refusal keeps it open with the overlay reason.
+        if (ImGui::BeginPopup("palctx")) {
+            anyCtx = true;
+            // ImGui's own popup-Esc-close needs keyboard nav enabled, which
+            // Nexus doesn't guarantee - handle it here so Esc reliably closes
+            // the MENU first (the next Esc then closes the palette).
+            if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape), false))
+                ImGui::CloseCurrentPopup();
+            const bool sent = r.isMeMote ? MeMoteVariantItems(r.m)
+                                         : RenderSendVariants(r.e);
+            if (sent) s_open = false;  // finishes this frame, gone the next
+            ImGui::EndPopup();
+        }
         ImGui::PopID();
     }
     ImGui::PopStyleVar();
+
+    // Context-menu lifecycle: when the menu closes (Esc, outside click, item
+    // click), re-arm the query field so the palette is type-ready again - and
+    // only flip s_ctxOpen AFTER the loop so the checks at the top of this
+    // function stand down for the popup's entire lifetime.
+    if (s_ctxOpen && !anyCtx) s_takeFocus = true;
+    s_ctxOpen = anyCtx;
 
     if (rows.empty()) {
         if (!needle.empty())

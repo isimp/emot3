@@ -239,19 +239,21 @@ bool AcceptEmoteDropInto(int dstCat, int gap) {
 // targetable emote on click, the menu instead offers "Send normally" and drops
 // the now-redundant "Send on target". The two sync items state their modifiers
 // explicitly, so they're unchanged either way. Caller handles the locked case.
-static void RenderSendVariants(const Emote& e) {
+bool RenderSendVariants(const Emote& e) {
+    bool sent = false;
     bool autoTarget = e.IsTargetable && g_Settings.SendTargetableOnTarget;
     if (autoTarget) {
         if (ImGui::MenuItem(L("cells.send_normal")))
-            SendOrFillEmote(e, false, false);
+            sent = SendOrFillEmote(e, false, false) || sent;
     } else {
         if (ImGui::MenuItem(L("cells.send_target"), "@", false, e.IsTargetable))
-            SendOrFillEmote(e, true, false);
+            sent = SendOrFillEmote(e, true, false) || sent;
     }
     if (ImGui::MenuItem(L("cells.send_sync"), "*"))
-        SendOrFillEmote(e, false, true);
+        sent = SendOrFillEmote(e, false, true) || sent;
     if (ImGui::MenuItem(L("cells.send_target_sync"), "@ *", false, e.IsTargetable))
-        SendOrFillEmote(e, true, true);
+        sent = SendOrFillEmote(e, true, true) || sent;
+    return sent;
 }
 
 // /me-mote cell renderer. Same signature as RenderEmoteCell so RenderEmoteSection
