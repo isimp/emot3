@@ -263,13 +263,15 @@ void PaletteRender() {
     PROFILE_SCOPE("pal.frame");  // dev perf overlay
     SetActiveFeedbackSurface(FeedbackSurface::Palette);
 
-    // Centered, upper third, fixed width, auto height. Appearing-cond
-    // re-centers on every open; NoMove keeps the spot predictable (there's
-    // no title bar, so a background-drag would move it by accident).
+    // Centered horizontally, vertical anchor from the user's setting, fixed
+    // width, auto height. Positioned EVERY frame (the window is NoMove, so
+    // nothing fights it): the Y-position slider moves an open palette live,
+    // and a resolution change re-centers automatically.
     ImGuiIO& io = ImGui::GetIO();
     const float kW = 380.f * g_Settings.PaletteScale;
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.28f),
-                            ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f,
+                                   io.DisplaySize.y * g_Settings.PaletteYPos),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(kW, 0.f), ImVec2(kW, FLT_MAX));
     if (s_takeFocus) ImGui::SetNextWindowFocus();
     const ImGuiWindowFlags flags =

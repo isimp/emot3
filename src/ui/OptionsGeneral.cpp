@@ -130,13 +130,44 @@ void RenderGeneralOptionsTab() {
         ApplyNexusShortcut();   // register or remove based on the new state
     }
 
-    // Click-swap indented under the parent toggle and gated on the icon
-    // being shown — it's meaningless without an icon to click on.
+    // What a left-click on the icon opens (Library / Quickbar / quick send),
+    // indented under the parent toggle and gated on the icon being shown —
+    // meaningless without an icon to click on. Right-click always opens the
+    // context menu. Replaced the old Library/Quickbar swap checkbox when the
+    // palette became a third target.
     ImGui::Indent();
-    if (DisabledCheckbox("opt.gen.swap_click", &g_Settings.SwapShortcutClickActions,
-                         /*enabled=*/g_Settings.ShowNexusShortcut,
-                         /*defaultIsOn=*/false, "opt.gen.swap_disabled")) {
-        ApplyNexusShortcut();   // re-register against the other keybind
+    {
+        const bool iconShown = g_Settings.ShowNexusShortcut;
+        if (!iconShown) BeginDisabledCompat();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(L("opt.gen.shortcut_click"));
+        ImGui::SameLine();
+        int sc = (int)g_Settings.ShortcutClickAction;
+        const char* scItems[] = { L("shortcut_target.library"),
+                                  L("shortcut_target.quickbar"),
+                                  L("shortcut_target.palette") };
+        ImGui::SetNextItemWidth(160.f);
+        if (ImGui::Combo("##shortcutclick", &sc, scItems, IM_ARRAYSIZE(scItems)) &&
+            iconShown) {
+            g_Settings.ShortcutClickAction = (EShortcutClick)sc;
+            LOG_TRACE("setting general.shortcut_click = %d", sc);
+            RequestSave(SaveKind::Settings);
+            ApplyNexusShortcut();   // re-register against the chosen keybind
+        }
+        if (ImGui::IsItemHovered()) {
+            if (!iconShown) {
+                TooltipText("opt.gen.swap_disabled");
+            } else {
+                static const TooltipOption kClickOpts[] = {
+                    { "shortcut_target.library",  "shortcut_target.library.desc",  true  },
+                    { "shortcut_target.quickbar", "shortcut_target.quickbar.desc", false },
+                    { "shortcut_target.palette",  "shortcut_target.palette.desc",  false },
+                };
+                TooltipOptions("opt.gen.shortcut_click_tip", kClickOpts,
+                               IM_ARRAYSIZE(kClickOpts));
+            }
+        }
+        if (!iconShown) EndDisabledCompat();
     }
     ImGui::Unindent();
 
@@ -207,6 +238,22 @@ void RenderGeneralOptionsTab() {
         RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered()) TooltipText("opt.pal.scale_tip");
+
+    // Vertical anchor (fraction of screen height; horizontal stays centered).
+    // The palette positions itself every frame, so dragging this with the
+    // palette open moves it live.
+    ImGui::SetNextItemWidth(200.f);
+    ImGui::SliderFloat(L("opt.pal.y_pos"), &g_Settings.PaletteYPos, 0.05f, 0.85f, "%.2f");
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        LOG_TRACE("setting palette.y_pos = %.2f", g_Settings.PaletteYPos);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        g_Settings.PaletteYPos = 0.28f;
+        LOG_TRACE("setting palette.y_pos = %.2f (reset)", g_Settings.PaletteYPos);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemHovered()) TooltipText("opt.pal.y_pos_tip");
 
     // Empty-query suggestions: Frequently / Recently used (the usage log's two
     // views, same labels as the Quickbar categories) or nothing.

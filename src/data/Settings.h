@@ -55,6 +55,11 @@ enum class EQbScrollSnap { Off = 0, Cells = 1, Pages = 2 };
 // views), or nothing.
 enum class EPaletteEmptyQuery { Frequent = 0, Recent = 1, Off = 2 };
 
+// What a left-click on the Nexus quick-access icon opens. Numeric for JSON
+// stability (settings.json "left_click_opens"); right-click always opens the
+// shortcut's context menu regardless.
+enum class EShortcutClick { Library = 0, Quickbar = 1, Palette = 2 };
+
 // Which catalog a FavoriteRef points into. Numeric for JSON stability —
 // settings.json stores "type": 0 for an Emote, "type": 1 for a /me-mote
 // (legacy "emote" / "me_mote" strings also accepted on load for forward
@@ -135,6 +140,9 @@ struct Settings {
     // Palette size factor — window width + row/icon height (text stays the
     // shared-atlas size). 0.8..1.5.
     float                         PaletteScale         = 1.0f;
+    // Vertical anchor of the palette's top edge, as a fraction of the screen
+    // height (0.05..0.85). Horizontal stays centered.
+    float                         PaletteYPos          = 0.28f;
     EViewMode                     QuickbarViewMode     = EViewMode::Icon;
     float                         QuickbarIconScale    = 1.0f;
     bool                          QuickbarUseDropdown  = false;  // tabs (false) or dropdown (true)
@@ -279,10 +287,11 @@ struct Settings {
     // Nexus quick-access shortcut (the little icon row at the top of the
     // screen). On by default — it's the main entry point for the addon.
     bool                          ShowNexusShortcut    = true;
-    // When false (default): left click toggles main window, right click
-    // toggles Quickbar. When true the two are swapped — useful if you
-    // primarily use the Quickbar.
-    bool                          SwapShortcutClickActions = false;
+    // What a left-click on the icon opens — Library (default), Quickbar, or
+    // the quick-send palette. Replaced the old swap bool (legacy
+    // "left_click_opens_quickbar" still maps on load). Right-click always
+    // opens the context menu.
+    EShortcutClick                ShortcutClickAction = EShortcutClick::Library;
     // UI language code, or "auto" to follow Nexus' active language. Empty
     // is treated as "auto". The set of valid concrete codes is discovered
     // from the bundled i18n tables (see I18n.h). Default follows Nexus.

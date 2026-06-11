@@ -203,6 +203,17 @@ bool SanitizeSettings(Settings& s) {
             LOG_WARNING("settings: palette.empty_query %d invalid -> 0 (frequent)", q);
             s.PaletteEmptyQuery = EPaletteEmptyQuery::Frequent; changed = true;
         }
+        float fy = s.PaletteYPos < 0.05f ? 0.05f : (s.PaletteYPos > 0.85f ? 0.85f : s.PaletteYPos);
+        if (fy != s.PaletteYPos) {
+            LOG_WARNING("settings: palette.y_pos %.2f out of range -> clamped to %.2f",
+                        s.PaletteYPos, fy);
+            s.PaletteYPos = fy; changed = true;
+        }
+        int sc = (int)s.ShortcutClickAction;
+        if (sc < 0 || sc > 2) {
+            LOG_WARNING("settings: shortcut.left_click_opens %d invalid -> 0 (library)", sc);
+            s.ShortcutClickAction = EShortcutClick::Library; changed = true;
+        }
     }
 
     // Filter toggles are plain bools - any stored value is valid, nothing
@@ -437,6 +448,7 @@ bool LoadSettings(const std::string& path) {
                                                       (int)s.PaletteEmptyQuery);
     s.PaletteClearOnOpen = GetBool (pal, "clear_on_open", s.PaletteClearOnOpen);
     s.PaletteScale       = GetFloat(pal, "scale",         s.PaletteScale);
+    s.PaletteYPos        = GetFloat(pal, "y_pos",         s.PaletteYPos);
 
     const json& qb = GetObj(j, "quickbar");
     s.ShowQuickbar        = GetBool(qb, "show",                  s.ShowQuickbar);
@@ -510,7 +522,14 @@ bool LoadSettings(const std::string& path) {
 
     const json& shortcut = GetObj(general, "nexus_shortcut");
     s.ShowNexusShortcut        = GetBool(shortcut, "show",                      s.ShowNexusShortcut);
-    s.SwapShortcutClickActions = GetBool(shortcut, "left_click_opens_quickbar", s.SwapShortcutClickActions);
+    // Legacy bool "left_click_opens_quickbar" (pre-palette) maps onto the
+    // 3-way action first; the current int key overrides when present.
+    {
+        const bool legacyQb = GetBool(shortcut, "left_click_opens_quickbar", false);
+        s.ShortcutClickAction = (EShortcutClick)GetInt(
+            shortcut, "left_click_opens",
+            legacyQb ? (int)EShortcutClick::Quickbar : (int)s.ShortcutClickAction);
+    }
 
     const json& language = GetObj(j, "language");
     s.UiLanguage = GetString(language, "ui", s.UiLanguage);
@@ -619,7 +638,8 @@ std::string SerializeSettings() {
     f << "    \"max_results\": "   << s.PaletteMaxResults      << ",\n";
     f << "    \"empty_query\": "   << (int)s.PaletteEmptyQuery << ",\n";
     f << "    \"clear_on_open\": " << B(s.PaletteClearOnOpen)  << ",\n";
-    f << "    \"scale\": "         << s.PaletteScale           << "\n";
+    f << "    \"scale\": "         << s.PaletteScale           << ",\n";
+    f << "    \"y_pos\": "         << s.PaletteYPos            << "\n";
     f << "  },\n";
 
     // --- quickbar ------------------------------------------------------
@@ -686,7 +706,7 @@ std::string SerializeSettings() {
     f << "    },\n";
     f << "    \"nexus_shortcut\": {\n";
     f << "      \"show\": "                      << B(s.ShowNexusShortcut)        << ",\n";
-    f << "      \"left_click_opens_quickbar\": " << B(s.SwapShortcutClickActions) << "\n";
+    f << "      \"left_click_opens\": " << (int)s.ShortcutClickAction << "\n";
     f << "    }\n";
     f << "  },\n";
 

@@ -32,7 +32,7 @@
 // a new one, and is a no-op when ShowNexusShortcut is off.
 //
 // Called once from AddonLoad after the textures are primed, and again
-// whenever the user flips ShowNexusShortcut or SwapShortcutClickActions
+// whenever the user flips ShowNexusShortcut or changes ShortcutClickAction
 // in the General Options tab.
 void ApplyNexusShortcut();
 
