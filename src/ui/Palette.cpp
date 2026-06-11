@@ -355,6 +355,17 @@ void PaletteRender() {
     const bool keepAlive = (fc - s_keepAliveFrame) <= 1;
     const bool ghost     = !s_open.load() && (fc - s_ghostFrame) <= 1;
 
+    // TEMP diagnostics (palette-flicker hunt): log every visibility
+    // transition with its cause so a repro names the oscillation.
+    {
+        static bool s_lastGhost = false;
+        if (ghost != s_lastGhost) {
+            LOG_DEBUG("palette diag: ghost %s (frame=%d keepAlive=%d)",
+                      ghost ? "ON" : "off", fc, (int)keepAlive);
+            s_lastGhost = ghost;
+        }
+    }
+
     // A WndProc click-away request (see PaletteNoteMouseDown) closes before
     // anything renders this frame. Always drained; discarded while a context
     // menu is open (its clicks land outside the palette rect by design) or
@@ -364,6 +375,7 @@ void PaletteRender() {
         s_open.load(std::memory_order_relaxed)) {
         s_open          = false;
         s_closedByClick = true;
+        LOG_DEBUG("palette diag: close CLICK-AWAY (frame=%d)", fc);
     }
     if (!s_open && !ghost) return;
     // Same per-frame suppressions as the Library, but a transient popup just
@@ -371,6 +383,8 @@ void PaletteRender() {
     // instead of waiting them out.
     if (!NexusLink || !NexusLink->IsGameplay ||
         (MumbleLink && MumbleLink->Context.IsMapOpen)) {
+        if (s_open.load(std::memory_order_relaxed))
+            LOG_DEBUG("palette diag: close GAMEPLAY-GATE (frame=%d)", fc);
         s_open = false;
         return;
     }
@@ -413,6 +427,7 @@ void PaletteRender() {
         ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
         ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape), false)) {
         s_open = false;
+        LOG_DEBUG("palette diag: close ESC (frame=%d)", fc);
         ImGui::End();
         return;
     }
@@ -435,6 +450,8 @@ void PaletteRender() {
         // Click on another ImGui window (the Nexus icon included) - arm the
         // same-click toggle suppression; a non-click focus loss doesn't.
         if (ImGui::IsAnyMouseDown()) s_closedByClick = true;
+        LOG_DEBUG("palette diag: close FOCUS-LOSS%s (frame=%d)",
+                  ImGui::IsAnyMouseDown() ? " (click)" : "", fc);
         ImGui::End();
         return;
     }
@@ -601,7 +618,10 @@ void PaletteRender() {
                 ImGui::CloseCurrentPopup();
             const bool sent = r.isMeMote ? MeMoteVariantItems(r.m)
                                          : RenderSendVariants(r.e);
-            if (sent) s_open = false;  // finishes this frame, gone the next
+            if (sent) {
+                s_open = false;  // finishes this frame, gone the next
+                LOG_DEBUG("palette diag: close MENU-SEND (frame=%d)", fc);
+            }
             ImGui::EndPopup();
         }
         ImGui::PopID();
@@ -645,8 +665,12 @@ void PaletteRender() {
             ? SendOrFillMeMote(r.m, EMeMoteVariant::Default)
             : SendOrFillEmote(r.e, /*useTarget=*/g_Settings.SendTargetableOnTarget,
                               /*useSync=*/false);
-        if (sent) s_open = false;
-        else if (enter) s_takeFocus = true;
+        if (sent) {
+            s_open = false;
+            LOG_DEBUG("palette diag: close SEND (enter=%d, frame=%d)", (int)enter, fc);
+        } else if (enter) {
+            s_takeFocus = true;
+        }
     }
 
     // Refusal overlay on THIS surface (the palette is open + focused, so the
