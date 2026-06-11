@@ -279,7 +279,11 @@ void PaletteRender() {
     // Always on top: a focused window is normally frontmost anyway, but this
     // covers the frames where another window was submitted later or a refocus
     // is still in flight - the palette never renders underneath anything.
-    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+    // Stands down while a row context menu is open: the popup is its own
+    // window, and re-raising the palette every frame would put it on top of
+    // its OWN menu.
+    if (!s_ctxOpen)
+        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
 
     // Esc closes in ONE press. Handled here, not via Nexus' CloseOnEscape:
     // an active InputText eats the first Esc to deactivate-and-REVERT the
@@ -339,7 +343,12 @@ void PaletteRender() {
     // and the game's own Esc handling are both held off while a text input
     // is active, so an Esc here can only ever mean "close the palette" -
     // never "also close the Library" or "open the game menu".
-    if (!s_takeFocus && !s_ctxOpen && !ImGui::IsAnyItemActive())
+    // NEVER re-arm while a mouse button is down: on the click frame the
+    // field releases ActiveId, and a queued refocus would steal it back from
+    // the mid-press row Selectable - whose press-on-RELEASE then never fires
+    // (that exact sequence ate left-click sends).
+    if (!s_takeFocus && !s_ctxOpen && !ImGui::IsAnyItemActive() &&
+        !ImGui::IsAnyMouseDown())
         ImGui::SetKeyboardFocusHere(-1);
 
     // Build this frame's rows. Filtering starts from the FIRST character
