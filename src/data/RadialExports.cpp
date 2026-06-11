@@ -3,7 +3,8 @@
 #include "Globals.h"      // g_RadialsDir (+ Windows.h)
 #include "AtomicFile.h"   // DirExists (shared)
 #include "EmoteBinds.h"   // ParseEmoteBindIdentifier - recover refs from item Actions
-#include "StringUtil.h"   // ToLower
+#include "StringUtil.h"   // ToLower / TruncateUtf8 / kMaxNameBytes (name cap at load)
+#include "JsonUtil.h"     // never-throw typed getters (no type_error escaping the loader)
 #include "Logging.h"
 #include "Profiling.h"    // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS)
 
@@ -17,6 +18,7 @@
 #include <vector>
 
 using json = nlohmann::json;
+using namespace jsonutil;
 
 std::vector<RadialExport> g_RadialExports;
 std::mutex                g_RadialExportsMutex;
@@ -48,55 +50,54 @@ bool ReadPack(const std::string& packPath, RadialExport& w) {
     }
     if (!j.is_object()) return false;
 
-    w.Id             = j.value("ID", 0);
-    w.SourceCategory = j.value("emot3_source_category", std::string());
-    w.Partial        = j.value("emot3_partial", false);
-    w.Group          = j.value("emot3_group", w.Slug);  // legacy/hand-made -> own group
-    w.Page           = j.value("emot3_page", 1);
+    // All field reads go through the never-throw jsonutil getters: nlohmann's own
+    // j.value(key, default) THROWS type_error on a present-but-wrong-type field
+    // (a hand-made / legacy / RadialMenus-generated pack with "ID":"x" or
+    // "Scale":"1.0"), which would escape this loader into AddonLoad uncaught.
+    w.Id             = GetInt(j, "ID", 0);
+    w.SourceCategory = GetString(j, "emot3_source_category", std::string());
+    w.Partial        = GetBool(j, "emot3_partial", false);
+    w.Group          = GetString(j, "emot3_group", w.Slug);  // legacy/hand-made -> own group
+    w.Page           = GetInt(j, "emot3_page", 1);
     w.SourceRefs.clear();
-    if (j.contains("emot3_source_refs") && j["emot3_source_refs"].is_array())
-        for (const auto& s : j["emot3_source_refs"])
-            if (s.is_string()) w.SourceRefs.push_back(s.get<std::string>());
+    for (const auto& s : GetArray(j, "emot3_source_refs"))
+        if (s.is_string()) w.SourceRefs.push_back(s.get<std::string>());
 
     // Logical export name: prefer the emot3_name marker; fall back to the pack "Name"
     // minus the "emot3: " prefix (legacy / hand-made packs).
-    w.Name = j.value("emot3_name", std::string());
+    w.Name = GetString(j, "emot3_name", std::string());
     if (w.Name.empty()) {
-        std::string packName = j.value("Name", std::string());
+        std::string packName = GetString(j, "Name", std::string());
         const size_t pfx = std::strlen(kRadialPackNamePrefix);
         w.Name = (packName.rfind(kRadialPackNamePrefix, 0) == 0) ? packName.substr(pfx)
                                                                  : packName;
     }
     if (w.Name.empty()) w.Name = w.Slug;
+    w.Name = TruncateUtf8(w.Name, kMaxNameBytes);  // cap hand-edited/legacy names, like the other loaders
 
     // Native RadialMenus options (recoverable directly); emot3-namespaced markers
     // for what isn't (the source category above + the gate flag below).
-    w.Options.Small               = (j.value("Type", 1) == 2);  // 1 Normal / 2 Small
-    w.Options.SelectionMode       = j.value("SelectionMode", 3);
-    w.Options.Scale               = j.value("Scale", 1.0f);
-    w.Options.IconScale           = j.value("IconScale", 1.0f);
-    w.Options.ShowItemNameTooltip = j.value("ShowItemNameTooltip", false);
+    w.Options.Small               = (GetInt(j, "Type", 1) == 2);  // 1 Normal / 2 Small
+    w.Options.SelectionMode       = GetInt(j, "SelectionMode", 3);
+    w.Options.Scale               = GetFloat(j, "Scale", 1.0f);
+    w.Options.IconScale           = GetFloat(j, "IconScale", 1.0f);
+    w.Options.ShowItemNameTooltip = GetBool(j, "ShowItemNameTooltip", false);
 
     // Recover refs (and detect gating) from the items' Action identifiers.
     bool anyVisibility = false;
-    if (j.contains("Items") && j["Items"].is_array()) {
-        for (const auto& it : j["Items"]) {
-            if (!it.is_object()) continue;
-            if (it.contains("Visibility")) anyVisibility = true;
-            if (!it.contains("Actions") || !it["Actions"].is_array() ||
-                it["Actions"].empty())
-                continue;
-            const auto& a0 = it["Actions"][0];
-            if (!a0.is_object()) continue;
-            std::string idn = a0.value("Identifier", std::string());
-            RadialItemRef ref;
-            if (ParseEmoteBindIdentifier(idn, ref.Type, ref.Id, ref.Variant))
-                w.Items.push_back(std::move(ref));
-        }
+    for (const auto& it : GetArray(j, "Items")) {
+        if (!it.is_object()) continue;
+        if (it.contains("Visibility")) anyVisibility = true;
+        const json& actions = GetArray(it, "Actions");
+        if (actions.empty() || !actions[0].is_object()) continue;
+        std::string idn = GetString(actions[0], "Identifier", std::string());
+        RadialItemRef ref;
+        if (ParseEmoteBindIdentifier(idn, ref.Type, ref.Id, ref.Variant))
+            w.Items.push_back(std::move(ref));
     }
     // Gate flag: explicit marker if present, else inferred from any item carrying a
     // Visibility object (older/hand-edited packs).
-    w.Options.GateByState = j.value("emot3_gate", anyVisibility);
+    w.Options.GateByState = GetBool(j, "emot3_gate", anyVisibility);
     return true;
 }
 
@@ -124,7 +125,15 @@ void LoadRadialExports() {
             std::string slug = file.substr(0, file.size() - 5);  // drop ".json"
             RadialExport w;
             w.Slug = slug;
-            if (!ReadPack(packsDir + "\\" + file, w)) {
+            // ReadPack uses never-throw jsonutil getters, but guard the call anyway:
+            // a single malformed/legacy pack must never throw out of AddonLoad's bare
+            // LoadRadialExports() - flag the row as a parse error and keep scanning.
+            bool ok = false;
+            try { ok = ReadPack(packsDir + "\\" + file, w); }
+            catch (const std::exception& e) {
+                LOG_WARNING("radials: %s threw on load (%s); skipping", file.c_str(), e.what());
+            }
+            if (!ok) {
                 w.ParseError = true;
                 if (w.Name.empty()) w.Name = slug;
             }
