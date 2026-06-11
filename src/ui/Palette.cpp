@@ -50,16 +50,19 @@ bool s_ctxOpen   = false;
 // click-away has the same grace via s_rectValid; this is the ImGui-side twin.
 bool s_mouseGuard = false;
 
+// Enter twin of the mouse guard: EnterReturnsTrue only counts once Enter has
+// been seen UP at least once since opening. Shields against a WEDGED Enter in
+// ImGui's io - anything in the WndProc dispatch chain that eats a key-UP
+// (our +plus injection swallow did, now fixed; another addon still could)
+// leaves io.KeysDown stuck, and ImGui's key-repeat then auto-fires the send
+// the moment the query field activates (the machine-gun resend bug).
+bool s_enterGuard = false;
+
 // Options-preview pulses (see Palette.h). Frame stamps with a 1-frame
 // tolerance: the Options panel renders in a different callback phase than
 // the palette, so same-frame vs next-frame ordering must both count.
 int s_ghostFrame     = -1000;
 int s_keepAliveFrame = -1000;
-
-// TEMP diagnostics for the reopen-resend bug: frame stamp of the current
-// open (set on the first rendered frame) so activation logs can say how
-// long after opening they fired.
-int s_openedFrame    = -1000;
 
 // ---- click-away detection (WndProc-fed) -------------------------------------
 // Clicking the game world must close the palette, but those clicks are
@@ -240,6 +243,7 @@ void TogglePalette() {
         s_closeRequest = false;  // a stale request must not close the new open
         s_rectValid    = false;  // no rect until the first frame renders
         s_mouseGuard   = true;   // the opening click must not click a row
+        s_enterGuard   = true;   // a wedged Enter must not auto-send (see above)
     }
     LOG_DEBUG("Keybind: quick-send palette %s", open ? "opened" : "closed");
 }
@@ -267,6 +271,7 @@ void ResetPalette() {
     s_query[0]       = '\0';
     s_ctxOpen        = false;
     s_mouseGuard     = false;
+    s_enterGuard     = false;
     s_closeRequest   = false;
     s_rectValid      = false;
     s_ghostFrame     = -1000;
@@ -375,22 +380,23 @@ void PaletteRender() {
     // Query field. EnterReturnsTrue -> send the selection. AutoSelectAll: a
     // reopen restores the last query selected, so typing replaces it.
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (s_takeFocus) {
-        // TEMP diagnostics (reopen-resend bug): stamp the open + snapshot
-        // ImGui's Enter-key state at that moment.
-        s_openedFrame = fc;
-        const int ke  = io.KeyMap[ImGuiKey_Enter];
-        const int kke = io.KeyMap[ImGuiKey_KeyPadEnter];
-        LOG_DEBUG("palette open diag: frame=%d enterVK=%d kd=%d dur=%.3f | kpVK=%d kd=%d dur=%.3f",
-                  fc,
-                  ke,  ke  >= 0 ? (int)io.KeysDown[ke]  : -1, ke  >= 0 ? io.KeysDownDuration[ke]  : -1.f,
-                  kke, kke >= 0 ? (int)io.KeysDown[kke] : -1, kke >= 0 ? io.KeysDownDuration[kke] : -1.f);
-    }
     if (s_takeFocus) { ImGui::SetKeyboardFocusHere(); s_takeFocus = false; }
-    const bool enter = ImGui::InputTextWithHint(
+    bool enter = ImGui::InputTextWithHint(
         "##palquery", L("pal.hint"), s_query, sizeof(s_query),
         ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
         ImGuiInputTextFlags_AutoSelectAll, QueryEditCb);
+
+    // Enter guard (see s_enterGuard): a fire only counts once io has seen
+    // Enter UP since opening - a wedged Enter otherwise key-repeats straight
+    // into a send the moment the field activates.
+    {
+        const int ke  = io.KeyMap[ImGuiKey_Enter];
+        const int kke = io.KeyMap[ImGuiKey_KeyPadEnter];
+        const bool enterDown = (ke  >= 0 && io.KeysDown[ke]) ||
+                               (kke >= 0 && io.KeysDown[kke]);
+        if (s_enterGuard && !enterDown) s_enterGuard = false;
+        if (s_enterGuard) enter = false;
+    }
 
     // Keep the query field ACTIVE for as long as the palette lives (re-arm
     // whenever nothing is active - e.g. after Enter deactivated it, or a
@@ -548,16 +554,6 @@ void PaletteRender() {
     ImGui::TextDisabled("%s", L("pal.footer"));
 
     if (enter && !rows.empty()) activate = s_sel;
-    if (activate >= 0 || enter) {
-        // TEMP diagnostics (reopen-resend bug): why did an activation fire?
-        const int ke  = io.KeyMap[ImGuiKey_Enter];
-        const int kke = io.KeyMap[ImGuiKey_KeyPadEnter];
-        LOG_DEBUG("palette activate diag: frame=%d (open+%d) enter=%d activate=%d sel=%d rows=%d guard=%d | enterVK kd=%d dur=%.3f | kpVK kd=%d dur=%.3f",
-                  fc, fc - s_openedFrame, (int)enter, activate, s_sel, (int)rows.size(),
-                  (int)s_mouseGuard,
-                  ke  >= 0 ? (int)io.KeysDown[ke]  : -1, ke  >= 0 ? io.KeysDownDuration[ke]  : -1.f,
-                  kke >= 0 ? (int)io.KeysDown[kke] : -1, kke >= 0 ? io.KeysDownDuration[kke] : -1.f);
-    }
     if (activate >= 0 && activate < (int)rows.size()) {
         const PalRow& r = rows[activate];
         // A keyboard-driven send has no meaningful cursor position - anchor a

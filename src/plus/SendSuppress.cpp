@@ -23,12 +23,21 @@ bool SendSuppressConsume(UINT msg) {
     if (s_depth.load(std::memory_order_relaxed) <= 0) return false;
     switch (msg) {
         case WM_KEYDOWN:
-        case WM_KEYUP:
         case WM_SYSKEYDOWN:
-        case WM_SYSKEYUP:
         case WM_CHAR:
         case WM_DEADCHAR:
             return true;   // consume - keep it out of the game while we inject
+        // Key-UPS pass through, always. An up can't type anything, so it can't
+        // garble the injection - but EATING one wedges that key "down" in every
+        // later stage of the dispatch chain: ImGui's shared io never sees the
+        // release (a wedged Enter made ImGui's key-repeat auto-fire the
+        // palette's EnterReturnsTrue the moment its field activated - the
+        // machine-gun resend bug; the user's Enter release landed exactly in
+        // this injection window), and the game misses it too (a movement key
+        // released mid-window kept the character running). An up whose down was
+        // consumed is harmless everywhere - unmatched releases are ignored.
+        case WM_KEYUP:
+        case WM_SYSKEYUP:
         default:
             return false;  // mouse and everything else pass through
     }
