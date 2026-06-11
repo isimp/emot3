@@ -592,6 +592,20 @@ void AddonRender() {
     // dialog above already covers a fresh install). Opens once when staged.
     RenderNewEmotesDialog();
 
+    // Competitive modes (PvP / WvW): sends are hard-refused (gate step 0) and the
+    // Quickbar is hidden outright, with no setting - so without a visible reason
+    // the addon just looks broken the first time someone enters a match. One
+    // amber line, same notice styling as the Plus update banner in Options >
+    // General; clears by itself when the player leaves (live MumbleLink bit).
+    if (InCompetitiveMode()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+        ImGui::TextWrapped("%s", L("mp.competitive_banner"));
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
     // ---- Toolbar ----
     // Three independent class filters as blue-tint toggle pills (Core /
     // Unlocked / Locked), replacing the old single-select All/Core/

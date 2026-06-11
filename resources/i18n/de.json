@@ -68,6 +68,7 @@
   "mp.clear_search": "Suche löschen",
   "mp.search_one_more": "Tippe 1 weiteres Zeichen, um zu filtern.",
   "mp.search_match_alias": "Passt zu deiner Suche über den Alias: %s",
+  "mp.competitive_banner": "Das Senden von Emotes ist in Wettkampfmodi (PvP/WvW) deaktiviert, die Quickbar ist ausgeblendet. Nach dem Verlassen ist automatisch alles wieder da.",
   "mp.cat_exists": "Kategorie \"%s\" existiert bereits.",
   "mp.add_category": "+ Kategorie",
   "mp.category_help": "Ziehe Emotes zum Umsortieren innerhalb einer Kategorie. Ziehe die Überschrift, um Kategorien umzusortieren. Rechtsklick auf eine Überschrift zum Umbenennen oder Löschen.",
