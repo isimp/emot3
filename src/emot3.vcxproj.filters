@@ -155,6 +155,7 @@
     <ClInclude Include="data\IconCacheConfig.h"><Filter>data</Filter></ClInclude>
     <ClInclude Include="data\IconPath.h">    <Filter>data</Filter></ClInclude>
     <ClInclude Include="data\MeMotes.h">     <Filter>data</Filter></ClInclude>
+    <ClInclude Include="data\SearchMatch.h"> <Filter>data</Filter></ClInclude>
     <ClInclude Include="devtools\DevToolsUI.h">      <Filter>devtools</Filter></ClInclude>
     <ClInclude Include="devtools\Simulators.h">      <Filter>devtools</Filter></ClInclude>
     <ClInclude Include="devtools\IconCacheTuner.h">  <Filter>devtools</Filter></ClInclude>

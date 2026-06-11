@@ -11,7 +11,8 @@
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
 #include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
-#include "StringUtil.h"       // TrimWhitespace (new-category entry)
+#include "SearchMatch.h"      // MatchEmoteSearch / MatchMeMoteSearch (shared with the palette)
+#include "StringUtil.h"       // TrimWhitespace (new-category entry) + ToLower (search needle)
 #include "Icons.h"
 #include "IconDrawing.h"      // DrawStarIcon / DrawPaperclipIcon / DrawCollapseArrow
 #include "IconCacheConfig.h"  // g_IconCache.poolBudgetMB (dev pool-budget readout)
@@ -736,8 +737,7 @@ void AddonRender() {
     ImGui::Separator();
 
     // ---- Build display lists (lock held) ----
-    std::string search(g_SearchBuf);
-    std::transform(search.begin(), search.end(), search.begin(), ::tolower);
+    const std::string search = ToLower(g_SearchBuf);
 
     // Single source of truth for "is the search filter actually
     // running this frame?" - read by both passes() below and the
@@ -773,29 +773,16 @@ void AddonRender() {
             if (!g_Settings.FilterShowLocked) return false;
         }
         if (searchActive) {
-            std::string n = e.Name;
-            std::string c = e.Command;
-            std::transform(n.begin(), n.end(), n.begin(), ::tolower);
-            std::transform(c.begin(), c.end(), c.begin(), ::tolower);
             // Match the display name, the slash-command (e.g. "/bow"), or any
-            // alias ("/bbq" finds Barbecue). Aliases are checked only when neither
-            // the name nor the command matched, so we can tell an alias-only hit
-            // apart and explain it (the name shows in the label, the command in the
-            // tooltip - an alias shows nowhere, which is the confusing case).
-            bool nameHit = n.find(search) != std::string::npos;
-            bool cmdHit  = c.find(search) != std::string::npos;
-            const std::string* aliasHit = nullptr;
-            if (!nameHit && !cmdHit) {
-                for (const auto& al : e.Aliases) {
-                    std::string a = al;
-                    std::transform(a.begin(), a.end(), a.begin(), ::tolower);
-                    if (a.find(search) != std::string::npos) { aliasHit = &al; break; }
-                }
-            }
-            if (!nameHit && !cmdHit && !aliasHit) return false;
-            if (aliasHit) {
+            // alias ("/bbq" finds Barbecue) - shared predicate (SearchMatch.h)
+            // so the palette and this box can't drift. An alias-only hit gets
+            // the explanatory note (the name shows in the label, the command in
+            // the tooltip - an alias shows nowhere, which is the confusing case).
+            SearchHit h = MatchEmoteSearch(e, search);
+            if (!h.hit) return false;
+            if (h.aliasOnly) {
                 char buf[160];
-                std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), aliasHit->c_str());
+                std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), h.aliasOnly->c_str());
                 note = buf;
             }
         }
@@ -809,21 +796,11 @@ void AddonRender() {
     auto passesMeMote = [&](const MeMote& m, std::string& note) {
         note.clear();
         if (!searchActive) return true;
-        std::string n = m.Name;
-        std::transform(n.begin(), n.end(), n.begin(), ::tolower);
-        bool nameHit = n.find(search) != std::string::npos;
-        const std::string* aliasHit = nullptr;
-        if (!nameHit) {
-            for (const auto& al : m.Aliases) {
-                std::string a = al;
-                std::transform(a.begin(), a.end(), a.begin(), ::tolower);
-                if (a.find(search) != std::string::npos) { aliasHit = &al; break; }
-            }
-        }
-        if (!nameHit && !aliasHit) return false;
-        if (aliasHit) {
+        SearchHit h = MatchMeMoteSearch(m, search);
+        if (!h.hit) return false;
+        if (h.aliasOnly) {
             char buf[160];
-            std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), aliasHit->c_str());
+            std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), h.aliasOnly->c_str());
             note = buf;
         }
         return true;
