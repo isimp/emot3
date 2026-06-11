@@ -63,7 +63,7 @@
   "common.clear": "Clear",
   "common.none": "None",
 
-  "pal.hint": "Type to search emotes... (2+ chars)",
+  "pal.hint": "Type to search emotes...",
   "pal.empty_usage": "Send emotes and they'll be suggested here.",
   "pal.no_match": "No match.",
   "pal.more": "+%d more - keep typing to narrow the list.",

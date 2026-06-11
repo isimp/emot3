@@ -351,17 +351,14 @@ void PaletteRender() {
         !ImGui::IsAnyMouseDown())
         ImGui::SetKeyboardFocusHere(-1);
 
-    // Build this frame's rows. Same activation rule as the Library search box:
-    // the filter starts at 2+ characters (with the same one-more-character
-    // hint at exactly one); below the threshold the palette behaves as
-    // empty-query and keeps showing the suggestions.
+    // Build this frame's rows. Filtering starts from the FIRST character
+    // (unlike the Library's 2-char rule): the palette list is capped + ranked,
+    // so a 1-char query is already useful and the early feedback matters more
+    // than scan cost (the catalog is small).
     const std::string needle = ToLower(TrimWhitespace(s_query));
-    const bool searchActive = needle.size() >= 2;
-    if (needle.size() == 1)
-        ImGui::TextDisabled("%s", L("mp.search_one_more"));
     std::vector<PalRow> rows;
     int total = 0;
-    if (!searchActive) {
+    if (needle.empty()) {
         if (g_Settings.PaletteEmptyQuery != EPaletteEmptyQuery::Off)
             BuildUsageRows(rows);
         total = (int)rows.size();
@@ -472,7 +469,7 @@ void PaletteRender() {
     s_ctxOpen = anyCtx;
 
     if (rows.empty()) {
-        if (searchActive)
+        if (!needle.empty())
             ImGui::TextDisabled("%s", L("pal.no_match"));
         else if (g_Settings.PaletteEmptyQuery != EPaletteEmptyQuery::Off)
             ImGui::TextDisabled("%s", L("pal.empty_usage"));  // suggestions on, none yet

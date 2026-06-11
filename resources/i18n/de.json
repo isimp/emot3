@@ -60,7 +60,7 @@
   "common.clear": "Löschen",
   "common.none": "Keine",
 
-  "pal.hint": "Tippen, um Emotes zu suchen... (2+ Zeichen)",
+  "pal.hint": "Tippen, um Emotes zu suchen...",
   "pal.empty_usage": "Sende Emotes, dann werden sie hier vorgeschlagen.",
   "pal.no_match": "Kein Treffer.",
   "pal.more": "+%d weitere - tippe weiter, um die Liste einzugrenzen.",
