@@ -32,6 +32,7 @@
 #include "RadialExports.h" // staged RadialMenus wheels (scan at load; refs union into binds)
 #include "MainPanel.h"
 #include "NexusShortcut.h"
+#include "Palette.h"      // emote palette (render + keybind action + WndProc seam)
 #include "Quickbar.h"
 #include "Options.h"
 #include "DevTools.h"     // dev-tools framework (overlays; only in EMOT3_DEVTOOLS builds)
@@ -54,7 +55,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
 
 extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.APIVersion  = NEXUS_API_VERSION;
-    AddonDef.Version     = { 1, 3, 2, 0 };
+    AddonDef.Version     = { 1, 4, 0, 0 };
     AddonDef.Author      = "Morlaed";
     AddonDef.Description = "Clickable emote panel with unlock tracking.";
     AddonDef.Load        = AddonLoad;
@@ -105,8 +106,9 @@ extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
 // are also the persistent storage key for each binding — anyone who
 // had a key assigned under the old identifiers will see those slots
 // unbound after this rename and need to set them again.
-const char* const KB_TOGGLE_MAIN = "Toggle Library";
-const char* const KB_TOGGLE_QB   = "Toggle Quickbar";
+const char* const KB_TOGGLE_MAIN    = "Toggle Library";
+const char* const KB_TOGGLE_QB      = "Toggle Quickbar";
+const char* const KB_TOGGLE_PALETTE = "Toggle Palette";
 
 // Nexus calls this when the user (or another addon) triggers one of our
 // registered keybinds. We act on press only — release is ignored so
@@ -123,6 +125,8 @@ static void OnKeybind(const char* identifier, bool isRelease) {
         LOG_DEBUG("Keybind: Quickbar %s",
                   g_Settings.ShowQuickbar ? "shown" : "hidden");
         // Window visibility is navigation state — rides along (no eager save).
+    } else if (std::strcmp(identifier, KB_TOGGLE_PALETTE) == 0) {
+        TogglePalette();  // transient popup - nothing persisted at all
     }
 }
 
@@ -394,6 +398,7 @@ void AddonLoad(AddonAPI* aApi) {
 
     APIDefs->Renderer.Register(ERenderType_Render,        AddonRender);
     APIDefs->Renderer.Register(ERenderType_Render,        QuickbarRender);
+    APIDefs->Renderer.Register(ERenderType_Render,        PaletteRender);
     APIDefs->Renderer.Register(ERenderType_OptionsRender, AddonOptions);
 #ifdef EMOT3_DEVTOOLS
     // Dev tools: build the registry once, then one render callback draws every
@@ -405,15 +410,19 @@ void AddonLoad(AddonAPI* aApi) {
     APIDefs->WndProc.Register(WndProcCallback);
 
     // ESC closes the main window like other Nexus windows. The QB hook is
-    // gated on the setting (default off — it's a HUD, not modal). The
-    // window-name string must exactly match what we pass to ImGui::Begin.
+    // gated on the setting (default off — it's a HUD, not modal). The palette
+    // handles ESC itself (PaletteRender): the Nexus hook only fired after the
+    // query field had already eaten one ESC to deactivate-and-revert, so the
+    // palette reads the key directly for a one-press close. The window-name
+    // string must exactly match what we pass to ImGui::Begin.
     APIDefs->UI.RegisterCloseOnEscape("emot3 Library##wnd", &g_Settings.ShowWindow);
     ApplyQbCloseOnEsc();
 
     // Keybinds registered with empty default — users assign their own via
     // the Nexus keybind UI without risking conflicts.
-    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_MAIN, OnKeybind, "");
-    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_QB,   OnKeybind, "");
+    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_MAIN,    OnKeybind, "");
+    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_QB,      OnKeybind, "");
+    APIDefs->InputBinds.RegisterWithString(KB_TOGGLE_PALETTE, OnKeybind, "");
 
     // Per-emote InputBinds for entries opted into a keybind (catalogs loaded
     // above). Diff-based, so re-entrant-safe on a Nexus reload.
@@ -437,13 +446,16 @@ void AddonUnload() {
     RemoveNexusShortcut();
     APIDefs->InputBinds.Deregister(KB_TOGGLE_MAIN);
     APIDefs->InputBinds.Deregister(KB_TOGGLE_QB);
+    APIDefs->InputBinds.Deregister(KB_TOGGLE_PALETTE);
     DeregisterAllEmoteBinds();  // drop every per-emote InputBind we registered
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Library##wnd");
     APIDefs->UI.DeregisterCloseOnEscape("emot3 Quickbar##qb");
     APIDefs->WndProc.Deregister(WndProcCallback);
     APIDefs->Renderer.Deregister(AddonRender);
     APIDefs->Renderer.Deregister(QuickbarRender);
+    APIDefs->Renderer.Deregister(PaletteRender);
     APIDefs->Renderer.Deregister(AddonOptions);
+    ResetPalette();  // a Nexus reload must not resurrect a stale palette
     ShutdownCharacterState();  // unsubscribe the RTAPI addon load/unload events
     ShutdownUnlockScan();      // unsubscribe the Hoard & Seek response event
 #ifdef EMOT3_DEVTOOLS
@@ -510,6 +522,23 @@ static UINT WndProcCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case WM_ACTIVATE:
             if (LOWORD(wParam) == WA_INACTIVE) ClearHeldKeys();
             else                               ReseedHeldKeys();
+            break;
+        case WM_LBUTTONDOWN: case WM_RBUTTONDOWN:
+        case WM_MBUTTONDOWN: case WM_XBUTTONDOWN:
+            // Click-away close for the palette: a click on the game
+            // world never reaches ImGui's focus bookkeeping, so the palette
+            // hit-tests every mouse-down against its own window rect (cheap
+            // no-op while closed). Observe-only - never consumed. The
+            // (short) casts are GET_X/Y_LPARAM (client coords sign-extend).
+            PaletteNoteMouseDown((int)(short)LOWORD(lParam),
+                                 (int)(short)HIWORD(lParam));
+            break;
+        case WM_LBUTTONUP: case WM_RBUTTONUP:
+        case WM_MBUTTONUP: case WM_XBUTTONUP:
+            // Button-up side of the palette's same-click toggle suppression
+            // (the Nexus icon invokes the toggle on RELEASE - see Palette.h).
+            // Observe-only.
+            PaletteNoteMouseUp();
             break;
         default: break;
     }

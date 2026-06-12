@@ -9,6 +9,7 @@
 #include "SendSuppress.h"   // keyboard swallow during emote injection (stub in base builds)
 #include "PlusSettings.h"   // g_PlusSettings (whole header empty in base builds)
 #include "CharacterState.h" // CurrentEmoteBlock / EmoteBlockKey (mounted + RTAPI states)
+#include "AirborneDetect.h" // cs_constants::MoveSpeed (the calibrated moving threshold)
 #include "Feedback.h"       // ShowFeedback - in-window refusal line (replaces SendAlert)
 #include "Usage.h"          // usage::Record - feeds the Recently/Frequently used categories
 #include "Profiling.h"      // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "send" path
@@ -16,6 +17,7 @@
 #include <Windows.h>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <string>
 #include <thread>
 
@@ -177,6 +179,19 @@ SendBusy CurrentSendBusy(bool checkHeldKeys, bool ignoreTextbox) {
     //    checkHeldKeys is false ("send while moving" mode handles it via the swallow).
     if (checkHeldKeys && (AnyPrintableKeyHeld() || MovementActive()))
         return SendBusy::KeysHeld;
+
+    // Swallow mode (checkHeldKeys = false): held keys and autorun are both
+    // HANDLED there (the swallow consumes key-repeats and the chat focus
+    // pauses key-movement; the injection worker cancels autorun) - but
+    // MOUSE-walk is not interruptible: chat focus doesn't pause it and we
+    // can't release the user's physical mouse buttons, so the game would
+    // silently eat the emote. Refuse/grey it like refuse mode does. Cost:
+    // two GetAsyncKeyState calls, short-circuited behind "actually moving"
+    // (so steady frames never pay them - see the no-per-frame-polling rule).
+    if (!checkHeldKeys && MovementActive() &&
+        (GetAsyncKeyState(VK_LBUTTON) & 0x8000) &&
+        (GetAsyncKeyState(VK_RBUTTON) & 0x8000))
+        return SendBusy::KeysHeld;
     return SendBusy::None;
 }
 
@@ -236,6 +251,56 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
         // no time, and SendToGameOnly bypasses our WndProc so our own injected
         // chars are never consumed.
         SendSuppressScope suppress(swallowMode);
+
+        // ---- Autorun interruption (swallow mode only) -----------------------
+        // Autorun is a game-side TOGGLE, not a held key: the swallow can't stop
+        // it and the chat focus doesn't pause it, so the character keeps moving
+        // and the game eats the emote. Cancel it via the remap-proof game bind
+        // (same Press/Release pattern as UiChatCommand below). The toggle state
+        // is unreadable, so NEVER toggle blindly - only when the movement can't
+        // be explained any other way: horizontally moving with no printable key
+        // held and no mouse-walk (both mouse buttons would mean the toggle
+        // turns autorun ON instead - that case is refused at the gate). Not
+        // re-enabled afterwards: resuming movement would cancel the emote.
+        // Only reachable in +plus (swallowMode is constant false in base);
+        // without swallow mode a moving send never gets this far (gate).
+        if (swallowMode && MumbleLink && !g_Unloading.load() &&
+            APIDefs->GameBinds.IsBound(EGameBinds_MoveAutoRun)) {
+            // Horizontal speed over a 50 ms window, read straight from the
+            // MumbleLink shared memory (worker thread - the render-thread
+            // detector isn't safely readable from here). Y is up; X/Z ground.
+            auto horizSpeed = []() -> float {
+                if (!MumbleLink) return 0.f;
+                const float x0 = MumbleLink->AvatarPosition.X;
+                const float z0 = MumbleLink->AvatarPosition.Z;
+                Sleep(50);
+                const float dx = MumbleLink->AvatarPosition.X - x0;
+                const float dz = MumbleLink->AvatarPosition.Z - z0;
+                return std::sqrt(dx * dx + dz * dz) / 0.05f;
+            };
+            const bool keysHeld  = AnyPrintableKeyHeld();
+            const bool mouseWalk = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) &&
+                                   (GetAsyncKeyState(VK_RBUTTON) & 0x8000);
+            if (!keysHeld && !mouseWalk) {
+                const float v0 = horizSpeed();
+                if (v0 > cs_constants::MoveSpeed()) {
+                    LOG_DEBUG("autorun-cancel: %.2f m/s with no keys/buttons -> MoveAutoRun toggle", v0);
+                    APIDefs->GameBinds.Press(EGameBinds_MoveAutoRun);
+                    Sleep(60);
+                    if (g_Unloading.load()) return;
+                    APIDefs->GameBinds.Release(EGameBinds_MoveAutoRun);
+                    // Let the character settle before chat opens (each probe
+                    // sleeps 50 ms; <=400 ms total, proceed on timeout - the
+                    // emote may still land if the game stops us in time).
+                    float v = v0;
+                    for (int i = 0; i < 8 && v > cs_constants::MoveSpeed(); ++i) {
+                        if (g_Unloading.load()) return;
+                        v = horizSpeed();
+                    }
+                    LOG_DEBUG("autorun-cancel: settled at %.2f m/s", v);
+                }
+            }
+        }
 
         // Bail before each APIDefs deref if Nexus is tearing the addon
         // down (g_Unloading set in AddonUnload). Without this, a worker
@@ -316,6 +381,15 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
             if (g_Unloading.load()) return;
             APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYUP, VK_RETURN, upLP);
         }
+
+        // NOTE - no held-key "resume" after the send, by design (tried and
+        // REMOVED after in-game testing): a synthetic fresh WM_KEYDOWN posted
+        // to the game does NOT resume movement - movement reads physical key
+        // state (raw input / async state), not posted messages, so the game
+        // can't be convinced a key is "still held". The shipped semantic is
+        // therefore uniform with the autorun-cancel above: a send while
+        // moving STOPS the character; the user resumes movement themselves
+        // (release + re-press, or re-engage autorun).
     }).detach();
 }
 
@@ -330,15 +404,27 @@ static void EmitSendRefusal(const char* key, EFeedbackSink sink) {
         ShowFeedback(L(key));
 }
 
+// Send-mode override state (see EmoteAction.h). Render-thread only; applied
+// where the auto-submit settings are read, i.e. at SendOrFill* entry.
+ESendModeOverride s_sendModeOverride = ESendModeOverride::None;
+
+bool ApplySendModeOverride(bool settingValue) {
+    if (s_sendModeOverride == ESendModeOverride::Send) return true;
+    if (s_sendModeOverride == ESendModeOverride::Fill) return false;
+    return settingValue;
+}
+
 } // namespace
 
-void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink sink) {
+void SetSendModeOverride(ESendModeOverride m) { s_sendModeOverride = m; }
+
+bool SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink sink) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
-    if (!APIDefs) return;
+    if (!APIDefs) return false;
     std::string cmd = e.Command;
     if (useTarget && e.IsTargetable) cmd += " @";
     if (useSync)                     cmd += " *";
-    const bool send        = g_Settings.SendOnClick;
+    const bool send        = ApplySendModeOverride(g_Settings.SendOnClick);
     const bool swallowMode = EmoteSendSwallowActive();
     // The held-printable-key / movement guard applies to clicks, keybinds, and radial
     // invokes alike (only the +plus swallow drops it): a keybind/wheel-hotkey that's a
@@ -362,7 +448,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("Emote skipped (%s): %s", skipKey, cmd.c_str());
         EmitSendRefusal(skipKey, sink);
-        return;
+        return false;
     }
 
     // Real send/fill (gate passed) — record for Recently / Frequently used.
@@ -379,11 +465,12 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink
 
     LOG_DEBUG("%s emote: %s", send ? "Sending" : "Filling", cmd.c_str());
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
+    return true;
 }
 
-void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sink) {
+bool SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sink) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
-    if (!APIDefs) return;
+    if (!APIDefs) return false;
 
     // Pick the variant body. Fall back to TextDefault when the requested
     // variant is empty (defensive backstop — the right-click menu disables
@@ -398,7 +485,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
     }
     if (body->empty()) {
         LOG_WARNING("/me-mote %s has empty body - send refused", m.Id.c_str());
-        return;
+        return false;
     }
 
     // Build "/me <text>". The "/me " prefix is owned exclusively here — never
@@ -406,7 +493,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
     // so we can't ship a doubled prefix.
     std::string cmd = "/me " + *body;
 
-    const bool send        = g_Settings.MeMoteSendOnClick;  // independent of SendOnClick
+    const bool send = ApplySendModeOverride(g_Settings.MeMoteSendOnClick);  // independent of SendOnClick
     const bool swallowMode = EmoteSendSwallowActive();
     const bool checkHeld   = !swallowMode;  // see SendOrFillEmote (gate applies to binds too)
 
@@ -422,7 +509,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("/me-mote skipped (%s): %s", skipKey, cmd.c_str());
         EmitSendRefusal(skipKey, sink);
-        return;
+        return false;
     }
 
     // Real send/fill (gate passed) — record for Recently / Frequently used.
@@ -430,6 +517,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
 
     LOG_DEBUG("%s /me-mote: %s", send ? "Sending" : "Filling", cmd.c_str());
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
+    return true;
 }
 
 bool IsEmoteUnlocked(const std::string& id) {

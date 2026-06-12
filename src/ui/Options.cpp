@@ -67,6 +67,7 @@ void AddonOptions() {
         // ImGui lose track of which tab is open and jump to another one.
         std::string tGeneral  = std::string(L("opt.tab.general"))  + "###tab_general";
         std::string tQuickbar = std::string(L("opt.tab.quickbar")) + "###tab_quickbar";
+        std::string tPalette  = std::string(L("opt.tab.palette"))  + "###tab_palette";
         std::string tEmotes   = std::string(L("opt.tab.emotes"))   + "###tab_emotes";
         std::string tMeMotes  = std::string(L("opt.tab.me_motes")) + "###tab_me_motes";
         std::string tRadial   = std::string(L("opt.tab.radial"))   + "###tab_radial";
@@ -77,6 +78,12 @@ void AddonOptions() {
         }
         if (ImGui::BeginTabItem(tQuickbar.c_str())) {
             RenderQuickbarOptionsTab();
+            ImGui::EndTabItem();
+        }
+        // Palette — its own tab (started as a General section and outgrew
+        // it). Sits next to Quickbar: both are send-surface windows.
+        if (ImGui::BeginTabItem(tPalette.c_str())) {
+            RenderPaletteOptionsTab();
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem(tUnlocks.c_str())) {

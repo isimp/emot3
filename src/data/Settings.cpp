@@ -183,6 +183,63 @@ bool SanitizeSettings(Settings& s) {
     clampScale(s.MainIconScale,     "main.icon_scale");
     clampScale(s.QuickbarIconScale, "quickbar.icon_scale");
 
+    // Palette knobs: row cap 5..15, size 0.8..1.5 (its own range - it scales
+    // the window, not just icons), empty-query enum to a known value.
+    {
+        int c = s.PaletteMaxResults < 5 ? 5 : (s.PaletteMaxResults > 15 ? 15 : s.PaletteMaxResults);
+        if (c != s.PaletteMaxResults) {
+            LOG_WARNING("settings: palette.max_results %d out of range -> clamped to %d",
+                        s.PaletteMaxResults, c);
+            s.PaletteMaxResults = c; changed = true;
+        }
+        float fc = s.PaletteScale < 0.8f ? 0.8f : (s.PaletteScale > 1.5f ? 1.5f : s.PaletteScale);
+        if (fc != s.PaletteScale) {
+            LOG_WARNING("settings: palette.scale %.2f out of range -> clamped to %.2f",
+                        s.PaletteScale, fc);
+            s.PaletteScale = fc; changed = true;
+        }
+        int q = (int)s.PaletteEmptyQuery;
+        if (q < 0 || q > 2) {
+            LOG_WARNING("settings: palette.empty_query %d invalid -> 0 (frequent)", q);
+            s.PaletteEmptyQuery = EPaletteEmptyQuery::Frequent; changed = true;
+        }
+        // The vertical anchor's legal range depends on the grow direction:
+        // growing down it's the TOP edge, 0.0..0.8 (calibrated so the
+        // smallest palette at scale 1 still fits below the anchor); growing
+        // up it's the BOTTOM edge, mirrored to 0.2..1.0 so the same smallest
+        // palette fits above it.
+        const float yMin = s.PaletteGrowUp ? 0.2f : 0.0f;
+        const float yMax = s.PaletteGrowUp ? 1.0f : 0.8f;
+        float fy = s.PaletteYPos < yMin ? yMin : (s.PaletteYPos > yMax ? yMax : s.PaletteYPos);
+        if (fy != s.PaletteYPos) {
+            LOG_WARNING("settings: palette.y_pos %.2f out of range -> clamped to %.2f",
+                        s.PaletteYPos, fy);
+            s.PaletteYPos = fy; changed = true;
+        }
+        float fx = s.PaletteXPos < 0.1f ? 0.1f : (s.PaletteXPos > 0.9f ? 0.9f : s.PaletteXPos);
+        if (fx != s.PaletteXPos) {
+            LOG_WARNING("settings: palette.x_pos %.2f out of range -> clamped to %.2f",
+                        s.PaletteXPos, fx);
+            s.PaletteXPos = fx; changed = true;
+        }
+        int em = (int)s.PaletteEnterMode;
+        if (em < 0 || em > 2) {
+            LOG_WARNING("settings: palette.enter_mode %d invalid -> 0 (global)", em);
+            s.PaletteEnterMode = EPaletteEnterMode::Global; changed = true;
+        }
+        float fa = s.PaletteBgAlpha < 0.2f ? 0.2f : (s.PaletteBgAlpha > 1.0f ? 1.0f : s.PaletteBgAlpha);
+        if (fa != s.PaletteBgAlpha) {
+            LOG_WARNING("settings: palette.bg_alpha %.2f out of range -> clamped to %.2f",
+                        s.PaletteBgAlpha, fa);
+            s.PaletteBgAlpha = fa; changed = true;
+        }
+        int sc = (int)s.ShortcutClickAction;
+        if (sc < 0 || sc > 2) {
+            LOG_WARNING("settings: shortcut.left_click_opens %d invalid -> 0 (library)", sc);
+            s.ShortcutClickAction = EShortcutClick::Library; changed = true;
+        }
+    }
+
     // Filter toggles are plain bools - any stored value is valid, nothing
     // to clamp. (The old EEmoteFilter clamp lived here.)
     {
@@ -409,6 +466,22 @@ bool LoadSettings(const std::string& path) {
     s.MainUnlockedCollapsed = GetBool(main, "unlocked_collapsed", s.MainUnlockedCollapsed);
     s.MainMeMotesCollapsed  = GetBool(main, "me_motes_collapsed", s.MainMeMotesCollapsed);
 
+    const json& pal = GetObj(j, "palette");
+    s.PaletteMaxResults  = GetInt  (pal, "max_results",   s.PaletteMaxResults);
+    s.PaletteEmptyQuery  = (EPaletteEmptyQuery)GetInt(pal, "empty_query",
+                                                      (int)s.PaletteEmptyQuery);
+    s.PaletteClearOnOpen = GetBool (pal, "clear_on_open", s.PaletteClearOnOpen);
+    s.PaletteScale       = GetFloat(pal, "scale",         s.PaletteScale);
+    s.PaletteYPos        = GetFloat(pal, "y_pos",         s.PaletteYPos);
+    s.PaletteXPos        = GetFloat(pal, "x_pos",         s.PaletteXPos);
+    s.PaletteEnterMode   = (EPaletteEnterMode)GetInt(pal, "enter_mode",
+                                                     (int)s.PaletteEnterMode);
+    s.PaletteEscClearsFirst = GetBool (pal, "esc_clears_first", s.PaletteEscClearsFirst);
+    s.PaletteBgAlpha        = GetFloat(pal, "bg_alpha",         s.PaletteBgAlpha);
+    s.PaletteShowIcons      = GetBool (pal, "show_icons",       s.PaletteShowIcons);
+    s.PaletteShowFooter     = GetBool (pal, "show_footer",      s.PaletteShowFooter);
+    s.PaletteGrowUp         = GetBool (pal, "grow_up",          s.PaletteGrowUp);
+
     const json& qb = GetObj(j, "quickbar");
     s.ShowQuickbar        = GetBool(qb, "show",                  s.ShowQuickbar);
     s.QuickbarCategoryIdx = GetInt (qb, "active_category_index", s.QuickbarCategoryIdx);
@@ -481,7 +554,14 @@ bool LoadSettings(const std::string& path) {
 
     const json& shortcut = GetObj(general, "nexus_shortcut");
     s.ShowNexusShortcut        = GetBool(shortcut, "show",                      s.ShowNexusShortcut);
-    s.SwapShortcutClickActions = GetBool(shortcut, "left_click_opens_quickbar", s.SwapShortcutClickActions);
+    // Legacy bool "left_click_opens_quickbar" (pre-palette) maps onto the
+    // 3-way action first; the current int key overrides when present.
+    {
+        const bool legacyQb = GetBool(shortcut, "left_click_opens_quickbar", false);
+        s.ShortcutClickAction = (EShortcutClick)GetInt(
+            shortcut, "left_click_opens",
+            legacyQb ? (int)EShortcutClick::Quickbar : (int)s.ShortcutClickAction);
+    }
 
     const json& language = GetObj(j, "language");
     s.UiLanguage = GetString(language, "ui", s.UiLanguage);
@@ -586,6 +666,21 @@ std::string SerializeSettings() {
     f << "    \"me_motes_collapsed\": " << B(s.MainMeMotesCollapsed)  << "\n";
     f << "  },\n";
 
+    f << "  \"palette\": {\n";
+    f << "    \"max_results\": "   << s.PaletteMaxResults      << ",\n";
+    f << "    \"empty_query\": "   << (int)s.PaletteEmptyQuery << ",\n";
+    f << "    \"clear_on_open\": " << B(s.PaletteClearOnOpen)  << ",\n";
+    f << "    \"scale\": "         << s.PaletteScale           << ",\n";
+    f << "    \"y_pos\": "         << s.PaletteYPos            << ",\n";
+    f << "    \"x_pos\": "            << s.PaletteXPos              << ",\n";
+    f << "    \"enter_mode\": "       << (int)s.PaletteEnterMode    << ",\n";
+    f << "    \"esc_clears_first\": " << B(s.PaletteEscClearsFirst) << ",\n";
+    f << "    \"bg_alpha\": "         << s.PaletteBgAlpha           << ",\n";
+    f << "    \"show_icons\": "       << B(s.PaletteShowIcons)      << ",\n";
+    f << "    \"show_footer\": "      << B(s.PaletteShowFooter)     << ",\n";
+    f << "    \"grow_up\": "          << B(s.PaletteGrowUp)         << "\n";
+    f << "  },\n";
+
     // --- quickbar ------------------------------------------------------
     f << "  \"quickbar\": {\n";
     f << "    \"show\": "                  << B(s.ShowQuickbar)         << ",\n";
@@ -650,7 +745,7 @@ std::string SerializeSettings() {
     f << "    },\n";
     f << "    \"nexus_shortcut\": {\n";
     f << "      \"show\": "                      << B(s.ShowNexusShortcut)        << ",\n";
-    f << "      \"left_click_opens_quickbar\": " << B(s.SwapShortcutClickActions) << "\n";
+    f << "      \"left_click_opens\": " << (int)s.ShortcutClickAction << "\n";
     f << "    }\n";
     f << "  },\n";
 

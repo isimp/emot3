@@ -12,6 +12,7 @@
 #include "Feedback.h"    // SetActiveFeedbackSurface / DrawFeedbackOverlay
 #include "Cells.h"
 #include "OwnedScroll.h" // custom scrollbar + wheel/page scroll math + edge hints
+#include "Palette.h"     // IsPaletteOpen (bar steps back while the palette is up)
 #include "Layout.h"      // Ellipsize - shared with the emote-name label fitting
 #include "Logging.h"     // LOG_DEBUG (active-category switch)
 #include "Profiling.h"   // dev perf overlay
@@ -175,6 +176,13 @@ void QuickbarRender() {
         const bool heldLongEnough = (busy == SendBusy::KeysHeld && s_heldSince >= 0.0 &&
                                      now - s_heldSince >= kHeldGreyDelay);
         reason = PickQbBlockReason(g_QbBlockReason, greying, busy, heldLongEnough);
+
+        // The quick-send palette is itself a send surface: while it's open the
+        // bar steps back, riding the same master setting + interaction (grey /
+        // hide / untouched) as every other unusable source. Lowest priority -
+        // a real reason (mounted, typing, moving) still owns the explainer.
+        if (!reason && greying && IsPaletteOpen())
+            reason = "cells.blocked_palette";
     }
 
     // One interaction applies to whichever source fired: Hide pulls the whole bar

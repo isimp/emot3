@@ -66,8 +66,9 @@ void OptionsSection(const char* title);
 void RadialMembershipNote(EFavoriteRefType type, const std::string& id,
                           bool hasPersonalKeybind);
 
-// The four Options tabs, one per TU, invoked by AddonOptions() in Options.cpp.
+// The Options tabs, one per TU, invoked by AddonOptions() in Options.cpp.
 void RenderGeneralOptionsTab();
 void RenderQuickbarOptionsTab();
+void RenderPaletteOptionsTab();
 void RenderEmotesTab();
 void RenderUnlocksTab();

@@ -11,7 +11,9 @@
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
 #include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
-#include "StringUtil.h"       // TrimWhitespace (new-category entry)
+#include "Palette.h"          // TogglePalette / IsPaletteOpen (toolbar "P" button)
+#include "SearchMatch.h"      // MatchEmoteSearch / MatchMeMoteSearch (shared with the palette)
+#include "StringUtil.h"       // TrimWhitespace (new-category entry) + ToLower (search needle)
 #include "Icons.h"
 #include "IconDrawing.h"      // DrawStarIcon / DrawPaperclipIcon / DrawCollapseArrow
 #include "IconCacheConfig.h"  // g_IconCache.poolBudgetMB (dev pool-budget readout)
@@ -689,13 +691,17 @@ void AddonRender() {
             TooltipText("mp.icon_scale_tooltip");
     }
 
-    // Quickbar toggle, right-aligned on this same row.
+    // Quickbar + Palette toggles, right-aligned on this same row. Short "QB" /
+    // "P" labels so the pair still fits beside the scale slider at the
+    // window's min width; the tooltips carry the full names.
     {
         const ImGuiStyle& style = ImGui::GetStyle();
-        std::string qbLabel = L("mp.quickbar");
-        float qbBtnW = ImGui::CalcTextSize(qbLabel.c_str()).x + style.FramePadding.x * 2.f;
-        float rightX = ImGui::GetWindowContentRegionMax().x - qbBtnW
-                     - style.ItemInnerSpacing.x;
+        std::string qbLabel  = L("mp.quickbar");   // "QB"
+        std::string palLabel = L("mp.palette");    // "P"
+        float qbBtnW  = ImGui::CalcTextSize(qbLabel.c_str()).x  + style.FramePadding.x * 2.f;
+        float palBtnW = ImGui::CalcTextSize(palLabel.c_str()).x + style.FramePadding.x * 2.f;
+        float rightX = ImGui::GetWindowContentRegionMax().x - qbBtnW - palBtnW
+                     - style.ItemSpacing.x - style.ItemInnerSpacing.x;
         if (rightX > ImGui::GetCursorPosX()) {
             ImGui::SameLine(rightX);
         } else {
@@ -706,22 +712,22 @@ void AddonRender() {
         ToggleButton(qbLabel.c_str(), &g_Settings.ShowQuickbar);
         if (ImGui::IsItemHovered())
             TooltipText("mp.quickbar_tooltip");
+        ImGui::SameLine();
+        // The palette's open state is transient (nothing persisted): the
+        // ToggleButton runs on a local copy for the lit-while-open look, and
+        // a change routes through TogglePalette (which owns the real state +
+        // the open guards).
+        bool palOpen = IsPaletteOpen();
+        if (ToggleButton(palLabel.c_str(), &palOpen))
+            TogglePalette();
+        if (ImGui::IsItemHovered())
+            TooltipText("mp.palette_tooltip");
     }
 
-    // Search with an X clear button on the right.
-    //
-    // Filtering activates only at 2+ characters - a single keystroke
-    // would match roughly half the catalog and isn't useful, and
-    // letting the filter fire at 1 char makes the category empty-
-    // state messages say "no emotes match the search" the instant the
-    // user has typed one letter, which reads as a lie.
-    //
-    // The rule is surfaced three ways so the user doesn't have to
-    // discover it by accident:
-    //   - The placeholder ends with "(2+ chars)".
-    //   - The input field has a hover tooltip that spells it out.
-    //   - When the user has typed exactly one character, a muted
-    //     line below the row prompts them to type one more.
+    // Search with an X clear button on the right. Filters from the first
+    // character (the old 2-char activation rule + its one-more-character
+    // hint were removed - the palette filters from the first keystroke and
+    // the two surfaces should feel the same).
     const float clearW = 24.f;
     ImGui::SetNextItemWidth(-(clearW + ImGui::GetStyle().ItemSpacing.x));
     ImGui::InputTextWithHint("##search", L("mp.search_hint"),
@@ -738,27 +744,15 @@ void AddonRender() {
         if (ImGui::IsItemHovered() && hasText) TooltipText("mp.clear_search");
     }
 
-    // Inline prompt for the 1-char case. Renders on its own line so
-    // the layout stays stable when it appears and disappears, and so
-    // it reads as a hint about the field above rather than crowding
-    // the X button. Hidden the rest of the time.
-    bool oneCharOnly = g_SearchBuf[0] != '\0' && g_SearchBuf[1] == '\0';
-    if (oneCharOnly) {
-        ImGui::TextDisabled("%s", L("mp.search_one_more"));
-    }
-
     ImGui::Separator();
 
     // ---- Build display lists (lock held) ----
-    std::string search(g_SearchBuf);
-    std::transform(search.begin(), search.end(), search.begin(), ::tolower);
+    const std::string search = ToLower(g_SearchBuf);
 
     // Single source of truth for "is the search filter actually
     // running this frame?" - read by both passes() below and the
-    // empty-state-message lambdas further down. Threshold is 2 chars
-    // so the messages don't talk about "the search" when only one
-    // letter has been typed (filter is silent in that state).
-    const bool searchActive = (search.size() >= 2);
+    // empty-state-message lambdas further down.
+    const bool searchActive = !search.empty();
 
     // Per-frame lookup tables, populated once under the lock below. Building
     // these turns the list-build from O(N^2 log N) - it used to call the
@@ -787,29 +781,16 @@ void AddonRender() {
             if (!g_Settings.FilterShowLocked) return false;
         }
         if (searchActive) {
-            std::string n = e.Name;
-            std::string c = e.Command;
-            std::transform(n.begin(), n.end(), n.begin(), ::tolower);
-            std::transform(c.begin(), c.end(), c.begin(), ::tolower);
             // Match the display name, the slash-command (e.g. "/bow"), or any
-            // alias ("/bbq" finds Barbecue). Aliases are checked only when neither
-            // the name nor the command matched, so we can tell an alias-only hit
-            // apart and explain it (the name shows in the label, the command in the
-            // tooltip - an alias shows nowhere, which is the confusing case).
-            bool nameHit = n.find(search) != std::string::npos;
-            bool cmdHit  = c.find(search) != std::string::npos;
-            const std::string* aliasHit = nullptr;
-            if (!nameHit && !cmdHit) {
-                for (const auto& al : e.Aliases) {
-                    std::string a = al;
-                    std::transform(a.begin(), a.end(), a.begin(), ::tolower);
-                    if (a.find(search) != std::string::npos) { aliasHit = &al; break; }
-                }
-            }
-            if (!nameHit && !cmdHit && !aliasHit) return false;
-            if (aliasHit) {
+            // alias ("/bbq" finds Barbecue) - shared predicate (SearchMatch.h)
+            // so the palette and this box can't drift. An alias-only hit gets
+            // the explanatory note (the name shows in the label, the command in
+            // the tooltip - an alias shows nowhere, which is the confusing case).
+            SearchHit h = MatchEmoteSearch(e, search);
+            if (!h.hit) return false;
+            if (h.aliasOnly) {
                 char buf[160];
-                std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), aliasHit->c_str());
+                std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), h.aliasOnly->c_str());
                 note = buf;
             }
         }
@@ -823,21 +804,11 @@ void AddonRender() {
     auto passesMeMote = [&](const MeMote& m, std::string& note) {
         note.clear();
         if (!searchActive) return true;
-        std::string n = m.Name;
-        std::transform(n.begin(), n.end(), n.begin(), ::tolower);
-        bool nameHit = n.find(search) != std::string::npos;
-        const std::string* aliasHit = nullptr;
-        if (!nameHit) {
-            for (const auto& al : m.Aliases) {
-                std::string a = al;
-                std::transform(a.begin(), a.end(), a.begin(), ::tolower);
-                if (a.find(search) != std::string::npos) { aliasHit = &al; break; }
-            }
-        }
-        if (!nameHit && !aliasHit) return false;
-        if (aliasHit) {
+        SearchHit h = MatchMeMoteSearch(m, search);
+        if (!h.hit) return false;
+        if (h.aliasOnly) {
             char buf[160];
-            std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), aliasHit->c_str());
+            std::snprintf(buf, sizeof(buf), L("mp.search_match_alias"), h.aliasOnly->c_str());
             note = buf;
         }
         return true;
@@ -1062,9 +1033,8 @@ void AddonRender() {
         mpContentDrawList = ImGui::GetCurrentWindow()->DrawList;  // for the refusal overlay (see below)
 
         // The empty-state lambdas below pull searchActive from the
-        // outer scope (defined alongside `search`) so the threshold
-        // for "is the user actually searching?" matches the one
-        // passes() uses - 2+ characters, not just "non-empty".
+        // outer scope (defined alongside `search`) so "is the user
+        // actually searching?" matches the test passes() uses.
 
         // Picks the right line for a favorites category that has no
         // currently-visible items. With the class filters as independent

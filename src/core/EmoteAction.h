@@ -31,7 +31,10 @@ enum class EFeedbackSink { InWindow, Alert };
 // injection would garble the command, so we refuse instead.
 // Whether the input is auto-submitted (Enter at the end) or left for the
 // user to finish is controlled by g_Settings.SendOnClick.
-void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync,
+// Returns true when the send/fill was dispatched, false on a gate refusal (or
+// no APIDefs). Most call sites ignore it; the emote palette closes on
+// success and stays open on a refusal.
+bool SendOrFillEmote(const Emote& e, bool useTarget, bool useSync,
                      EFeedbackSink sink = EFeedbackSink::InWindow);
 
 // EMeMoteVariant (Default / You / All) is defined in data/MeMotes.h (its
@@ -52,8 +55,19 @@ enum class EMeMoteVariant;
 // doesn't work — verified in-game — so the /me-mote send path is targetless
 // and unsync'd by construction. The held-key/movement guard applies as in
 // SendOrFillEmote; `sink` routes a refusal to the overlay or SendAlert.
-void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant,
+// Returns true when dispatched, false on a refusal — see SendOrFillEmote.
+bool SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant,
                       EFeedbackSink sink = EFeedbackSink::InWindow);
+
+// Per-surface override of the auto-submit choice (g_Settings.SendOnClick /
+// MeMoteSendOnClick): Send forces the trailing Enter, Fill forces leave-in-chat,
+// None follows the global settings. Sticky, render-thread only - the palette
+// brackets its send calls with set/reset (its "Enter sends" option applies to
+// row activations AND its context menu, including the SHARED variant menu body,
+// without threading a parameter through it). Captured at SendOrFill* entry, so
+// the detached injection worker can't race a reset.
+enum class ESendModeOverride { None = 0, Send = 1, Fill = 2 };
+void SetSendModeOverride(ESendModeOverride m);
 
 // A *transient* reason the send would be refused RIGHT NOW that can clear on its
 // own: a GW2 text box is focused (Typing) or a printable key is held (KeysHeld).
