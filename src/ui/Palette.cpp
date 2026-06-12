@@ -113,6 +113,8 @@ struct PalRow {
     Emote  e;
     MeMote m;
     std::string aliasHit;  // set when matched ONLY via this alias (shown as the side label)
+    std::string catHit;    // set when surfaced via a matching favorites CATEGORY name
+                           // (shown gold in the side label - see the render loop)
     bool   prefix = false; // ranking bucket: name/command starts with the query
 };
 
@@ -215,6 +217,70 @@ void BuildQueryRows(const std::string& needle, std::vector<PalRow>& rows,
     for (auto& r : rest) {
         if ((int)rows.size() >= MaxRows()) break;
         rows.push_back(std::move(r));
+    }
+
+    // Category pass: a query that matches a favorites CATEGORY name surfaces
+    // that category's members - the user's own grouping doubles as a search
+    // alias on everything in it (typing "soc" lists all of "Social"). Members
+    // append AFTER the direct buckets in the category's user-arranged order,
+    // never displacing a direct hit; an entry already shown stays shown once
+    // (its direct match wins the side label), and an entry in two matching
+    // categories shows the FIRST one. Same exclusions as above: locked
+    // emotes don't surface.
+    {
+        // Collect (category, ref) pairs first; resolve below under the
+        // catalog mutexes (sequential, never nested - BuildUsageRows idiom).
+        struct CatRef { const std::string* cat; FavoriteRef ref; };
+        std::vector<CatRef> catRefs;
+        auto shown = [&](EFavoriteRefType t, const std::string& id) {
+            for (const auto& r : rows) {
+                if (r.isMeMote != (t == EFavoriteRefType::MeMote)) continue;
+                if ((r.isMeMote ? r.m.Id : r.e.Id) == id) return true;
+            }
+            for (const auto& cr : catRefs)
+                if (cr.ref.Type == t && cr.ref.Id == id) return true;
+            return false;
+        };
+        for (const auto& cat : g_Settings.FavoriteCategories) {
+            if (ToLower(cat.Name).find(needle) == std::string::npos) continue;
+            for (const auto& ref : cat.Refs)
+                if (!shown(ref.Type, ref.Id))
+                    catRefs.push_back({ &cat.Name, ref });
+        }
+        if (catRefs.empty()) return;
+
+        std::vector<PalRow> slots(catRefs.size());
+        std::vector<char>   ok(catRefs.size(), 0);
+        {
+            std::lock_guard<std::mutex> lk(g_EmotesMutex);
+            CatalogIndex idx;
+            BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
+            for (size_t i = 0; i < catRefs.size(); ++i) {
+                if (catRefs[i].ref.Type != EFavoriteRefType::Emote) continue;
+                const Emote* e = FindEmote(catRefs[i].ref.Id);
+                if (!e || !idx.unlocked(*e)) continue;
+                slots[i].e = *e;
+                ok[i] = 1;
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+            for (size_t i = 0; i < catRefs.size(); ++i) {
+                if (catRefs[i].ref.Type != EFavoriteRefType::MeMote) continue;
+                const MeMote* m = FindMeMote(catRefs[i].ref.Id);
+                if (!m) continue;
+                slots[i].isMeMote = true;
+                slots[i].m = *m;
+                ok[i] = 1;
+            }
+        }
+        for (size_t i = 0; i < slots.size(); ++i) {
+            if (!ok[i]) continue;
+            ++totalMatches;  // counts toward "+N more" like any other match
+            if ((int)rows.size() >= MaxRows()) continue;
+            slots[i].catHit = *catRefs[i].cat;
+            rows.push_back(std::move(slots[i]));
+        }
     }
 }
 
@@ -746,6 +812,14 @@ void PaletteRender() {
         std::string side = !r.aliasHit.empty() ? r.aliasHit
                          : (r.isMeMote ? std::string("/me") : r.e.Command);
         ImU32 sideCol = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+        if (!r.catHit.empty()) {
+            // Surfaced via a matching favorites category: the category name in
+            // the Library's user-category gold (Cells.cpp header color),
+            // dimmed to side-label weight - reads as "here because of your
+            // category", distinct from the grey command/alias echo.
+            side    = r.catHit;
+            sideCol = ImGui::GetColorU32(ImVec4(0.92f, 0.78f, 0.32f, 0.80f));
+        }
         if (i == s_sel && s_varIdx > 0 && s_varIdx < varCount) {
             side    = L(vars[s_varIdx].labelKey);
             sideCol = ImGui::GetColorU32(ImGuiCol_Text);
