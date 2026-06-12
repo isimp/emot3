@@ -24,11 +24,10 @@ them from the official ArenaNet artwork.
   liking.
 - **Quickbar presets** - save a look plus the bar's size and position, then swap
   between them from the addon's icon.
-- **Palette** - a keybound type-to-send popup: a few letters, Enter, sent.
-  Suggests your most-used emotes while empty, Tab cycles a result's send
-  variants (target / sync / You / All), and your favorites category names
-  double as search terms. Position, size, grow direction, and behavior are
-  all configurable.
+- **Palette** - a keybound type-to-send popup. Suggests your most-used emotes 
+  while empty, Tab cycles a result's send variants (target / sync / You / All), 
+  and your favorites category names double as search terms. Position, size, 
+  grow direction, and behavior are all configurable.
 - **Keybinds** - bind individual emotes and /me-mote variants as Nexus keybinds;
   RadialMenus wheels can invoke them without you blocking a key.
 - **RadialMenus export** - export a favorites category as a wheel for the
@@ -94,10 +93,10 @@ emot3 auto-updates in-game through Nexus.
 
 `emot3_plus.dll` adds functionality stripped from the public build for antivirus
 compatibility: send an emote while moving (the send stops your character —
-held movement keys are absorbed and autorun is cancelled; you resume moving
-yourself) and mouse-wheel routing while the Quickbar is click-through. The Plus build also gets a per-wheel **Sync** button
-in the RadialMenus tab that pushes emote changes directly into RadialMenus — no
-manual folder copy needed.
+held movement keys are absorbed and autorun is cancelled) and mouse-wheel routing 
+while the Quickbar is click-through. The Plus build also gets a per-wheel **Sync** 
+button in the RadialMenus tab that pushes emote changes directly into RadialMenus 
+— no manual folder copy needed.
 
 To use it, download `emot3_plus-<version>.zip` from the
 [latest release](https://github.com/isimp/emot3/releases/latest), unzip
