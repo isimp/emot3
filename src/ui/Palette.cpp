@@ -407,7 +407,14 @@ void PaletteRender() {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
     if (ghost) flags |= ImGuiWindowFlags_NoInputs;  // pure preview - never steals anything
-    if (!ImGui::Begin(PALETTE_WND_NAME, nullptr, flags)) { ImGui::End(); return; }
+    if (!ImGui::Begin(PALETTE_WND_NAME, nullptr, flags)) {
+        // TEMP diagnostics (flicker hunt): an AlwaysAutoResize window that
+        // ImGui considers newly "appearing" is HIDDEN for one measuring frame
+        // and Begin returns false - a state-invisible one-frame blink.
+        LOG_DEBUG("palette diag2: Begin=false (hidden frame) frame=%d", fc);
+        ImGui::End();
+        return;
+    }
 
     // Always on top: a focused window is normally frontmost anyway, but this
     // covers the frames where another window was submitted later or a refocus
@@ -417,6 +424,36 @@ void PaletteRender() {
     // its OWN menu.
     if (!s_ctxOpen)
         ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+
+    // TEMP diagnostics (flicker hunt round 2): the open/close state machine is
+    // proven clean through the options-toggle close (one open, one close, no
+    // transient causes), so the blink must be a VISIBLE property of the
+    // still-open window. Change-only trace: one line whenever anything the eye
+    // could notice changes - position, size, z-order, hidden flag, focus,
+    // query-field activity.
+    {
+        ImGuiWindow*  wnd = ImGui::GetCurrentWindow();
+        ImGuiContext& g   = *GImGui;
+        int z = -1;
+        for (int i = 0; i < g.Windows.Size; ++i)
+            if (g.Windows[i] == wnd) { z = i; break; }
+        const int x = (int)wnd->Pos.x,  y = (int)wnd->Pos.y;
+        const int w = (int)wnd->Size.x, h = (int)wnd->Size.y;
+        const int f = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) ? 1 : 0;
+        const int q = (g.ActiveId != 0 && g.ActiveId == ImGui::GetID("##palquery")) ? 1 : 0;
+        const int hid = wnd->Hidden ? 1 : 0;
+        static int lx = -9999, ly = -9999, lw = -1, lh = -1, lz = -1,
+                   lf = -1, lq = -1, lk = -1, lhid = -1;
+        if (x != lx || y != ly || w != lw || h != lh || z != lz ||
+            f != lf || q != lq || (int)keepAlive != lk || hid != lhid) {
+            LOG_DEBUG("palette diag2: frame=%d pos=%d,%d size=%dx%d z=%d/%d "
+                      "hidden=%d focus=%d queryActive=%d keepAlive=%d ghost=%d",
+                      fc, x, y, w, h, z, g.Windows.Size, hid, f, q,
+                      (int)keepAlive, (int)ghost);
+            lx = x; ly = y; lw = w; lh = h; lz = z;
+            lf = f; lq = q; lk = (int)keepAlive; lhid = hid;
+        }
+    }
 
     // Esc closes in ONE press. Handled here, not via Nexus' CloseOnEscape:
     // an active InputText eats the first Esc to deactivate-and-REVERT the
