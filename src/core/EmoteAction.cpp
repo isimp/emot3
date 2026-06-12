@@ -330,7 +330,19 @@ static void EmitSendRefusal(const char* key, EFeedbackSink sink) {
         ShowFeedback(L(key));
 }
 
+// Send-mode override state (see EmoteAction.h). Render-thread only; applied
+// where the auto-submit settings are read, i.e. at SendOrFill* entry.
+ESendModeOverride s_sendModeOverride = ESendModeOverride::None;
+
+bool ApplySendModeOverride(bool settingValue) {
+    if (s_sendModeOverride == ESendModeOverride::Send) return true;
+    if (s_sendModeOverride == ESendModeOverride::Fill) return false;
+    return settingValue;
+}
+
 } // namespace
+
+void SetSendModeOverride(ESendModeOverride m) { s_sendModeOverride = m; }
 
 bool SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink sink) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
@@ -338,7 +350,7 @@ bool SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink
     std::string cmd = e.Command;
     if (useTarget && e.IsTargetable) cmd += " @";
     if (useSync)                     cmd += " *";
-    const bool send        = g_Settings.SendOnClick;
+    const bool send        = ApplySendModeOverride(g_Settings.SendOnClick);
     const bool swallowMode = EmoteSendSwallowActive();
     // The held-printable-key / movement guard applies to clicks, keybinds, and radial
     // invokes alike (only the +plus swallow drops it): a keybind/wheel-hotkey that's a
@@ -407,7 +419,7 @@ bool SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
     // so we can't ship a doubled prefix.
     std::string cmd = "/me " + *body;
 
-    const bool send        = g_Settings.MeMoteSendOnClick;  // independent of SendOnClick
+    const bool send = ApplySendModeOverride(g_Settings.MeMoteSendOnClick);  // independent of SendOnClick
     const bool swallowMode = EmoteSendSwallowActive();
     const bool checkHeld   = !swallowMode;  // see SendOrFillEmote (gate applies to binds too)
 

@@ -215,6 +215,17 @@ bool SanitizeSettings(Settings& s) {
                         s.PaletteXPos, fx);
             s.PaletteXPos = fx; changed = true;
         }
+        int em = (int)s.PaletteEnterMode;
+        if (em < 0 || em > 2) {
+            LOG_WARNING("settings: palette.enter_mode %d invalid -> 0 (global)", em);
+            s.PaletteEnterMode = EPaletteEnterMode::Global; changed = true;
+        }
+        float fa = s.PaletteBgAlpha < 0.2f ? 0.2f : (s.PaletteBgAlpha > 1.0f ? 1.0f : s.PaletteBgAlpha);
+        if (fa != s.PaletteBgAlpha) {
+            LOG_WARNING("settings: palette.bg_alpha %.2f out of range -> clamped to %.2f",
+                        s.PaletteBgAlpha, fa);
+            s.PaletteBgAlpha = fa; changed = true;
+        }
         int sc = (int)s.ShortcutClickAction;
         if (sc < 0 || sc > 2) {
             LOG_WARNING("settings: shortcut.left_click_opens %d invalid -> 0 (library)", sc);
@@ -456,6 +467,13 @@ bool LoadSettings(const std::string& path) {
     s.PaletteScale       = GetFloat(pal, "scale",         s.PaletteScale);
     s.PaletteYPos        = GetFloat(pal, "y_pos",         s.PaletteYPos);
     s.PaletteXPos        = GetFloat(pal, "x_pos",         s.PaletteXPos);
+    s.PaletteEnterMode   = (EPaletteEnterMode)GetInt(pal, "enter_mode",
+                                                     (int)s.PaletteEnterMode);
+    s.PaletteEscClearsFirst = GetBool (pal, "esc_clears_first", s.PaletteEscClearsFirst);
+    s.PaletteBgAlpha        = GetFloat(pal, "bg_alpha",         s.PaletteBgAlpha);
+    s.PaletteShowIcons      = GetBool (pal, "show_icons",       s.PaletteShowIcons);
+    s.PaletteShowFooter     = GetBool (pal, "show_footer",      s.PaletteShowFooter);
+    s.PaletteGrowUp         = GetBool (pal, "grow_up",          s.PaletteGrowUp);
 
     const json& qb = GetObj(j, "quickbar");
     s.ShowQuickbar        = GetBool(qb, "show",                  s.ShowQuickbar);
@@ -647,7 +665,13 @@ std::string SerializeSettings() {
     f << "    \"clear_on_open\": " << B(s.PaletteClearOnOpen)  << ",\n";
     f << "    \"scale\": "         << s.PaletteScale           << ",\n";
     f << "    \"y_pos\": "         << s.PaletteYPos            << ",\n";
-    f << "    \"x_pos\": "         << s.PaletteXPos            << "\n";
+    f << "    \"x_pos\": "            << s.PaletteXPos              << ",\n";
+    f << "    \"enter_mode\": "       << (int)s.PaletteEnterMode    << ",\n";
+    f << "    \"esc_clears_first\": " << B(s.PaletteEscClearsFirst) << ",\n";
+    f << "    \"bg_alpha\": "         << s.PaletteBgAlpha           << ",\n";
+    f << "    \"show_icons\": "       << B(s.PaletteShowIcons)      << ",\n";
+    f << "    \"show_footer\": "      << B(s.PaletteShowFooter)     << ",\n";
+    f << "    \"grow_up\": "          << B(s.PaletteGrowUp)         << "\n";
     f << "  },\n";
 
     // --- quickbar ------------------------------------------------------

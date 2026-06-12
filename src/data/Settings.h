@@ -55,6 +55,12 @@ enum class EQbScrollSnap { Off = 0, Cells = 1, Pages = 2 };
 // views), or nothing.
 enum class EPaletteEmptyQuery { Frequent = 0, Recent = 1, Off = 2 };
 
+// What Enter / a row click does in the palette: follow the global
+// send-on-click settings (SendOnClick / MeMoteSendOnClick), or force
+// auto-send / fill-chat-only for sends from the palette. Numeric for JSON
+// stability (settings.json palette "enter_mode").
+enum class EPaletteEnterMode { Global = 0, Send = 1, Fill = 2 };
+
 // What a left-click on the Nexus quick-access icon opens. Numeric for JSON
 // stability (settings.json "left_click_opens"); right-click always opens the
 // shortcut's context menu regardless.
@@ -146,6 +152,23 @@ struct Settings {
     // Horizontal anchor of the palette's CENTER, as a fraction of the screen
     // width (0.1..0.9; 0.5 = centered).
     float                         PaletteXPos          = 0.5f;
+    // Enter / row-click send mode (see EPaletteEnterMode above). Applies to
+    // every send from the palette, context-menu variants included.
+    EPaletteEnterMode             PaletteEnterMode     = EPaletteEnterMode::Global;
+    // First Esc clears a non-empty query, second Esc closes (default). Off =
+    // Esc always closes immediately.
+    bool                          PaletteEscClearsFirst = true;
+    // Window background opacity (0.2..1.0). 1.0 keeps the theme's own
+    // background untouched.
+    float                         PaletteBgAlpha       = 1.0f;
+    // Icon column in result rows. Off = compact text-only rows.
+    bool                          PaletteShowIcons     = true;
+    // The bottom key-help line (Enter sends - Esc closes).
+    bool                          PaletteShowFooter    = true;
+    // Grow direction: false = top edge anchored at PaletteYPos, grows down
+    // (default); true = BOTTOM edge anchored there, grows up - the query
+    // field stays put while the result list extends toward the screen top.
+    bool                          PaletteGrowUp        = false;
     EViewMode                     QuickbarViewMode     = EViewMode::Icon;
     float                         QuickbarIconScale    = 1.0f;
     bool                          QuickbarUseDropdown  = false;  // tabs (false) or dropdown (true)

@@ -37,6 +37,13 @@ std::atomic<bool> s_open{false};  // atomic: read by the WndProc thread below
 bool s_takeFocus = false;   // one-shot: focus the query field (open / after Enter-refusal)
 char s_query[64] = {};      // same cap as the Library search box
 int  s_sel       = 0;       // selected row index
+// Send-variant cycling (Tab / Shift+Tab): index into the SELECTED row's
+// variant list - 0 is the default Enter/click send, the rest mirror the
+// row's context-menu items exactly (see BuildVariantList). Transient on
+// purpose: reset on open, on any selection change or query edit, and
+// clamped against the current row's actual list every frame.
+int  s_varIdx    = 0;
+int  s_varSel    = -1;      // the selection s_varIdx belongs to (change detector)
 // True while a row's right-click menu was open last frame. The close / focus /
 // Esc / click-away checks and the focus pin all stand down while it's set: the
 // popup IS the focused window, its clicks land outside the palette rect, and a
@@ -234,6 +241,43 @@ bool MeMoteVariantItems(const MeMote& m) {
     return sent;
 }
 
+// The selected row's send-variant list for Tab cycling. Entry 0 is the
+// default Enter/click send; the rest mirror the row's context menu exactly -
+// same availability conditions, same cells.* labels (RenderSendVariants /
+// MeMoteVariantItems are menu bodies, so the cycle keeps its own parallel
+// table; the conditions are three lines each and covered by the same
+// review). At most 4 entries (default + normal-or-target + sync +
+// target-sync) / 3 for a /me-mote (default + You + All).
+struct PalVariant {
+    const char*    labelKey;   // cells.send_* (nullptr for the default entry)
+    bool           useTarget;  // SendOrFillEmote args (emote rows)
+    bool           useSync;
+    EMeMoteVariant mv;         // SendOrFillMeMote arg (/me-mote rows)
+};
+int BuildVariantList(const PalRow& r, PalVariant out[4]) {
+    int n = 0;
+    out[n++] = { nullptr, false, false, EMeMoteVariant::Default };
+    if (r.isMeMote) {
+        if (!r.m.TextYou.empty())
+            out[n++] = { "cells.send_you", false, false, EMeMoteVariant::You };
+        if (!r.m.TextAll.empty())
+            out[n++] = { "cells.send_all", false, false, EMeMoteVariant::All };
+    } else {
+        // Same fork as RenderSendVariants: when the default send already
+        // targets (SendTargetableOnTarget), the alternative is the UNtargeted
+        // send; otherwise it's the targeted one (if this emote can).
+        const bool autoTarget = r.e.IsTargetable && g_Settings.SendTargetableOnTarget;
+        if (autoTarget)
+            out[n++] = { "cells.send_normal", false, false, EMeMoteVariant::Default };
+        else if (r.e.IsTargetable)
+            out[n++] = { "cells.send_target", true, false, EMeMoteVariant::Default };
+        out[n++] = { "cells.send_sync", false, true, EMeMoteVariant::Default };
+        if (r.e.IsTargetable)
+            out[n++] = { "cells.send_target_sync", true, true, EMeMoteVariant::Default };
+    }
+    return n;
+}
+
 // Up/Down move the selection while the query field keeps focus (the console
 // idiom - the user never leaves the text field). Clamped against the row
 // count in the render (the list isn't built yet when this runs).
@@ -258,6 +302,7 @@ static DevStateRegistrar s_palState(DevStateCat::Content, "Palette", [] {
     DevStateRow("open",         "%s", s_open.load(std::memory_order_relaxed) ? "yes" : "no");
     DevStateRow("query",        "\"%s\"", s_query);
     DevStateRow("selected row", "%d", s_sel);
+    DevStateRow("tab variant",  "idx %d (of row %d; 0 = default send)", s_varIdx, s_varSel);
     DevStateRow("context menu", "%s", s_ctxOpen ? "open" : "closed");
     DevStateRow("mouse guard",  "%s", s_mouseGuard ? "ARMED (open-click swallow)" : "clear");
     DevStateRow("enter guard",  "%s", s_enterGuard ? "ARMED (Enter not yet seen up)" : "clear");
@@ -295,6 +340,8 @@ void TogglePalette() {
     if (open) {
         s_takeFocus = true;
         s_sel = 0;
+        s_varIdx = 0;
+        s_varSel = -1;
         if (g_Settings.PaletteClearOnOpen) s_query[0] = '\0';
         s_closeRequest = false;  // a stale request must not close the new open
         s_rectValid    = false;  // no rect until the first frame renders
@@ -333,6 +380,8 @@ void ResetPalette() {
     s_open           = false;
     s_takeFocus      = false;
     s_sel            = 0;
+    s_varIdx         = 0;
+    s_varSel         = -1;
     s_query[0]       = '\0';
     s_ctxOpen           = false;
     s_mouseGuard        = false;
@@ -379,14 +428,22 @@ void PaletteRender() {
 
     // Centered horizontally, vertical anchor from the user's setting, fixed
     // width, auto height. Positioned EVERY frame (the window is NoMove, so
-    // nothing fights it): the Y-position slider moves an open palette live,
-    // and a resolution change re-centers automatically.
+    // nothing fights it): the position sliders move an open palette live,
+    // and a resolution change re-centers automatically. The grow-up option
+    // pins the BOTTOM edge at the anchor instead of the top, so the window
+    // extends toward the screen top as the result list grows (pivot uses the
+    // previous frame's size for an auto-resize window - a one-frame settle
+    // on growth, same class as the top-anchored bottom edge).
     ImGuiIO& io = ImGui::GetIO();
     const float kW = 380.f * g_Settings.PaletteScale;
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * g_Settings.PaletteXPos,
                                    io.DisplaySize.y * g_Settings.PaletteYPos),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+                            ImGuiCond_Always,
+                            ImVec2(0.5f, g_Settings.PaletteGrowUp ? 1.0f : 0.0f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(kW, 0.f), ImVec2(kW, FLT_MAX));
+    // Background opacity (1.0 = leave the theme's WindowBg untouched).
+    if (g_Settings.PaletteBgAlpha < 0.995f)
+        ImGui::SetNextWindowBgAlpha(g_Settings.PaletteBgAlpha);
     if (s_takeFocus && !ghost) ImGui::SetNextWindowFocus();
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -409,12 +466,25 @@ void PaletteRender() {
     // buffer (the query visibly jumped back to its pre-edit text) and only a
     // second Esc reached the hook. Reading the key directly and closing this
     // frame means the revert never renders.
+    // With "Esc clears first" on (the default), an Esc on a NON-empty query
+    // wipes it instead of closing - the next Esc then closes. The wipe must
+    // also pre-empt the InputText's internal Esc handler (it would write the
+    // pre-edit text right back): deactivate the field this frame, re-pin via
+    // s_takeFocus the next.
     if (!s_ctxOpen &&
         ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
         ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape), false)) {
-        s_open = false;
-        ImGui::End();
-        return;
+        if (g_Settings.PaletteEscClearsFirst && s_query[0] != '\0') {
+            s_query[0] = '\0';
+            s_sel    = 0;
+            s_varIdx = 0;
+            ImGui::ClearActiveID();
+            s_takeFocus = true;
+        } else {
+            s_open = false;
+            ImGui::End();
+            return;
+        }
     }
 
     // Spotlight semantics: the palette is a transient prompt, not a panel to
@@ -460,6 +530,17 @@ void PaletteRender() {
         "##palquery", L("pal.hint"), s_query, sizeof(s_query),
         ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
         ImGuiInputTextFlags_AutoSelectAll, QueryEditCb);
+    // Claim Tab for the active query field: ImGui 1.80's
+    // FocusableItemRegister tabs OUT of the active item (deactivating it -
+    // caret loss + an AutoSelectAll re-select on the re-pin) unless the item
+    // declared Tab as one of its keys. Tab is the variant-cycling key below,
+    // never a focus hop. The mask persists while the field stays active and
+    // clears itself on any ActiveId change.
+    if (ImGui::IsItemActive())
+        GImGui->ActiveIdUsingKeyInputMask |= ((ImU64)1 << ImGuiKey_Tab);
+    // Editing the query rebuilds the list - the same index would point at a
+    // different emote, so an armed variant goes back to the default.
+    if (ImGui::IsItemEdited()) s_varIdx = 0;
 
     // Enter guard (see s_enterGuard): a fire only counts once io has seen
     // Enter UP since opening - a wedged Enter otherwise key-repeats straight
@@ -509,6 +590,28 @@ void PaletteRender() {
     else if (s_sel < 0) s_sel = 0;
     else if (s_sel >= (int)rows.size()) s_sel = (int)rows.size() - 1;
 
+    // Variant cycling state for the SELECTED row (see BuildVariantList). A
+    // selection change drops an armed variant - it belonged to another row.
+    if (s_sel != s_varSel) { s_varIdx = 0; s_varSel = s_sel; }
+    PalVariant vars[4];
+    const int varCount = rows.empty() ? 0 : BuildVariantList(rows[s_sel], vars);
+    if (s_varIdx >= varCount) s_varIdx = 0;
+    // Tab / Shift+Tab step through the variants (wrapping). Read directly
+    // like Esc above - the query field stays active (it claims Tab, see the
+    // InputText) and the cycle is invisible to ImGui's own key handling.
+    if (varCount > 1 && !ghost && !s_ctxOpen &&
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+        ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Tab), true))
+        s_varIdx = (s_varIdx + (io.KeyShift ? varCount - 1 : 1)) % varCount;
+
+    // Per-send override of the auto-submit settings - the user's palette
+    // Enter mode, applied to row activations AND the context menu below
+    // (set/reset brackets; see SetSendModeOverride).
+    const ESendModeOverride sendMode =
+        g_Settings.PaletteEnterMode == EPaletteEnterMode::Send ? ESendModeOverride::Send
+      : g_Settings.PaletteEnterMode == EPaletteEnterMode::Fill ? ESendModeOverride::Fill
+      :                                                          ESendModeOverride::None;
+
     ImGui::Spacing();
 
     // Open-click swallow (see s_mouseGuard): armed by TogglePalette, released
@@ -519,6 +622,13 @@ void PaletteRender() {
     ImVec2 selAnchor(0.f, 0.f);  // selected row's top-center (keyboard-send feedback anchor)
     float iconSz = (ImGui::GetFontSize() + 6.f) * g_Settings.PaletteScale;
     if (iconSz < ImGui::GetTextLineHeight()) iconSz = ImGui::GetTextLineHeight();
+    // Compact mode (icons off): rows shrink to text height + breathing room
+    // and the icon column disappears entirely (no texture fetches either).
+    const bool  showIcons = g_Settings.PaletteShowIcons;
+    const float rowH      = showIcons
+        ? iconSz
+        : ImGui::GetTextLineHeight() + 4.f * g_Settings.PaletteScale;
+    const float textIndent = showIcons ? iconSz : 0.f;
     // Only let a hover steal the selection when the mouse actually moved -
     // otherwise the row under a parked cursor wins every Up/Down keypress.
     const bool mouseMoved = io.MouseDelta.x != 0.f || io.MouseDelta.y != 0.f;
@@ -535,9 +645,9 @@ void PaletteRender() {
         // selected cues could visibly disagree about the same row.)
         const float  rowW   = ImGui::GetContentRegionAvail().x;
         const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-        const ImVec2 rowMax = ImVec2(rowMin.x + rowW, rowMin.y + iconSz);
+        const ImVec2 rowMax = ImVec2(rowMin.x + rowW, rowMin.y + rowH);
         if (i == s_sel) selAnchor = ImVec2(rowMin.x + rowW * 0.5f, rowMin.y);
-        if (ImGui::InvisibleButton("row", ImVec2(rowW, iconSz)) && !s_mouseGuard)
+        if (ImGui::InvisibleButton("row", ImVec2(rowW, rowH)) && !s_mouseGuard)
             activate = i;   // fires on click-release, like a Quickbar icon
         const bool rowHovered = !s_ctxOpen && ImGui::IsItemHovered();
         if (mouseMoved && rowHovered) s_sel = i;
@@ -565,28 +675,38 @@ void PaletteRender() {
                               ImGui::GetStyle().FrameRounding);
 
         // Icon (lazy cache; blank slot while the async load is in flight).
-        Texture* t = r.isMeMote ? EnsureMeMoteTexture(r.m) : EnsureEmoteTexture(r.e);
-        if (t && t->Resource)
-            dl->AddImage((ImTextureID)t->Resource, rowMin,
-                         ImVec2(rowMin.x + iconSz, rowMin.y + iconSz));
+        // Skipped entirely in compact mode - no fetch, no column.
+        if (showIcons) {
+            Texture* t = r.isMeMote ? EnsureMeMoteTexture(r.m) : EnsureEmoteTexture(r.e);
+            if (t && t->Resource)
+                dl->AddImage((ImTextureID)t->Resource, rowMin,
+                             ImVec2(rowMin.x + iconSz, rowMin.y + iconSz));
+        }
 
         // Name + dim side label (the matched alias when the hit came only via
         // an alias - it shows nowhere else, the confusing case - otherwise the
         // command). The name is clipped so it can't run under the
-        // right-aligned side text.
+        // right-aligned side text. An ARMED Tab variant takes over the
+        // selected row's side slot in full text color - it announces what
+        // Enter will do now, which beats the command echo in importance.
         const float pad = ImGui::GetStyle().ItemSpacing.x;
         std::string side = !r.aliasHit.empty() ? r.aliasHit
                          : (r.isMeMote ? std::string("/me") : r.e.Command);
+        ImU32 sideCol = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+        if (i == s_sel && s_varIdx > 0 && s_varIdx < varCount) {
+            side    = L(vars[s_varIdx].labelKey);
+            sideCol = ImGui::GetColorU32(ImGuiCol_Text);
+        }
         side = Ellipsize(side, kW * 0.35f);
         const float sideW = ImGui::CalcTextSize(side.c_str()).x;
-        float nameW = rowW - iconSz - sideW - 3.f * pad;
+        float nameW = rowW - textIndent - sideW - 3.f * pad;
         if (nameW < 40.f) nameW = 40.f;
         const std::string name = Ellipsize(r.isMeMote ? r.m.Name : r.e.Name, nameW);
-        const float textY = rowMin.y + (iconSz - ImGui::GetTextLineHeight()) * 0.5f;
-        dl->AddText(ImVec2(rowMin.x + iconSz + pad, textY),
+        const float textY = rowMin.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f;
+        dl->AddText(ImVec2(rowMin.x + textIndent + pad, textY),
                     ImGui::GetColorU32(ImGuiCol_Text), name.c_str());
         dl->AddText(ImVec2(rowMax.x - sideW - pad, textY),
-                    ImGui::GetColorU32(ImGuiCol_TextDisabled), side.c_str());
+                    sideCol, side.c_str());
 
         // Send-alternatives menu: the Library's shared variant body (target /
         // sync for emotes; You / All for /me-motes - Default stays the Enter /
@@ -599,8 +719,10 @@ void PaletteRender() {
             // the MENU first (the next Esc then closes the palette).
             if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape), false))
                 ImGui::CloseCurrentPopup();
+            SetSendModeOverride(sendMode);  // the menu items send through it
             const bool sent = r.isMeMote ? MeMoteVariantItems(r.m)
                                          : RenderSendVariants(r.e);
+            SetSendModeOverride(ESendModeOverride::None);
             if (sent) s_open = false;  // finishes this frame, gone the next
             ImGui::EndPopup();
         }
@@ -625,8 +747,13 @@ void PaletteRender() {
         ImGui::TextDisabled("%s", buf);
     }
 
-    ImGui::Spacing();
-    ImGui::TextDisabled("%s", L("pal.footer"));
+    // Footer key help. The Tab hint only shows when the selected row actually
+    // has variants to cycle.
+    if (g_Settings.PaletteShowFooter) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", varCount > 1 ? L("pal.footer_tab")
+                                               : L("pal.footer"));
+    }
 
     if (enter && !rows.empty()) activate = s_sel;
     if (activate >= 0 && activate < (int)rows.size()) {
@@ -637,14 +764,26 @@ void PaletteRender() {
         // default cursor anchor. One-shot + frame-scoped (see Feedback.h).
         if (enter)
             SetNextFeedbackAnchor(selAnchor.x, selAnchor.y);
-        // Left-click Library semantics: targetable honors the user's
-        // send-on-target setting, never sync'd. The full gate applies; on a
-        // refusal the palette stays open (the overlay names the reason) and
-        // the query field re-takes focus so the typing flow survives Enter.
-        const bool sent = r.isMeMote
-            ? SendOrFillMeMote(r.m, EMeMoteVariant::Default)
-            : SendOrFillEmote(r.e, /*useTarget=*/g_Settings.SendTargetableOnTarget,
-                              /*useSync=*/false);
+        // Default = left-click Library semantics: targetable honors the
+        // user's send-on-target setting, never sync'd. An ARMED Tab variant
+        // (only ever on the selected row - clicking a different row sends
+        // that row's default) sends its menu-equivalent instead. The full
+        // gate applies; on a refusal the palette stays open (the overlay
+        // names the reason) and the query field re-takes focus so the typing
+        // flow survives Enter.
+        SetSendModeOverride(sendMode);
+        bool sent;
+        if (activate == s_sel && s_varIdx > 0 && s_varIdx < varCount) {
+            const PalVariant& v = vars[s_varIdx];
+            sent = r.isMeMote ? SendOrFillMeMote(r.m, v.mv)
+                              : SendOrFillEmote(r.e, v.useTarget, v.useSync);
+        } else {
+            sent = r.isMeMote
+                ? SendOrFillMeMote(r.m, EMeMoteVariant::Default)
+                : SendOrFillEmote(r.e, /*useTarget=*/g_Settings.SendTargetableOnTarget,
+                                  /*useSync=*/false);
+        }
+        SetSendModeOverride(ESendModeOverride::None);
         if (sent) s_open = false;
         else if (enter) s_takeFocus = true;
     }

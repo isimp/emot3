@@ -117,6 +117,57 @@ void RenderPaletteOptionsTab() {
     if (ImGui::IsItemHovered()) TooltipText("opt.pal.y_pos_tip");
     palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
 
+    // Grow direction: top edge anchored (list grows downward, default) or
+    // bottom edge anchored (grows upward - the query field stays put near
+    // where the user looks). The vertical-position slider above places
+    // whichever edge is anchored.
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(L("opt.pal.grow"));
+    ImGui::SameLine();
+    int gd = g_Settings.PaletteGrowUp ? 1 : 0;
+    const char* gdItems[] = { L("opt.pal.grow_down"), L("opt.pal.grow_up") };
+    ImGui::SetNextItemWidth(160.f);
+    if (ImGui::Combo("##palgrow", &gd, gdItems, IM_ARRAYSIZE(gdItems))) {
+        g_Settings.PaletteGrowUp = (gd == 1);
+        LOG_TRACE("setting palette.grow_up = %d", gd);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemHovered()) {
+        static const TooltipOption kPalGrowOpts[] = {
+            { "opt.pal.grow_down", "opt.pal.grow_down.desc", true  },
+            { "opt.pal.grow_up",   "opt.pal.grow_up.desc",   false },
+        };
+        TooltipOptions("opt.pal.grow_tip", kPalGrowOpts,
+                       IM_ARRAYSIZE(kPalGrowOpts));
+    }
+    palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
+
+    // Background opacity (1.0 = the theme's own background).
+    ImGui::SetNextItemWidth(200.f);
+    ImGui::SliderFloat(L("opt.pal.bg_alpha"), &g_Settings.PaletteBgAlpha,
+                       0.2f, 1.0f, "%.2f");
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        LOG_TRACE("setting palette.bg_alpha = %.2f", g_Settings.PaletteBgAlpha);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        g_Settings.PaletteBgAlpha = 1.0f;
+        LOG_TRACE("setting palette.bg_alpha = %.2f (reset)", g_Settings.PaletteBgAlpha);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemHovered()) TooltipText("opt.pal.bg_alpha_tip");
+    palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
+
+    // Row appearance: icon column (off = compact text-only rows) and the
+    // footer key-help line. Both count as geometry engagement so the ghost
+    // previews them live.
+    CheckboxWithSaveAndTooltip("opt.pal.show_icons", &g_Settings.PaletteShowIcons,
+                               /*defaultIsOn=*/true);
+    palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
+    CheckboxWithSaveAndTooltip("opt.pal.show_footer", &g_Settings.PaletteShowFooter,
+                               /*defaultIsOn=*/true);
+    palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
+
     // Empty-query suggestions: Frequently / Recently used (the usage log's two
     // views, same labels as the Quickbar categories) or nothing.
     ImGui::AlignTextToFramePadding();
@@ -143,6 +194,35 @@ void RenderPaletteOptionsTab() {
 
     CheckboxWithSaveAndTooltip("opt.pal.clear_on_open", &g_Settings.PaletteClearOnOpen,
                                /*defaultIsOn=*/true);
+
+    // First Esc clears a non-empty search, second Esc closes.
+    CheckboxWithSaveAndTooltip("opt.pal.esc_clear", &g_Settings.PaletteEscClearsFirst,
+                               /*defaultIsOn=*/true);
+
+    // What Enter / a row click does: follow the global send-on-click settings
+    // (emotes and /me-motes each have one) or force auto-send / fill-chat for
+    // every palette send, context-menu variants included.
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(L("opt.pal.enter_mode"));
+    ImGui::SameLine();
+    int em = (int)g_Settings.PaletteEnterMode;
+    const char* emItems[] = { L("opt.pal.enter_global"), L("opt.pal.enter_send"),
+                              L("opt.pal.enter_fill") };
+    ImGui::SetNextItemWidth(160.f);
+    if (ImGui::Combo("##palenter", &em, emItems, IM_ARRAYSIZE(emItems))) {
+        g_Settings.PaletteEnterMode = (EPaletteEnterMode)em;
+        LOG_TRACE("setting palette.enter_mode = %d", em);
+        RequestSave(SaveKind::Settings);
+    }
+    if (ImGui::IsItemHovered()) {
+        static const TooltipOption kPalEnterOpts[] = {
+            { "opt.pal.enter_global", "opt.pal.enter_global.desc", true  },
+            { "opt.pal.enter_send",   "opt.pal.enter_send.desc",   false },
+            { "opt.pal.enter_fill",   "opt.pal.enter_fill.desc",   false },
+        };
+        TooltipOptions("opt.pal.enter_mode_tip", kPalEnterOpts,
+                       IM_ARRAYSIZE(kPalEnterOpts));
+    }
 
     ImGui::EndGroup();
     // Engagement -> preview pulses (see Palette.h). IsItemActive keeps a

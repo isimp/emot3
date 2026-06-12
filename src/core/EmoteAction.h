@@ -59,6 +59,16 @@ enum class EMeMoteVariant;
 bool SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant,
                       EFeedbackSink sink = EFeedbackSink::InWindow);
 
+// Per-surface override of the auto-submit choice (g_Settings.SendOnClick /
+// MeMoteSendOnClick): Send forces the trailing Enter, Fill forces leave-in-chat,
+// None follows the global settings. Sticky, render-thread only - the palette
+// brackets its send calls with set/reset (its "Enter sends" option applies to
+// row activations AND its context menu, including the SHARED variant menu body,
+// without threading a parameter through it). Captured at SendOrFill* entry, so
+// the detached injection worker can't race a reset.
+enum class ESendModeOverride { None = 0, Send = 1, Fill = 2 };
+void SetSendModeOverride(ESendModeOverride m);
+
 // A *transient* reason the send would be refused RIGHT NOW that can clear on its
 // own: a GW2 text box is focused (Typing) or a printable key is held (KeysHeld).
 enum class SendBusy { None, Typing, KeysHeld };
