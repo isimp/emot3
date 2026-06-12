@@ -320,12 +320,24 @@ void PaletteNoteMouseUp() {
 
 void PaletteNoteMouseDown(int xClient, int yClient) {
     if (!s_open.load(std::memory_order_relaxed)) return;
-    if (!s_rectValid.load(std::memory_order_acquire)) return;  // opening click
+    // TEMP diagnostics (flicker hunt round 3): one line per mouse-down while
+    // open - where the click landed relative to the published rect and
+    // whether it armed the close request. Window thread (logger is mutexed).
+    if (!s_rectValid.load(std::memory_order_acquire)) {
+        LOG_DEBUG("palette diag2: mouse-down (%d,%d) ignored - rect not armed",
+                  xClient, yClient);
+        return;  // opening click
+    }
     const int x = s_rectX.load(std::memory_order_relaxed);
     const int y = s_rectY.load(std::memory_order_relaxed);
     const int w = s_rectW.load(std::memory_order_relaxed);
     const int h = s_rectH.load(std::memory_order_relaxed);
-    if (xClient < x || yClient < y || xClient >= x + w || yClient >= y + h)
+    const bool outside =
+        xClient < x || yClient < y || xClient >= x + w || yClient >= y + h;
+    LOG_DEBUG("palette diag2: mouse-down (%d,%d) vs rect %d,%d %dx%d -> %s",
+              xClient, yClient, x, y, w, h,
+              outside ? "OUTSIDE (close requested)" : "inside");
+    if (outside)
         s_closeRequest.store(true, std::memory_order_release);
 }
 
@@ -442,16 +454,23 @@ void PaletteRender() {
         const int f = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) ? 1 : 0;
         const int q = (g.ActiveId != 0 && g.ActiveId == ImGui::GetID("##palquery")) ? 1 : 0;
         const int hid = wnd->Hidden ? 1 : 0;
+        const int md  = ImGui::IsAnyMouseDown() ? 1 : 0;
+        const int tf  = s_takeFocus ? 1 : 0;
+        const int cx  = s_ctxOpen ? 1 : 0;
         static int lx = -9999, ly = -9999, lw = -1, lh = -1, lz = -1,
-                   lf = -1, lq = -1, lk = -1, lhid = -1;
+                   lf = -1, lq = -1, lk = -1, lhid = -1, lmd = -1, ltf = -1,
+                   lcx = -1;
         if (x != lx || y != ly || w != lw || h != lh || z != lz ||
-            f != lf || q != lq || (int)keepAlive != lk || hid != lhid) {
+            f != lf || q != lq || (int)keepAlive != lk || hid != lhid ||
+            md != lmd || tf != ltf || cx != lcx) {
             LOG_DEBUG("palette diag2: frame=%d pos=%d,%d size=%dx%d z=%d/%d "
-                      "hidden=%d focus=%d queryActive=%d keepAlive=%d ghost=%d",
+                      "hidden=%d focus=%d queryActive=%d keepAlive=%d ghost=%d "
+                      "mouseDown=%d takeFocus=%d ctx=%d",
                       fc, x, y, w, h, z, g.Windows.Size, hid, f, q,
-                      (int)keepAlive, (int)ghost);
+                      (int)keepAlive, (int)ghost, md, tf, cx);
             lx = x; ly = y; lw = w; lh = h; lz = z;
             lf = f; lq = q; lk = (int)keepAlive; lhid = hid;
+            lmd = md; ltf = tf; lcx = cx;
         }
     }
 
@@ -481,6 +500,25 @@ void PaletteRender() {
     // context menu counts as "ours" even though it's a separate ImGui window;
     // keepAlive covers tuning from the options section (focus is over there).
     // A ghost has no focus to lose.
+    // TEMP diagnostics (flicker hunt round 3): when the palette is UNFOCUSED
+    // yet stays open, name the gate that saved it (change-only). If no gate
+    // is set the close below fires and logs FOCUS-LOSS instead.
+    {
+        static int s_lastSaved = -2;
+        int saved = -2;  // -2 = focused (nothing to save)
+        if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
+            saved = (s_takeFocus ? 1 : 0) | (s_ctxOpen ? 2 : 0) |
+                    (keepAlive ? 4 : 0) | (ghost ? 8 : 0);
+        if (saved != s_lastSaved) {
+            if (saved > 0)
+                LOG_DEBUG("palette diag2: unfocused but kept open by:%s%s%s%s (frame=%d)",
+                          (saved & 1) ? " takeFocus" : "",
+                          (saved & 2) ? " ctxMenu"   : "",
+                          (saved & 4) ? " keepAlive" : "",
+                          (saved & 8) ? " ghost"     : "", fc);
+            s_lastSaved = saved;
+        }
+    }
     if (!ghost && !s_takeFocus && !s_ctxOpen && !keepAlive &&
         !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
         s_open = false;
