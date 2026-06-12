@@ -880,6 +880,8 @@ void RenderMeMotesTab() {
         usage::RemoveRef(EFavoriteRefType::MeMote, deleteId);  // drop it from Recently/Frequently used
         s_rowOpen.erase(deleteId);   // UI-only: drop this row's expand + edit-buffer state
         s_rowBufs.erase(deleteId);
+        SyncEmoteBinds();            // drop the entry's Nexus InputBinds (all bound
+                                     // variants; stays if a staged radial wheel refs it)
     }
 
     // ===== Bundled samples (uncommon: reseed) =====
