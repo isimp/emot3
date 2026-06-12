@@ -22,17 +22,20 @@
 void RenderPaletteOptionsTab() {
     PROFILE_SCOPE("opt.palette");  // dev perf overlay
 
-    // Everything is wrapped in one group so hovering ANYWHERE in the tab
-    // keeps an open palette alive (and the geometry controls additionally
-    // show the ghost). Declared up top because the toggle below is part of
-    // the preview surface too.
-    ImGui::BeginGroup();
     bool palGeo = false;  // a geometry control (rows / size / position) is engaged
 
     // Primary visibility toggle at the top - same affordance + styling as
     // the General tab's Library toggle and the Quickbar tab's main toggle.
     // The palette's open state is transient (nothing persisted), so the
     // button drives Toggle/IsPaletteOpen instead of a settings bool.
+    // DELIBERATELY OUTSIDE the keep-alive group below: if the toggle fed the
+    // pulse, a closing click would be vetoed on its mouse-DOWN (keepAlive
+    // can't tell "close toggle" from "slider") and only the RELEASE would
+    // close - the palette sat deactivated-but-open for the click's duration
+    // (read as a flicker). Outside the group, the mouse-down closes the
+    // palette instantly via the WndProc click-away and the release's
+    // toggle-fire is swallowed by the same-click suppression - the exact
+    // Nexus-icon flow.
     ImGui::Spacing();
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14.f, 6.f));
     bool palOpen = IsPaletteOpen();
@@ -45,6 +48,11 @@ void RenderPaletteOptionsTab() {
     ImGui::TextDisabled("%s", IsPaletteOpen() ? L("opt.currently_visible")
                                               : L("opt.currently_hidden"));
     ImGui::Spacing();
+
+    // Everything from here down is one group: hovering it keeps an open
+    // palette alive, the geometry controls additionally show the ghost.
+    // (See the toggle comment above for why the toggle is NOT part of it.)
+    ImGui::BeginGroup();
 
     // Discoverability: the palette's everyday entry points are its Nexus
     // keybind (ships unassigned) and the quick-access icon.
