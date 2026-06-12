@@ -59,6 +59,9 @@ void RenderPaletteOptionsTab() {
     ImGui::TextDisabled("%s", L("opt.pal.bind_hint"));
     ImGui::Spacing();
 
+    // ---- Layout: row cap, size, position, grow direction ----
+    OptionsSection(L("opt.sec.layout"));
+
     // Result-row cap. The palette never scrolls - more rows = taller window.
     ImGui::SetNextItemWidth(200.f);
     ImGui::SliderInt(L("opt.pal.max_results"), &g_Settings.PaletteMaxResults, 5, 15);
@@ -102,19 +105,26 @@ void RenderPaletteOptionsTab() {
     if (ImGui::IsItemHovered()) TooltipText("opt.pal.x_pos_tip");
     palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
 
-    // Vertical anchor (fraction of screen height).
+    // Vertical anchor (fraction of screen height). Which edge it places -
+    // and so its legal range, default, and tooltip - follows the grow
+    // direction below: top edge 0.0..0.8 growing down, bottom edge 0.2..1.0
+    // (the mirrored range) growing up. Same calibration both ways: the
+    // smallest palette at scale 1 still fits on the growing side.
+    const bool palUp = g_Settings.PaletteGrowUp;
     ImGui::SetNextItemWidth(200.f);
-    ImGui::SliderFloat(L("opt.pal.y_pos"), &g_Settings.PaletteYPos, 0.f, 0.8f, "%.2f");
+    ImGui::SliderFloat(L("opt.pal.y_pos"), &g_Settings.PaletteYPos,
+                       palUp ? 0.2f : 0.f, palUp ? 1.f : 0.8f, "%.2f");
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         LOG_TRACE("setting palette.y_pos = %.2f", g_Settings.PaletteYPos);
         RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-        g_Settings.PaletteYPos = 0.2f;
+        g_Settings.PaletteYPos = palUp ? 0.8f : 0.2f;
         LOG_TRACE("setting palette.y_pos = %.2f (reset)", g_Settings.PaletteYPos);
         RequestSave(SaveKind::Settings);
     }
-    if (ImGui::IsItemHovered()) TooltipText("opt.pal.y_pos_tip");
+    if (ImGui::IsItemHovered())
+        TooltipText(palUp ? "opt.pal.y_pos_tip_up" : "opt.pal.y_pos_tip");
     palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
 
     // Grow direction: top edge anchored (list grows downward, default) or
@@ -129,7 +139,13 @@ void RenderPaletteOptionsTab() {
     ImGui::SetNextItemWidth(160.f);
     if (ImGui::Combo("##palgrow", &gd, gdItems, IM_ARRAYSIZE(gdItems))) {
         g_Settings.PaletteGrowUp = (gd == 1);
-        LOG_TRACE("setting palette.grow_up = %d", gd);
+        // The anchor flips edges (top <-> bottom): MIRROR the stored value so
+        // the palette stays in the same screen region - and the mirror maps
+        // the two ranges onto each other exactly (0.0..0.8 <-> 0.2..1.0), so
+        // the result is always in the new mode's clamps.
+        g_Settings.PaletteYPos = 1.0f - g_Settings.PaletteYPos;
+        LOG_TRACE("setting palette.grow_up = %d (y_pos mirrored to %.2f)",
+                  gd, g_Settings.PaletteYPos);
         RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered()) {
@@ -141,6 +157,9 @@ void RenderPaletteOptionsTab() {
                        IM_ARRAYSIZE(kPalGrowOpts));
     }
     palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
+
+    // ---- Look: background, row style, footer ----
+    OptionsSection(L("opt.sec.look"));
 
     // Background opacity (1.0 = the theme's own background).
     ImGui::SetNextItemWidth(200.f);
@@ -167,6 +186,9 @@ void RenderPaletteOptionsTab() {
     CheckboxWithSaveAndTooltip("opt.pal.show_footer", &g_Settings.PaletteShowFooter,
                                /*defaultIsOn=*/true);
     palGeo |= ImGui::IsItemHovered() || ImGui::IsItemActive();
+
+    // ---- Interaction: suggestions, search and send behavior ----
+    OptionsSection(L("opt.sec.interaction"));
 
     // Empty-query suggestions: Frequently / Recently used (the usage log's two
     // views, same labels as the Quickbar categories) or nothing.

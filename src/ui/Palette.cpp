@@ -280,11 +280,14 @@ int BuildVariantList(const PalRow& r, PalVariant out[4]) {
 
 // Up/Down move the selection while the query field keeps focus (the console
 // idiom - the user never leaves the text field). Clamped against the row
-// count in the render (the list isn't built yet when this runs).
+// count in the render (the list isn't built yet when this runs). Grow-up
+// draws the list reversed (higher index = visually higher), so the arrows
+// invert with it: Up always moves AWAY from the query field.
 int QueryEditCb(ImGuiInputTextCallbackData* data) {
     if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
-        if      (data->EventKey == ImGuiKey_UpArrow)   --s_sel;
-        else if (data->EventKey == ImGuiKey_DownArrow) ++s_sel;
+        const int dir = g_Settings.PaletteGrowUp ? 1 : -1;
+        if      (data->EventKey == ImGuiKey_UpArrow)   s_sel += dir;
+        else if (data->EventKey == ImGuiKey_DownArrow) s_sel -= dir;
     }
     return 0;
 }
@@ -522,54 +525,69 @@ void PaletteRender() {
         s_rectValid.store(true, std::memory_order_release);
     }
 
+    // Grow-up INVERTS the whole layout, not just the window anchor: footer
+    // on top, then the cap line, then the results in REVERSE order (best
+    // match at the bottom), and the query field last - sitting at the pinned
+    // bottom edge, so it never moves while the list above it grows. The
+    // building blocks below are lambdas so both orders share one
+    // implementation; submission order = visual order (immediate mode), so
+    // in grow-up the rows reflect the previous frame's query edit - a
+    // one-frame lag, invisible at game framerates (Enter still consumes the
+    // rows exactly as displayed).
+    const bool growUp = g_Settings.PaletteGrowUp;
+
     // Query field. EnterReturnsTrue -> send the selection. AutoSelectAll: a
     // reopen restores the last query selected, so typing replaces it.
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (s_takeFocus) { ImGui::SetKeyboardFocusHere(); s_takeFocus = false; }
-    bool enter = ImGui::InputTextWithHint(
-        "##palquery", L("pal.hint"), s_query, sizeof(s_query),
-        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
-        ImGuiInputTextFlags_AutoSelectAll, QueryEditCb);
-    // Claim Tab for the active query field: ImGui 1.80's
-    // FocusableItemRegister tabs OUT of the active item (deactivating it -
-    // caret loss + an AutoSelectAll re-select on the re-pin) unless the item
-    // declared Tab as one of its keys. Tab is the variant-cycling key below,
-    // never a focus hop. The mask persists while the field stays active and
-    // clears itself on any ActiveId change.
-    if (ImGui::IsItemActive())
-        GImGui->ActiveIdUsingKeyInputMask |= ((ImU64)1 << ImGuiKey_Tab);
-    // Editing the query rebuilds the list - the same index would point at a
-    // different emote, so an armed variant goes back to the default.
-    if (ImGui::IsItemEdited()) s_varIdx = 0;
+    bool enter = false;
+    auto queryField = [&]() {
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (s_takeFocus) { ImGui::SetKeyboardFocusHere(); s_takeFocus = false; }
+        enter = ImGui::InputTextWithHint(
+            "##palquery", L("pal.hint"), s_query, sizeof(s_query),
+            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
+            ImGuiInputTextFlags_AutoSelectAll, QueryEditCb);
+        // Claim Tab for the active query field: ImGui 1.80's
+        // FocusableItemRegister tabs OUT of the active item (deactivating it -
+        // caret loss + an AutoSelectAll re-select on the re-pin) unless the
+        // item declared Tab as one of its keys. Tab is the variant-cycling
+        // key, never a focus hop. The mask persists while the field stays
+        // active and clears itself on any ActiveId change.
+        if (ImGui::IsItemActive())
+            GImGui->ActiveIdUsingKeyInputMask |= ((ImU64)1 << ImGuiKey_Tab);
+        // Editing the query rebuilds the list - the same index would point at
+        // a different emote, so an armed variant goes back to the default.
+        if (ImGui::IsItemEdited()) s_varIdx = 0;
 
-    // Enter guard (see s_enterGuard): a fire only counts once io has seen
-    // Enter UP since opening - a wedged Enter otherwise key-repeats straight
-    // into a send the moment the field activates.
-    {
-        const int ke  = io.KeyMap[ImGuiKey_Enter];
-        const int kke = io.KeyMap[ImGuiKey_KeyPadEnter];
-        const bool enterDown = (ke  >= 0 && io.KeysDown[ke]) ||
-                               (kke >= 0 && io.KeysDown[kke]);
-        if (s_enterGuard && !enterDown) s_enterGuard = false;
-        if (s_enterGuard) enter = false;
-    }
+        // Enter guard (see s_enterGuard): a fire only counts once io has seen
+        // Enter UP since opening - a wedged Enter otherwise key-repeats
+        // straight into a send the moment the field activates.
+        {
+            const int ke  = io.KeyMap[ImGuiKey_Enter];
+            const int kke = io.KeyMap[ImGuiKey_KeyPadEnter];
+            const bool enterDown = (ke  >= 0 && io.KeysDown[ke]) ||
+                                   (kke >= 0 && io.KeysDown[kke]);
+            if (s_enterGuard && !enterDown) s_enterGuard = false;
+            if (s_enterGuard) enter = false;
+        }
 
-    // Keep the query field ACTIVE for as long as the palette lives (re-arm
-    // whenever nothing is active - e.g. after Enter deactivated it, or a
-    // click on the window background). Type-ready at all times, and it's
-    // what makes the palette FIRST in the Esc chain: Nexus' escape-closing
-    // and the game's own Esc handling are both held off while a text input
-    // is active, so an Esc here can only ever mean "close the palette" -
-    // never "also close the Library" or "open the game menu".
-    // NEVER re-arm while a mouse button is down: on the click frame the
-    // field releases ActiveId, and a queued refocus would steal it back from
-    // the mid-press row Selectable - whose press-on-RELEASE then never fires
-    // (that exact sequence ate left-click sends). Also stands down for a
-    // ghost and while the options section is engaged (a re-pin would yank
-    // keyboard focus away from the controls being tuned).
-    if (!ghost && !keepAlive && !s_takeFocus && !s_ctxOpen &&
-        !ImGui::IsAnyItemActive() && !ImGui::IsAnyMouseDown())
-        ImGui::SetKeyboardFocusHere(-1);
+        // Keep the query field ACTIVE for as long as the palette lives
+        // (re-arm whenever nothing is active - e.g. after Enter deactivated
+        // it, or a click on the window background). Type-ready at all times,
+        // and it's what makes the palette FIRST in the Esc chain: Nexus'
+        // escape-closing and the game's own Esc handling are both held off
+        // while a text input is active, so an Esc here can only ever mean
+        // "close the palette" - never "also close the Library" or "open the
+        // game menu".
+        // NEVER re-arm while a mouse button is down: on the click frame the
+        // field releases ActiveId, and a queued refocus would steal it back
+        // from the mid-press row button - whose press-on-RELEASE then never
+        // fires (that exact sequence ate left-click sends). Also stands down
+        // for a ghost and while the options section is engaged (a re-pin
+        // would yank keyboard focus away from the controls being tuned).
+        if (!ghost && !keepAlive && !s_takeFocus && !s_ctxOpen &&
+            !ImGui::IsAnyItemActive() && !ImGui::IsAnyMouseDown())
+            ImGui::SetKeyboardFocusHere(-1);
+    };
 
     // Build this frame's rows. Filtering starts from the FIRST character,
     // same as the Library search (its old 2-char activation rule was
@@ -612,8 +630,6 @@ void PaletteRender() {
       : g_Settings.PaletteEnterMode == EPaletteEnterMode::Fill ? ESendModeOverride::Fill
       :                                                          ESendModeOverride::None;
 
-    ImGui::Spacing();
-
     // Open-click swallow (see s_mouseGuard): armed by TogglePalette, released
     // once no mouse button is held - from then on row clicks count.
     if (s_mouseGuard && !ImGui::IsAnyMouseDown()) s_mouseGuard = false;
@@ -632,8 +648,45 @@ void PaletteRender() {
     // Only let a hover steal the selection when the mouse actually moved -
     // otherwise the row under a parked cursor wins every Up/Down keypress.
     const bool mouseMoved = io.MouseDelta.x != 0.f || io.MouseDelta.y != 0.f;
+
+    // Cap / empty-state line ("+N more", no-match, usage hint). Sits past the
+    // far end of the list - below it growing down, ABOVE it growing up.
+    auto capLine = [&]() {
+        if (rows.empty()) {
+            if (!needle.empty())
+                ImGui::TextDisabled("%s", L("pal.no_match"));
+            else if (g_Settings.PaletteEmptyQuery != EPaletteEmptyQuery::Off)
+                ImGui::TextDisabled("%s", L("pal.empty_usage"));  // suggestions on, none yet
+        } else if (total > (int)rows.size()) {
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), L("pal.more"), total - (int)rows.size());
+            ImGui::TextDisabled("%s", buf);
+        }
+    };
+
+    // Footer key help. The Tab hint only shows when the selected row actually
+    // has variants to cycle.
+    auto footerLine = [&]() {
+        ImGui::TextDisabled("%s", varCount > 1 ? L("pal.footer_tab")
+                                               : L("pal.footer"));
+    };
+
+    // Everything ABOVE the list when growing up (footer farthest away, then
+    // the cap line); growing down it's the query field that leads.
+    if (growUp) {
+        if (g_Settings.PaletteShowFooter) { footerLine(); ImGui::Spacing(); }
+        capLine();
+    } else {
+        queryField();
+        ImGui::Spacing();
+    }
+
     bool anyCtx = false;  // a row context menu is open THIS frame
-    for (int i = 0; i < (int)rows.size(); ++i) {
+    for (int vi = 0; vi < (int)rows.size(); ++vi) {
+        // Visual slot vi -> data index i: grow-up draws the list REVERSED so
+        // the best match (index 0) sits at the BOTTOM, adjacent to the query
+        // field (the arrows invert with it - see QueryEditCb).
+        const int i = growUp ? (int)rows.size() - 1 - vi : vi;
         const PalRow& r = rows[i];
         ImGui::PushID(i);
 
@@ -736,23 +789,14 @@ void PaletteRender() {
     if (s_ctxOpen && !anyCtx) s_takeFocus = true;
     s_ctxOpen = anyCtx;
 
-    if (rows.empty()) {
-        if (!needle.empty())
-            ImGui::TextDisabled("%s", L("pal.no_match"));
-        else if (g_Settings.PaletteEmptyQuery != EPaletteEmptyQuery::Off)
-            ImGui::TextDisabled("%s", L("pal.empty_usage"));  // suggestions on, none yet
-    } else if (total > (int)rows.size()) {
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), L("pal.more"), total - (int)rows.size());
-        ImGui::TextDisabled("%s", buf);
-    }
-
-    // Footer key help. The Tab hint only shows when the selected row actually
-    // has variants to cycle.
-    if (g_Settings.PaletteShowFooter) {
+    // Everything BELOW the list: the query field at the pinned bottom edge
+    // when growing up; the cap line + footer when growing down.
+    if (growUp) {
         ImGui::Spacing();
-        ImGui::TextDisabled("%s", varCount > 1 ? L("pal.footer_tab")
-                                               : L("pal.footer"));
+        queryField();
+    } else {
+        capLine();
+        if (g_Settings.PaletteShowFooter) { ImGui::Spacing(); footerLine(); }
     }
 
     if (enter && !rows.empty()) activate = s_sel;

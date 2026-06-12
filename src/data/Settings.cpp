@@ -203,7 +203,14 @@ bool SanitizeSettings(Settings& s) {
             LOG_WARNING("settings: palette.empty_query %d invalid -> 0 (frequent)", q);
             s.PaletteEmptyQuery = EPaletteEmptyQuery::Frequent; changed = true;
         }
-        float fy = s.PaletteYPos < 0.f ? 0.f : (s.PaletteYPos > 0.8f ? 0.8f : s.PaletteYPos);
+        // The vertical anchor's legal range depends on the grow direction:
+        // growing down it's the TOP edge, 0.0..0.8 (calibrated so the
+        // smallest palette at scale 1 still fits below the anchor); growing
+        // up it's the BOTTOM edge, mirrored to 0.2..1.0 so the same smallest
+        // palette fits above it.
+        const float yMin = s.PaletteGrowUp ? 0.2f : 0.0f;
+        const float yMax = s.PaletteGrowUp ? 1.0f : 0.8f;
+        float fy = s.PaletteYPos < yMin ? yMin : (s.PaletteYPos > yMax ? yMax : s.PaletteYPos);
         if (fy != s.PaletteYPos) {
             LOG_WARNING("settings: palette.y_pos %.2f out of range -> clamped to %.2f",
                         s.PaletteYPos, fy);
