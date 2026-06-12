@@ -353,6 +353,7 @@
     <ClInclude Include="ui\IconDrawing.h" />
     <ClInclude Include="ui\Layout.h" />
     <ClInclude Include="ui\MainPanel.h" />
+    <ClInclude Include="ui\Palette.h" />
     <ClInclude Include="ui\OwnedScroll.h" />
     <ClInclude Include="ui\NexusShortcut.h" />
     <ClInclude Include="ui\Options.h" />
@@ -420,9 +421,11 @@
     <ClCompile Include="ui\OwnedScroll.cpp" />
     <ClCompile Include="ui\MainPanel.cpp" />
     <ClCompile Include="ui\NexusShortcut.cpp" />
+    <ClCompile Include="ui\Palette.cpp" />
     <ClCompile Include="ui\Options.cpp" />
     <ClCompile Include="ui\OptionsCommon.cpp" />
     <ClCompile Include="ui\OptionsGeneral.cpp" />
+    <ClCompile Include="ui\OptionsPalette.cpp" />
     <ClCompile Include="ui\OptionsQuickbar.cpp" />
     <ClCompile Include="ui\OptionsEmotes.cpp" />
     <ClCompile Include="ui\OptionsMeMotes.cpp" />

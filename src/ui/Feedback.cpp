@@ -25,20 +25,36 @@ struct State {
 State           s_state;
 FeedbackSurface s_activeSurface = FeedbackSurface::None;
 
+// One-shot anchor override (SetNextFeedbackAnchor). Frame-stamped: honored
+// only by a ShowFeedback in the SAME frame it was set, so an unconsumed
+// override (the send passed the gate) self-expires instead of mislabeling a
+// later click refusal.
+ImVec2 s_nextAnchor(0, 0);
+int    s_nextAnchorFrame = -1;
+
 }  // namespace
 
 void SetActiveFeedbackSurface(FeedbackSurface surface) { s_activeSurface = surface; }
+
+void SetNextFeedbackAnchor(float x, float y) {
+    s_nextAnchor      = ImVec2(x, y);
+    s_nextAnchorFrame = ImGui::GetFrameCount();
+}
 
 void ShowFeedback(const std::string& message) {
     if (message.empty()) return;
     // Single slot: newest wins; an identical repeat just refreshes the timer
     // (so mashing a blocked cell keeps one fresh line, never stacks). Anchor to
     // the cursor = where the click happened, so the line appears by the emote
-    // you clicked rather than parked in a corner.
+    // you clicked rather than parked in a corner - unless the caller named a
+    // better spot for a keyboard-driven action (SetNextFeedbackAnchor above).
     s_state.msg    = message;
     s_state.start  = ImGui::GetTime();
     s_state.origin = s_activeSurface;
-    s_state.anchor = ImGui::GetMousePos();
+    s_state.anchor = (s_nextAnchorFrame == ImGui::GetFrameCount())
+                         ? s_nextAnchor
+                         : ImGui::GetMousePos();
+    s_nextAnchorFrame = -1;
 }
 
 void DrawFeedbackOverlay(FeedbackSurface thisSurface, bool highContrast, ImDrawList* dl) {

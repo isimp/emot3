@@ -330,15 +330,27 @@ static void EmitSendRefusal(const char* key, EFeedbackSink sink) {
         ShowFeedback(L(key));
 }
 
+// Send-mode override state (see EmoteAction.h). Render-thread only; applied
+// where the auto-submit settings are read, i.e. at SendOrFill* entry.
+ESendModeOverride s_sendModeOverride = ESendModeOverride::None;
+
+bool ApplySendModeOverride(bool settingValue) {
+    if (s_sendModeOverride == ESendModeOverride::Send) return true;
+    if (s_sendModeOverride == ESendModeOverride::Fill) return false;
+    return settingValue;
+}
+
 } // namespace
 
-void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink sink) {
+void SetSendModeOverride(ESendModeOverride m) { s_sendModeOverride = m; }
+
+bool SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink sink) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
-    if (!APIDefs) return;
+    if (!APIDefs) return false;
     std::string cmd = e.Command;
     if (useTarget && e.IsTargetable) cmd += " @";
     if (useSync)                     cmd += " *";
-    const bool send        = g_Settings.SendOnClick;
+    const bool send        = ApplySendModeOverride(g_Settings.SendOnClick);
     const bool swallowMode = EmoteSendSwallowActive();
     // The held-printable-key / movement guard applies to clicks, keybinds, and radial
     // invokes alike (only the +plus swallow drops it): a keybind/wheel-hotkey that's a
@@ -362,7 +374,7 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("Emote skipped (%s): %s", skipKey, cmd.c_str());
         EmitSendRefusal(skipKey, sink);
-        return;
+        return false;
     }
 
     // Real send/fill (gate passed) — record for Recently / Frequently used.
@@ -379,11 +391,12 @@ void SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink
 
     LOG_DEBUG("%s emote: %s", send ? "Sending" : "Filling", cmd.c_str());
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
+    return true;
 }
 
-void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sink) {
+bool SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sink) {
     PROFILE_SCOPE("send");  // dev perf overlay - render-thread send dispatch (inject runs async)
-    if (!APIDefs) return;
+    if (!APIDefs) return false;
 
     // Pick the variant body. Fall back to TextDefault when the requested
     // variant is empty (defensive backstop — the right-click menu disables
@@ -398,7 +411,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
     }
     if (body->empty()) {
         LOG_WARNING("/me-mote %s has empty body - send refused", m.Id.c_str());
-        return;
+        return false;
     }
 
     // Build "/me <text>". The "/me " prefix is owned exclusively here — never
@@ -406,7 +419,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
     // so we can't ship a doubled prefix.
     std::string cmd = "/me " + *body;
 
-    const bool send        = g_Settings.MeMoteSendOnClick;  // independent of SendOnClick
+    const bool send = ApplySendModeOverride(g_Settings.MeMoteSendOnClick);  // independent of SendOnClick
     const bool swallowMode = EmoteSendSwallowActive();
     const bool checkHeld   = !swallowMode;  // see SendOrFillEmote (gate applies to binds too)
 
@@ -422,7 +435,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
                             /*ignoreTextbox=*/closeChat)) {
         LOG_DEBUG("/me-mote skipped (%s): %s", skipKey, cmd.c_str());
         EmitSendRefusal(skipKey, sink);
-        return;
+        return false;
     }
 
     // Real send/fill (gate passed) — record for Recently / Frequently used.
@@ -430,6 +443,7 @@ void SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
 
     LOG_DEBUG("%s /me-mote: %s", send ? "Sending" : "Filling", cmd.c_str());
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
+    return true;
 }
 
 bool IsEmoteUnlocked(const std::string& id) {

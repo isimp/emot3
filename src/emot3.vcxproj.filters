@@ -79,9 +79,11 @@
     <ClCompile Include="ui\Layout.cpp">           <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\MainPanel.cpp">        <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\NexusShortcut.cpp">    <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\Palette.cpp">          <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\Options.cpp">          <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsCommon.cpp">    <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsGeneral.cpp">   <Filter>ui</Filter></ClCompile>
+    <ClCompile Include="ui\OptionsPalette.cpp">   <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsQuickbar.cpp">  <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsEmotes.cpp">    <Filter>ui</Filter></ClCompile>
     <ClCompile Include="ui\OptionsUnlocks.cpp">   <Filter>ui</Filter></ClCompile>
@@ -141,6 +143,7 @@
     <ClInclude Include="ui\Layout.h">        <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\MainPanel.h">     <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\NexusShortcut.h"> <Filter>ui</Filter></ClInclude>
+    <ClInclude Include="ui\Palette.h">       <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\Options.h">       <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\OptionsCommon.h"> <Filter>ui</Filter></ClInclude>
     <ClInclude Include="ui\Quickbar.h">      <Filter>ui</Filter></ClInclude>

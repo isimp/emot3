@@ -12,3 +12,4 @@
 
 extern const char* const KB_TOGGLE_MAIN;
 extern const char* const KB_TOGGLE_QB;
+extern const char* const KB_TOGGLE_PALETTE;

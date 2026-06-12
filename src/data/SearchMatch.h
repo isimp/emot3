@@ -1,7 +1,7 @@
 #pragma once
 
 // Shared catalog text-match for search surfaces (the Library search box; the
-// quick-send palette). Pure matching only - class/section filtering stays with
+// emote palette). Pure matching only - class/section filtering stays with
 // each surface, and an alias-only hit is reported as data so the caller
 // decides how to surface it (the Library formats its "matched via alias"
 // tooltip line from it).

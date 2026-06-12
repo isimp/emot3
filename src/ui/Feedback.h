@@ -65,7 +65,7 @@ struct ImDrawList;  // fwd-decl: the overlay draws into a caller-supplied list
 // Which of our windows is currently rendering. Set by SetActiveFeedbackSurface
 // so ShowFeedback can tag a message's origin, and passed to DrawFeedbackOverlay
 // so each window only draws messages that originated in it.
-enum class FeedbackSurface { None, MainPanel, Quickbar };
+enum class FeedbackSurface { None, MainPanel, Quickbar, Palette };
 
 // Call once at the top of each window's render (QuickbarRender / AddonRender).
 void SetActiveFeedbackSurface(FeedbackSurface surface);
@@ -73,6 +73,15 @@ void SetActiveFeedbackSurface(FeedbackSurface surface);
 // Show (or replace/refresh) the current feedback line. message is the already-
 // resolved, localized text (e.g. L("cells.blocked_mounted")).
 void ShowFeedback(const std::string& message);
+
+// One-shot anchor override for a ShowFeedback fired LATER THIS FRAME. By
+// default the pill anchors to the mouse position (the click that caused the
+// refusal) - but a keyboard-driven action (the palette's Enter send) has no
+// meaningful cursor position, so the caller names the spot the user is
+// actually looking at (e.g. the selected row) right before dispatching.
+// Frame-scoped: expires unconsumed at frame end, so a send that passes the
+// gate can never leak its anchor into a later, unrelated click refusal.
+void SetNextFeedbackAnchor(float x, float y);
 
 // Draw the fading line over the CURRENT window's grid. Call after EndChild,
 // before End, passing the grid CHILD's draw list (childWin->DrawList) so the

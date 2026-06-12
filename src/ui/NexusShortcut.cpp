@@ -5,6 +5,7 @@
 #include "Logging.h"
 #include "Settings.h"
 #include "SaveScheduler.h" // RequestSave (debounced settings persist)
+#include "Palette.h"        // TogglePalette / IsPaletteOpen (palette menu item)
 #include "QuickbarPresets.h"
 #include "Options.h"        // ApplyQbCloseOnEsc (preset apply re-registers it)
 #include "UpdateCheck.h"    // Plus update hint (PlusUpdateAvailable / OpenReleasesPage; stubs otherwise)
@@ -82,6 +83,18 @@ void ShortcutContextMenu() {
                   g_Settings.ShowQuickbar ? "shown" : "hidden");
         // Ride-along nav state (see Library above) — no eager write.
     }
+    // Palette — same open/close label flip as the two windows above, but a
+    // transient popup: nothing persisted. The selecting click can't
+    // immediately click-away-close it (the palette's hit rect is only armed
+    // after its first rendered frame).
+    const char* palLabel = IsPaletteOpen()
+        ? L("shortcut.pal_close")
+        : L("shortcut.pal_open");
+    if (ImGui::MenuItem(palLabel)) {
+        TogglePalette();
+        LOG_DEBUG("Shortcut menu > palette %s",
+                  IsPaletteOpen() ? "opened" : "closed");
+    }
 
     // Quickbar presets submenu — apply one by name. The active preset (the one
     // whose settings + geometry currently match) gets a check mark. Applying
@@ -145,11 +158,15 @@ void ApplyNexusShortcut() {
         return;
     }
 
-    // Left-click triggers a keybind — pick which one based on the swap
-    // setting. Right-click is handled by AddContextMenu below.
-    const char* leftKb = g_Settings.SwapShortcutClickActions
-                             ? KB_TOGGLE_QB
-                             : KB_TOGGLE_MAIN;
+    // Left-click triggers a keybind — pick which one from the 3-way setting
+    // (Library / Quickbar / palette). Right-click is handled by
+    // AddContextMenu below.
+    const char* leftKb = KB_TOGGLE_MAIN;
+    switch (g_Settings.ShortcutClickAction) {
+        case EShortcutClick::Quickbar: leftKb = KB_TOGGLE_QB;      break;
+        case EShortcutClick::Palette:  leftKb = KB_TOGGLE_PALETTE; break;
+        case EShortcutClick::Library:  break;
+    }
     const char* tooltip = "emot3 - clickable emote panel";
 
     APIDefs->QuickAccess.Add(kShortcutId,

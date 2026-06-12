@@ -60,6 +60,13 @@ struct EmoteDragPayload {
     EFavoriteRefType type = EFavoriteRefType::Emote;
 };
 
+// The emote send-variant menu items (Send normally / on target / synchronized
+// / on target synchronized) — the right-click menu body shared by the cell
+// context menus here and the palette's row menu. Call between an
+// open BeginPopup*/EndPopup. Returns true when an item fired AND the send
+// actually dispatched (gate passed) — the palette closes on that.
+bool RenderSendVariants(const Emote& e);
+
 // One cell of the grid — icon button + optional label + overlays + the
 // right-click context menu. isQuickbar switches the context menu over to
 // the execute-variant set instead of favorites management.

@@ -11,6 +11,7 @@
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
 #include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
+#include "Palette.h"          // TogglePalette / IsPaletteOpen (toolbar "P" button)
 #include "SearchMatch.h"      // MatchEmoteSearch / MatchMeMoteSearch (shared with the palette)
 #include "StringUtil.h"       // TrimWhitespace (new-category entry) + ToLower (search needle)
 #include "Icons.h"
@@ -690,13 +691,17 @@ void AddonRender() {
             TooltipText("mp.icon_scale_tooltip");
     }
 
-    // Quickbar toggle, right-aligned on this same row.
+    // Quickbar + Palette toggles, right-aligned on this same row. Short "QB" /
+    // "P" labels so the pair still fits beside the scale slider at the
+    // window's min width; the tooltips carry the full names.
     {
         const ImGuiStyle& style = ImGui::GetStyle();
-        std::string qbLabel = L("mp.quickbar");
-        float qbBtnW = ImGui::CalcTextSize(qbLabel.c_str()).x + style.FramePadding.x * 2.f;
-        float rightX = ImGui::GetWindowContentRegionMax().x - qbBtnW
-                     - style.ItemInnerSpacing.x;
+        std::string qbLabel  = L("mp.quickbar");   // "QB"
+        std::string palLabel = L("mp.palette");    // "P"
+        float qbBtnW  = ImGui::CalcTextSize(qbLabel.c_str()).x  + style.FramePadding.x * 2.f;
+        float palBtnW = ImGui::CalcTextSize(palLabel.c_str()).x + style.FramePadding.x * 2.f;
+        float rightX = ImGui::GetWindowContentRegionMax().x - qbBtnW - palBtnW
+                     - style.ItemSpacing.x - style.ItemInnerSpacing.x;
         if (rightX > ImGui::GetCursorPosX()) {
             ImGui::SameLine(rightX);
         } else {
@@ -707,22 +712,22 @@ void AddonRender() {
         ToggleButton(qbLabel.c_str(), &g_Settings.ShowQuickbar);
         if (ImGui::IsItemHovered())
             TooltipText("mp.quickbar_tooltip");
+        ImGui::SameLine();
+        // The palette's open state is transient (nothing persisted): the
+        // ToggleButton runs on a local copy for the lit-while-open look, and
+        // a change routes through TogglePalette (which owns the real state +
+        // the open guards).
+        bool palOpen = IsPaletteOpen();
+        if (ToggleButton(palLabel.c_str(), &palOpen))
+            TogglePalette();
+        if (ImGui::IsItemHovered())
+            TooltipText("mp.palette_tooltip");
     }
 
-    // Search with an X clear button on the right.
-    //
-    // Filtering activates only at 2+ characters - a single keystroke
-    // would match roughly half the catalog and isn't useful, and
-    // letting the filter fire at 1 char makes the category empty-
-    // state messages say "no emotes match the search" the instant the
-    // user has typed one letter, which reads as a lie.
-    //
-    // The rule is surfaced three ways so the user doesn't have to
-    // discover it by accident:
-    //   - The placeholder ends with "(2+ chars)".
-    //   - The input field has a hover tooltip that spells it out.
-    //   - When the user has typed exactly one character, a muted
-    //     line below the row prompts them to type one more.
+    // Search with an X clear button on the right. Filters from the first
+    // character (the old 2-char activation rule + its one-more-character
+    // hint were removed - the palette filters from the first keystroke and
+    // the two surfaces should feel the same).
     const float clearW = 24.f;
     ImGui::SetNextItemWidth(-(clearW + ImGui::GetStyle().ItemSpacing.x));
     ImGui::InputTextWithHint("##search", L("mp.search_hint"),
@@ -739,15 +744,6 @@ void AddonRender() {
         if (ImGui::IsItemHovered() && hasText) TooltipText("mp.clear_search");
     }
 
-    // Inline prompt for the 1-char case. Renders on its own line so
-    // the layout stays stable when it appears and disappears, and so
-    // it reads as a hint about the field above rather than crowding
-    // the X button. Hidden the rest of the time.
-    bool oneCharOnly = g_SearchBuf[0] != '\0' && g_SearchBuf[1] == '\0';
-    if (oneCharOnly) {
-        ImGui::TextDisabled("%s", L("mp.search_one_more"));
-    }
-
     ImGui::Separator();
 
     // ---- Build display lists (lock held) ----
@@ -755,10 +751,8 @@ void AddonRender() {
 
     // Single source of truth for "is the search filter actually
     // running this frame?" - read by both passes() below and the
-    // empty-state-message lambdas further down. Threshold is 2 chars
-    // so the messages don't talk about "the search" when only one
-    // letter has been typed (filter is silent in that state).
-    const bool searchActive = (search.size() >= 2);
+    // empty-state-message lambdas further down.
+    const bool searchActive = !search.empty();
 
     // Per-frame lookup tables, populated once under the lock below. Building
     // these turns the list-build from O(N^2 log N) - it used to call the
