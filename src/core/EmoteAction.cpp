@@ -382,35 +382,14 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
             APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYUP, VK_RETURN, upLP);
         }
 
-        // ---- Resume still-held keys (swallow mode + auto-send only) ---------
-        // Opening the chat box made the game drop its movement-key state, and
-        // after it closes the game IGNORES the held key's auto-repeats (repeat
-        // bit set) - so a key held through the send needed a physical re-press
-        // to resume moving. Synthesize that re-press: one FRESH WM_KEYDOWN
-        // (repeat bit clear) per key still physically down. The game maps
-        // VK -> bind itself, so remaps are honored; the user's real release
-        // arrives later and passes through (key-ups are never consumed). VK
-        // scan is one-shot per send, not per frame (same class as
-        // ReseedHeldKeys). Space is deliberately excluded (a synthetic press
-        // would JUMP); a non-movement key held through an emote send getting
-        // one re-press is the documented accepted risk. Skipped in fill mode
-        // (!autoSend): chat stays open there and the keys would type into it.
-        if (swallowMode && autoSend) {
-            Sleep(30);  // let the Enter dispatch settle / the chat box close
-            if (g_Unloading.load()) return;
-            int n = 0;
-            auto repress = [&](int vk) {
-                if (!(GetAsyncKeyState(vk) & 0x8000)) return;
-                const DWORD  sc   = MapVirtualKey((UINT)vk, MAPVK_VK_TO_VSC);
-                const LPARAM down = (LPARAM)((sc << 16) | 1);  // bit 30 clear = fresh press
-                APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYDOWN, (WPARAM)vk, down);
-                ++n;
-            };
-            for (int vk = 'A'; vk <= 'Z'; ++vk) repress(vk);
-            for (int vk = '0'; vk <= '9'; ++vk) repress(vk);
-            repress(VK_UP); repress(VK_DOWN); repress(VK_LEFT); repress(VK_RIGHT);
-            if (n) LOG_DEBUG("post-send: re-pressed %d still-held key(s)", n);
-        }
+        // NOTE - no held-key "resume" after the send, by design (tried and
+        // REMOVED after in-game testing): a synthetic fresh WM_KEYDOWN posted
+        // to the game does NOT resume movement - movement reads physical key
+        // state (raw input / async state), not posted messages, so the game
+        // can't be convinced a key is "still held". The shipped semantic is
+        // therefore uniform with the autorun-cancel above: a send while
+        // moving STOPS the character; the user resumes movement themselves
+        // (release + re-press, or re-engage autorun).
     }).detach();
 }
 
