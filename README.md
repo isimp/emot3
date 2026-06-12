@@ -1,7 +1,8 @@
 # emot3
 
 A clickable emote panel for Guild Wars 2, with a separate Quickbar you can keep
-on your HUD. Built as a [Nexus](https://raidcore.gg/Nexus) addon.
+on your HUD and a type-to-send palette for your keyboard. Built as a
+[Nexus](https://raidcore.gg/Nexus) addon.
 
 ## AI notice
 
@@ -23,6 +24,11 @@ them from the official ArenaNet artwork.
   liking.
 - **Quickbar presets** - save a look plus the bar's size and position, then swap
   between them from the addon's icon.
+- **Palette** - a keybound type-to-send popup: a few letters, Enter, sent.
+  Suggests your most-used emotes while empty, Tab cycles a result's send
+  variants (target / sync / You / All), and your favorites category names
+  double as search terms. Position, size, grow direction, and behavior are
+  all configurable.
 - **Keybinds** - bind individual emotes and /me-mote variants as Nexus keybinds;
   RadialMenus wheels can invoke them without you blocking a key.
 - **RadialMenus export** - export a favorites category as a wheel for the
@@ -87,8 +93,9 @@ emot3 auto-updates in-game through Nexus.
 ### Plus build (optional)
 
 `emot3_plus.dll` adds functionality stripped from the public build for antivirus
-compatibility: send an emote while moving and mouse-wheel routing while the
-Quickbar is click-through. The Plus build also gets a per-wheel **Sync** button
+compatibility: send an emote while moving (the send stops your character —
+held movement keys are absorbed and autorun is cancelled; you resume moving
+yourself) and mouse-wheel routing while the Quickbar is click-through. The Plus build also gets a per-wheel **Sync** button
 in the RadialMenus tab that pushes emote changes directly into RadialMenus — no
 manual folder copy needed.
 
@@ -109,7 +116,7 @@ available.
   Options > User Interface > Chat Command*).
 - **Unlock tracking** is manual by default - right-click an unlockable emote to
   toggle. The Unlocks tab can also read your account from the GW2 API (via Hoard
-  & Seek or your own key) to fill these in; it only ever adds unlocks
+  & Seek or your own key) to fill these in; it only ever adds unlocks.
 - **Plus features** work by consuming Windows keyboard and mouse-wheel messages
   from inside the game process before they reach the game —
   see [`src/plus/SendSuppress.cpp`](src/plus/SendSuppress.cpp) and
