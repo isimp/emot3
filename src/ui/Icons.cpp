@@ -16,6 +16,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -465,8 +466,11 @@ void ReconcileResidentPool() {
 // --- user-icon dimension cap (header-only, no decode) --------------------
 IconProbe ProbeIconFile(const std::string& path, int& outW, int& outH) {
     outW = 0; outH = 0;
-    const std::wstring wpath = Utf8ToWide(path);   // wide open: any Unicode name
-    std::ifstream f(wpath.c_str(), std::ios::binary);
+    // Wide open for any Unicode name. std::filesystem::path is natively wide on
+    // Windows and its fstream ctor is portable (MSVC + libstdc++/MinGW), unlike
+    // the MSVC-only std::ifstream(const wchar_t*) extension.
+    const std::filesystem::path fp(Utf8ToWide(path));
+    std::ifstream f(fp, std::ios::binary);
     if (!f.is_open()) return IconProbe::Unreadable;
     // A JPEG's SOF can sit behind a large EXIF/APPn block, so read a bounded
     // header window (PNG dims live in the first 24 bytes; this covers the vast

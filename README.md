@@ -127,7 +127,7 @@ available.
   message-filtering pattern is indistinguishable from a keylogger to static
   analysis, which is why they're kept in a separate opt-in build.
 
-## Contributing
+## Translations & catalog fixes
 
 **Emote catalog** — If a slash command is wrong, a display name differs from
 what the game shows, an emote is missing, or you know a useful alias, open an
@@ -147,34 +147,8 @@ English. Full steps in [`resources/i18n/README.md`](resources/i18n/README.md).
 
 ## Build
 
-Requirements: Visual Studio 2022 (C++ desktop workload, Win10 SDK), Python 3 for
-the resource codegen step. Submodules must be cloned.
-
-```sh
-git submodule update --init --recursive
-py -3 tools/gen_rc.py
-msbuild emot3.sln /p:Configuration=PlusDevTools /p:Platform=x64
-```
-
-Output: `build\PlusDevTools\emot3_plusdevtools.dll`. Each configuration writes to
-its own `build\<Configuration>\` folder (x64-only, so the platform isn't in the
-path), so builds never clobber each other and switching configs stays
-incremental. The MSBuild pre-build target also runs `gen_rc.py` automatically,
-so the explicit step above is only needed for a clean first build.
-
-### Build configurations
-
-A build is a **base** plus two independent, additive flavors — **+plus** (the
-AV-sensitive input-swallow conveniences, macro `EMOT3_PLUS`) and **+devtools**
-(the diagnostic dev tools, macro `EMOT3_DEVTOOLS`):
-
-| Configuration | Output DLL | Input-swallows | Dev tools | Use |
-|---|---|:---:|:---:|---|
-| **Distribution** | `emot3.dll` | — | — | The clean public base build. CI publishes this. |
-| **Plus** | `emot3_plus.dll` | ✓ | — | Convenience features (mid-movement send, click-through wheel), no dev clutter. |
-| **DevTools** | `emot3_devtools.dll` | — | ✓ | Dev tools on a base-shaped binary (no swallows) — diagnose what the public build does. |
-| **PlusDevTools** | `emot3_plusdevtools.dll` | ✓ | ✓ | Local diagnostic build — the default for development. |
-| **Debug** | `emot3_debug.dll` | ✓ | ✓ | Unoptimized + debug CRT, for stepping through code. |
+Build from source (Windows/MSVC or Linux/MinGW cross-compile) — see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 

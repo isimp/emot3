@@ -6,7 +6,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <Windows.h>
+#include <windows.h>
 
 bool AtomicWriteFile(const std::string& path, const std::string& content,
                      bool binary) {

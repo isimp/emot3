@@ -1,5 +1,5 @@
 #define NOMINMAX
-#include <Windows.h>
+#include <windows.h>
 
 #include <cstring>
 #include <fstream>

@@ -18,10 +18,17 @@
 #       build's artifact; tagging before it finishes = no artifact = failed
 #       publish (recoverable: re-push the tag once the main build is green).
 #
+# In parallel, `cross-mingw` (Linux) cross-compiles the PlusDevTools flavor (the
+# maximal-code superset) with MinGW-w64 and runs the import guard in --mingw mode.
+# It's a PORTABILITY GATE only - it never ships anything; it proves the code still
+# compiles under libstdc++ and stays Wine-clean (no MSVC CRT, no
+# libgcc/libstdc++/libwinpthread). Shipped binaries always come from the MSVC
+# `build` job.
+#
 # Configs: Distribution -> emot3.dll | Plus -> emot3_plus.dll |
 #   DevTools -> emot3_devtools.dll | PlusDevTools -> emot3_plusdevtools.dll.
 #   EMOT3_PLUS adds the AV-sensitive input-swallows, EMOT3_DEVTOOLS adds the
-#   diagnostic dev tools; base defines neither. See README + src/emot3.vcxproj.
+#   diagnostic dev tools; base defines neither. See README + CMakeLists.txt.
 #
 # Release assets (v* tag): emot3.dll (loose, the single Nexus auto-update target)
 #   + emot3_plus-<tag>.zip (a zip Nexus' .dll updater ignores -> manual Plus
@@ -30,8 +37,9 @@
 # Doc-only main pushes skip CI via paths-ignore. Tag pushes ignore path filters
 # by GitHub Actions design, so a release still fires regardless of the bump files.
 #
-# windows-latest for the build (MSBuild / Windows SDK / py preinstalled);
-# ubuntu-latest for the no-compile publish. Public-repo runners are free.
+# windows-latest builds via CMake + the bundled VS 2022 toolchain (CMake / py
+# preinstalled); ubuntu-latest cross-compiles + does the no-compile publish.
+# Public-repo runners are free.
 
 name: Build
 
@@ -60,8 +68,8 @@ permissions:
   actions: read
 
 jobs:
-  # Compile + validate. Runs on PRs (light) and main pushes (full = the gate).
-  # Never runs on a tag (the tag does not compile - see `publish`).
+  # Compile + validate on Windows (MSVC) - the source of shipped binaries.
+  # Runs on PRs (light) and main pushes (full = the gate). Never on a tag.
   build:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: windows-latest
@@ -75,33 +83,27 @@ jobs:
           # the default checkout does NOT init submodules.
           submodules: recursive
 
-      # MSBuild is in the runner image but isn't on PATH by default;
-      # this action wires it up for the rest of the job.
-      - name: Set up MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      # gen_rc.py invokes `py -3` per the project's pre-build target.
-      # The Windows runner ships the `py` launcher pointed at Python 3
-      # out of the box, so no setup-python action is needed.
-      - name: Generate resource manifest
-        run: py -3 tools/gen_rc.py
+      # CMake + the VS 2022 toolchain + the `py` launcher are preinstalled on the
+      # runner image. The resource codegen (tools/gen_rc.py) runs as a build
+      # dependency, so no separate generate step is needed.
+      - name: Configure (CMake, VS 2022 x64)
+        run: cmake -B build-vs -G "Visual Studio 17 2022" -A x64
 
       # Build matrix: PRs only build the +devtools flavors (DevTools +
       # PlusDevTools); main pushes build all four. The +devtools macro is
-      # additive on top of the base flavor, so PlusDevTools building strongly
-      # implies Plus does too - same DevTools -> Distribution. Each config writes
-      # its own folder + DLL name (per-config TargetName / OutDir), so they never
-      # clobber each other.
+      # additive on the base flavor, so PlusDevTools building strongly implies
+      # Plus does too - same DevTools -> Distribution. Each config writes its own
+      # build-vs/<Config>/ folder + DLL name, so they never clobber each other.
       - name: Build Distribution (emot3.dll, main only)
         if: github.event_name != 'pull_request'
-        run: msbuild emot3.sln /p:Configuration=Distribution /p:Platform=x64 /m
+        run: cmake --build build-vs --config Distribution --parallel
       - name: Build Plus (emot3_plus.dll, main only)
         if: github.event_name != 'pull_request'
-        run: msbuild emot3.sln /p:Configuration=Plus /p:Platform=x64 /m
+        run: cmake --build build-vs --config Plus --parallel
       - name: Build DevTools (emot3_devtools.dll)
-        run: msbuild emot3.sln /p:Configuration=DevTools /p:Platform=x64 /m
+        run: cmake --build build-vs --config DevTools --parallel
       - name: Build PlusDevTools (emot3_plusdevtools.dll)
-        run: msbuild emot3.sln /p:Configuration=PlusDevTools /p:Platform=x64 /m
+        run: cmake --build build-vs --config PlusDevTools --parallel
 
       # Linux/Wine readiness guard: emot3 runs on Linux under Proton/Wine, and
       # the thing that keeps it loading there is the static CRT (/MT in every
@@ -110,14 +112,13 @@ jobs:
       # import table (no dumpbin / VC env needed) and fails the job if any DLL
       # imports the dynamic CRT (vcruntime/msvcp/ucrtbase/api-ms-win-crt). The
       # +devtools DLLs are checked on every run (the only flavors PRs build);
-      # the public shapes are checked on main. RuntimeLibrary is per-config in
-      # the vcxproj and identical across release configs, so the +devtools DLLs
-      # are a faithful proxy for the public ones on a PR.
+      # the public shapes are checked on main. The CRT setting is identical
+      # across release configs, so the +devtools DLLs are a faithful proxy on a PR.
       - name: Check imports (Wine static-CRT guard, +devtools)
-        run: py -3 tools/check_imports.py build/DevTools/emot3_devtools.dll build/PlusDevTools/emot3_plusdevtools.dll
+        run: py -3 tools/check_imports.py build-vs/DevTools/emot3_devtools.dll build-vs/PlusDevTools/emot3_plusdevtools.dll
       - name: Check imports (Wine static-CRT guard, public; main only)
         if: github.event_name != 'pull_request'
-        run: py -3 tools/check_imports.py build/Distribution/emot3.dll build/Plus/emot3_plus.dll
+        run: py -3 tools/check_imports.py build-vs/Distribution/emot3.dll build-vs/Plus/emot3_plus.dll
 
       # Artifact upload mirrors the matrix: +devtools artifacts upload on every
       # build run; the public-shape artifact uploads only on main pushes and is
@@ -128,8 +129,8 @@ jobs:
         with:
           name: emot3-devtools-builds
           path: |
-            build/DevTools/emot3_devtools.dll
-            build/PlusDevTools/emot3_plusdevtools.dll
+            build-vs/DevTools/emot3_devtools.dll
+            build-vs/PlusDevTools/emot3_plusdevtools.dll
           retention-days: 14
           if-no-files-found: error
       - name: Upload public DLL artifacts (main only - the release gate's output)
@@ -138,10 +139,48 @@ jobs:
         with:
           name: emot3-public-builds
           path: |
-            build/Distribution/emot3.dll
-            build/Plus/emot3_plus.dll
+            build-vs/Distribution/emot3.dll
+            build-vs/Plus/emot3_plus.dll
           retention-days: 14
           if-no-files-found: error
+
+  # Linux portability gate: cross-compile every flavor with MinGW-w64 and verify
+  # the DLL imports no dynamic runtime (MSVC CRT OR libgcc/libstdc++/libwinpthread).
+  # Gate only - builds nothing that ships. Runs on the same PRs + main as `build`.
+  cross-mingw:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install MinGW-w64 toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 cmake ninja-build python3
+
+      # Build ONLY PlusDevTools: it defines both EMOT3_PLUS and EMOT3_DEVTOOLS, so
+      # it compiles every plus/ + devtools/ TU plus the whole base - the maximal
+      # source set, and thus the strongest single proxy for "does it still
+      # cross-compile + stay Wine-clean." Building all four would ~4x the wall time
+      # for little extra coverage (the Windows `build` job builds all four on main,
+      # which catches any base-only #ifndef-stub portability slip). The toolchain
+      # file picks the POSIX threading variant (libstdc++ needs it for
+      # std::thread/mutex) and links the GCC/C++ runtimes statically so the import
+      # table stays Wine-clean.
+      - name: Cross-compile (PlusDevTools, the maximal-code flavor)
+        run: |
+          set -euo pipefail
+          cmake -B build-mingw -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw-w64.cmake \
+            -DCMAKE_BUILD_TYPE=PlusDevTools
+          cmake --build build-mingw
+
+      - name: Import gate (--mingw: static CRT + no MinGW runtimes)
+        run: python3 tools/check_imports.py --mingw build-mingw/emot3_plusdevtools.dll
 
   # Publish-only. Runs on a v* tag, never compiles: it ships the exact
   # emot3-public-builds artifact the main `build` produced for this commit. A red
