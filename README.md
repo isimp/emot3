@@ -45,21 +45,25 @@ them from the official ArenaNet artwork.
 
 <table>
 <tr>
-<td align="center" width="50%">
+<td align="center" width="33%">
   <a href="https://i.ibb.co/Rp8Wp47g/library.png"><img src="https://i.ibb.co/Rp8Wp47g/library.png" alt="Library" width="280"></a>
   <br><b>Library</b>
 </td>
-<td align="center" width="50%">
+<td align="center" width="33%">
   <a href="https://i.ibb.co/C5wDH6Jg/quickbar.png"><img src="https://i.ibb.co/C5wDH6Jg/quickbar.png" alt="Quickbar" width="280"></a>
   <br><b>Quickbar</b>
 </td>
+<td align="center" width="33%">
+  <a href="https://i.ibb.co/CKDC7Wj0/image.png"><img src="https://i.ibb.co/CKDC7Wj0/image.png" alt="Palette" width="280"></a>
+  <br><b>Palette</b>
+</td>
 </tr>
 <tr>
-<td align="center" width="50%">
+<td align="center" width="33%">
   <a href="https://i.ibb.co/VWjWv5t9/emote-memote.png"><img src="https://i.ibb.co/VWjWv5t9/emote-memote.png" alt="Catalog & /me-motes" width="280"></a>
   <br><b>Catalog & /me-motes</b>
 </td>
-<td align="center" width="50%">
+<td align="center" width="33%">
   <a href="https://i.ibb.co/xtWfDKx0/unlocks-radialmenus.png"><img src="https://i.ibb.co/xtWfDKx0/unlocks-radialmenus.png" alt="Unlocks & RadialMenus" width="280"></a>
   <br><b>Unlocks & RadialMenus</b>
 </td>
