@@ -44,6 +44,11 @@ int  s_sel       = 0;       // selected row index
 // clamped against the current row's actual list every frame.
 int  s_varIdx    = 0;
 int  s_varSel    = -1;      // the selection s_varIdx belongs to (change detector)
+// Identity anchor for s_varIdx ("e:<id>" / "m:<id>"): the row LIST can change
+// under a constant index (catalog edited while the palette is open, usage
+// rows reordering) - an armed variant must never silently apply to a
+// different emote, so identity drift also resets the cycle.
+std::string s_varRowId;
 // True while a row's right-click menu was open last frame. The close / focus /
 // Esc / click-away checks and the focus pin all stand down while it's set: the
 // popup IS the focused window, its clicks land outside the palette rect, and a
@@ -371,7 +376,16 @@ static DevStateRegistrar s_palState(DevStateCat::Content, "Palette", [] {
     DevStateRow("open",         "%s", s_open.load(std::memory_order_relaxed) ? "yes" : "no");
     DevStateRow("query",        "\"%s\"", s_query);
     DevStateRow("selected row", "%d", s_sel);
-    DevStateRow("tab variant",  "idx %d (of row %d; 0 = default send)", s_varIdx, s_varSel);
+    DevStateRow("tab variant",  "idx %d (row %d, id %s; 0 = default send)",
+                s_varIdx, s_varSel,
+                s_varRowId.empty() ? "-" : s_varRowId.c_str());
+    DevStateRow("enter mode",   "%s",
+                g_Settings.PaletteEnterMode == EPaletteEnterMode::Send ? "force send"
+              : g_Settings.PaletteEnterMode == EPaletteEnterMode::Fill ? "force fill"
+                                                                       : "global setting");
+    DevStateRow("grow",         "%s", g_Settings.PaletteGrowUp
+                                          ? "up (bottom edge anchored)"
+                                          : "down (top edge anchored)");
     DevStateRow("context menu", "%s", s_ctxOpen ? "open" : "closed");
     DevStateRow("mouse guard",  "%s", s_mouseGuard ? "ARMED (open-click swallow)" : "clear");
     DevStateRow("enter guard",  "%s", s_enterGuard ? "ARMED (Enter not yet seen up)" : "clear");
@@ -411,6 +425,7 @@ void TogglePalette() {
         s_sel = 0;
         s_varIdx = 0;
         s_varSel = -1;
+        s_varRowId.clear();
         if (g_Settings.PaletteClearOnOpen) s_query[0] = '\0';
         s_closeRequest = false;  // a stale request must not close the new open
         s_rectValid    = false;  // no rect until the first frame renders
@@ -451,6 +466,7 @@ void ResetPalette() {
     s_sel            = 0;
     s_varIdx         = 0;
     s_varSel         = -1;
+    s_varRowId.clear();
     s_query[0]       = '\0';
     s_ctxOpen           = false;
     s_mouseGuard        = false;
@@ -675,8 +691,17 @@ void PaletteRender() {
     else if (s_sel >= (int)rows.size()) s_sel = (int)rows.size() - 1;
 
     // Variant cycling state for the SELECTED row (see BuildVariantList). A
-    // selection change drops an armed variant - it belonged to another row.
-    if (s_sel != s_varSel) { s_varIdx = 0; s_varSel = s_sel; }
+    // selection change drops an armed variant - it belonged to another row -
+    // and so does identity drift of the row under the SAME index (see
+    // s_varRowId).
+    const std::string selRowId = rows.empty() ? std::string()
+        : (rows[s_sel].isMeMote ? "m:" + rows[s_sel].m.Id
+                                : "e:" + rows[s_sel].e.Id);
+    if (s_sel != s_varSel || selRowId != s_varRowId) {
+        s_varIdx   = 0;
+        s_varSel   = s_sel;
+        s_varRowId = selRowId;
+    }
     PalVariant vars[4];
     const int varCount = rows.empty() ? 0 : BuildVariantList(rows[s_sel], vars);
     if (s_varIdx >= varCount) s_varIdx = 0;
