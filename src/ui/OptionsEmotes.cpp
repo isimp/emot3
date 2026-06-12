@@ -783,6 +783,8 @@ void RenderEmotesTab() {
         DeleteEmote(deleteId);       // erase + favorites/manual-unlock cascade + persist + dirty
         usage::RemoveRef(EFavoriteRefType::Emote, deleteId);  // drop it from Recently/Frequently used
         s_rowBufs.erase(deleteId);   // UI-only: drop the edit buffer for the now-gone row
+        SyncEmoteBinds();            // drop the entry's Nexus InputBind (diff-based;
+                                     // stays if a staged radial wheel still refs it)
     }
 
     // Prune buffers whose emote no longer exists. Bounded scan; map is small.
@@ -950,6 +952,7 @@ void RenderEmotesTab() {
             }
             g_Settings.ManuallyUnlocked.clear();
             usage::RemoveAllOfType(EFavoriteRefType::Emote);  // drop emote usage history
+            SyncEmoteBinds();  // drop every cleared emote's Nexus InputBind
             RequestSave(SaveKind::Emotes);
             RequestSave(SaveKind::Settings);
             MarkEmotesDirty();
