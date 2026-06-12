@@ -1033,9 +1033,8 @@ void AddonRender() {
         mpContentDrawList = ImGui::GetCurrentWindow()->DrawList;  // for the refusal overlay (see below)
 
         // The empty-state lambdas below pull searchActive from the
-        // outer scope (defined alongside `search`) so the threshold
-        // for "is the user actually searching?" matches the one
-        // passes() uses - 2+ characters, not just "non-empty".
+        // outer scope (defined alongside `search`) so "is the user
+        // actually searching?" matches the test passes() uses.
 
         // Picks the right line for a favorites category that has no
         // currently-visible items. With the class filters as independent
