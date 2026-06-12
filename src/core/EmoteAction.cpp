@@ -213,6 +213,25 @@ const char* PickQbBlockReason(EmoteBlock block, bool greying, SendBusy busy,
 
 namespace {
 
+// Poll GW2's "textbox focused" bit (the same MumbleLink signal CurrentSendBusy
+// trusts) until it reaches `wantFocused`, or `timeoutMs` elapses. This turns the
+// chat open/close transitions from a blind Sleep into an ADAPTIVE wait: correct
+// regardless of the platform's Sleep granularity. Windows rounds Sleep up to the
+// ~15.6 ms scheduler tick, which gave the blind waits accidental slack; Wine's
+// finer Linux timer removes that slack, so a fixed Sleep tuned on Windows can
+// under-wait under Proton. Polling the actual signal sidesteps the whole issue
+// (and is usually faster than the old fixed wait). Bails immediately on unload.
+// If MumbleLink is unavailable, degrades to one blind Sleep(fallbackMs) so the
+// behavior matches the pre-adaptive code.
+void WaitForTextbox(bool wantFocused, int timeoutMs, int fallbackMs) {
+    if (!MumbleLink) { Sleep(fallbackMs); return; }
+    for (int waited = 0; waited < timeoutMs; waited += 5) {
+        if (g_Unloading.load()) return;
+        if ((bool)MumbleLink->Context.IsTextboxFocused == wantFocused) return;
+        Sleep(5);
+    }
+}
+
 // Spawn the detached worker thread that types `cmd` (a full slash command,
 // leading '/') into GW2's chat box and optionally presses Enter at the end.
 // Both SendOrFillEmote and SendOrFillMeMote feed this — gating + cmd build
@@ -315,10 +334,12 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
         // SYNCHRONOUS WndProc dispatch - Nexus runs the game's window
         // procedure inline and SendToGameOnly only returns once the
         // message has been processed - so no inter-char Sleep is
-        // needed for ordering. The remaining Sleeps are for game-side
-        // state transitions (chat opens in response to UiChatCommand,
-        // chat box accepts text after opening, Enter dispatch settles)
-        // which actually need time.
+        // needed for ordering. The chat OPEN and CLOSE transitions are now
+        // waited on adaptively (WaitForTextbox polls MumbleLink's textbox-focused
+        // bit) instead of slept blindly, so they're correct regardless of Sleep
+        // granularity (Windows ~15.6ms vs Wine's finer timer). The remaining fixed
+        // Sleeps are the synthetic key holds, a small post-open readiness margin,
+        // and the Enter-dispatch settle.
         // "Close chat on send": a text box was focused at click time - close it
         // first (Escape clears the half-typed line and unfocuses) so the command we
         // open + type below lands in a fresh chat instead of the user's message.
@@ -331,7 +352,9 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
             APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYDOWN, VK_ESCAPE, escDown);
             Sleep(10);
             APIDefs->WndProc.SendToGameOnly(hGame, WM_KEYUP,   VK_ESCAPE, escUp);
-            Sleep(40);   // let the box close before we re-open chat
+            // Wait for the box to actually close before re-opening chat (adaptive;
+            // 40 ms blind fallback only if MumbleLink is unavailable).
+            WaitForTextbox(/*wantFocused=*/false, /*timeoutMs=*/300, /*fallbackMs=*/40);
         }
 
         if (g_Unloading.load()) return;
@@ -339,7 +362,11 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
         Sleep(60);
         if (g_Unloading.load()) return;
         APIDefs->GameBinds.Release(EGameBinds_UiChatCommand);
-        Sleep(40);
+        // Wait for chat to actually open (adaptive) instead of a blind Sleep, then
+        // a small fixed margin for the box to be ready to accept characters.
+        WaitForTextbox(/*wantFocused=*/true, /*timeoutMs=*/300, /*fallbackMs=*/40);
+        if (g_Unloading.load()) return;
+        Sleep(15);
 
         // Convert the UTF-8 command to UTF-16 before feeding it to the
         // chat box. The old code sent each UTF-8 *byte* as its own WM_CHAR,
