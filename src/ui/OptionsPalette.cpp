@@ -214,6 +214,14 @@ void RenderPaletteOptionsTab() {
                        IM_ARRAYSIZE(kPalEmptyOpts));
     }
 
+    // Tab cycling is keyboard-only and self-revealing ONLY once you know it
+    // exists (the palette footer mentions it, but the footer is optional) -
+    // so the options tab carries the one-line explainer.
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+    ImGui::TextWrapped("%s", L("opt.pal.tab_hint"));
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+
     CheckboxWithSaveAndTooltip("opt.pal.clear_on_open", &g_Settings.PaletteClearOnOpen,
                                /*defaultIsOn=*/true);
 

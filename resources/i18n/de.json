@@ -99,6 +99,7 @@
   "opt.pal.show_footer": "Fußzeile mit Tastenhinweisen",
   "opt.pal.show_footer.on": "die unterste Zeile erinnert daran, was Enter, Tab und Esc tun.",
   "opt.pal.show_footer.off": "keine Fußzeile - eine Zeile weniger Höhe.",
+  "opt.pal.tab_hint": "Tipp: Bei ausgewähltem Ergebnis wechseln Tab / Shift+Tab dessen Sende-Varianten (auf Ziel, synchronisiert; You / All bei /me-motes). Die aktive Variante steht an der Zeile, und Enter oder ein Klick sendet sie.",
   "opt.pal.esc_clear": "Esc leert zuerst die Suche",
   "opt.pal.esc_clear.on": "das erste Esc leert eine nicht-leere Suche; das zweite schließt die Palette.",
   "opt.pal.esc_clear.off": "Esc schließt die Palette immer sofort.",
