@@ -155,9 +155,9 @@ struct Settings {
     // Enter / row-click send mode (see EPaletteEnterMode above). Applies to
     // every send from the palette, context-menu variants included.
     EPaletteEnterMode             PaletteEnterMode     = EPaletteEnterMode::Global;
-    // First Esc clears a non-empty query, second Esc closes (default). Off =
-    // Esc always closes immediately.
-    bool                          PaletteEscClearsFirst = true;
+    // Opt-in: first Esc clears a non-empty query, second Esc closes. Off
+    // (default) = Esc always closes immediately.
+    bool                          PaletteEscClearsFirst = false;
     // Window background opacity (0.2..1.0). 1.0 keeps the theme's own
     // background untouched.
     float                         PaletteBgAlpha       = 1.0f;

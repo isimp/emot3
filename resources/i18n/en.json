@@ -102,7 +102,6 @@
   "opt.pal.show_footer": "Key hints footer",
   "opt.pal.show_footer.on": "the bottom line reminds you what Enter, Tab and Esc do.",
   "opt.pal.show_footer.off": "no footer - one row less of height.",
-  "opt.pal.tab_hint": "Tip: with a result selected, Tab / Shift+Tab cycle its send variants (on target, synchronized; You / All for /me-motes). The active variant shows on the row, and Enter or a click sends it.",
   "opt.pal.esc_clear": "Esc clears search first",
   "opt.pal.esc_clear.on": "the first Esc empties a non-empty search; the second closes the palette.",
   "opt.pal.esc_clear.off": "Esc always closes the palette immediately.",

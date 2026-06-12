@@ -214,20 +214,12 @@ void RenderPaletteOptionsTab() {
                        IM_ARRAYSIZE(kPalEmptyOpts));
     }
 
-    // Tab cycling is keyboard-only and self-revealing ONLY once you know it
-    // exists (the palette footer mentions it, but the footer is optional) -
-    // so the options tab carries the one-line explainer.
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-    ImGui::TextWrapped("%s", L("opt.pal.tab_hint"));
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-
     CheckboxWithSaveAndTooltip("opt.pal.clear_on_open", &g_Settings.PaletteClearOnOpen,
                                /*defaultIsOn=*/true);
 
-    // First Esc clears a non-empty search, second Esc closes.
+    // First Esc clears a non-empty search, second Esc closes. Opt-in.
     CheckboxWithSaveAndTooltip("opt.pal.esc_clear", &g_Settings.PaletteEscClearsFirst,
-                               /*defaultIsOn=*/true);
+                               /*defaultIsOn=*/false);
 
     // What Enter / a row click does: follow the global send-on-click settings
     // (emotes and /me-motes each have one) or force auto-send / fill-chat for

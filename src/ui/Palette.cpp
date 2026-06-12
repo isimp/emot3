@@ -535,7 +535,7 @@ void PaletteRender() {
     // buffer (the query visibly jumped back to its pre-edit text) and only a
     // second Esc reached the hook. Reading the key directly and closing this
     // frame means the revert never renders.
-    // With "Esc clears first" on (the default), an Esc on a NON-empty query
+    // With "Esc clears first" on (opt-in), an Esc on a NON-empty query
     // wipes it instead of closing - the next Esc then closes. The wipe must
     // also pre-empt the InputText's internal Esc handler (it would write the
     // pre-edit text right back): deactivate the field this frame, re-pin via
