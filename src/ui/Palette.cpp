@@ -320,24 +320,12 @@ void PaletteNoteMouseUp() {
 
 void PaletteNoteMouseDown(int xClient, int yClient) {
     if (!s_open.load(std::memory_order_relaxed)) return;
-    // TEMP diagnostics (flicker hunt round 3): one line per mouse-down while
-    // open - where the click landed relative to the published rect and
-    // whether it armed the close request. Window thread (logger is mutexed).
-    if (!s_rectValid.load(std::memory_order_acquire)) {
-        LOG_DEBUG("palette diag2: mouse-down (%d,%d) ignored - rect not armed",
-                  xClient, yClient);
-        return;  // opening click
-    }
+    if (!s_rectValid.load(std::memory_order_acquire)) return;  // opening click
     const int x = s_rectX.load(std::memory_order_relaxed);
     const int y = s_rectY.load(std::memory_order_relaxed);
     const int w = s_rectW.load(std::memory_order_relaxed);
     const int h = s_rectH.load(std::memory_order_relaxed);
-    const bool outside =
-        xClient < x || yClient < y || xClient >= x + w || yClient >= y + h;
-    LOG_DEBUG("palette diag2: mouse-down (%d,%d) vs rect %d,%d %dx%d -> %s",
-              xClient, yClient, x, y, w, h,
-              outside ? "OUTSIDE (close requested)" : "inside");
-    if (outside)
+    if (xClient < x || yClient < y || xClient >= x + w || yClient >= y + h)
         s_closeRequest.store(true, std::memory_order_release);
 }
 
@@ -367,17 +355,6 @@ void PaletteRender() {
     const bool keepAlive = (fc - s_keepAliveFrame) <= 1;
     const bool ghost     = !s_open.load() && (fc - s_ghostFrame) <= 1;
 
-    // TEMP diagnostics (palette-flicker hunt): log every visibility
-    // transition with its cause so a repro names the oscillation.
-    {
-        static bool s_lastGhost = false;
-        if (ghost != s_lastGhost) {
-            LOG_DEBUG("palette diag: ghost %s (frame=%d keepAlive=%d)",
-                      ghost ? "ON" : "off", fc, (int)keepAlive);
-            s_lastGhost = ghost;
-        }
-    }
-
     // A WndProc click-away request (see PaletteNoteMouseDown) closes before
     // anything renders this frame. Always drained; discarded while a context
     // menu is open (its clicks land outside the palette rect by design) or
@@ -387,7 +364,6 @@ void PaletteRender() {
         s_open.load(std::memory_order_relaxed)) {
         s_open          = false;
         s_closedByClick = true;
-        LOG_DEBUG("palette diag: close CLICK-AWAY (frame=%d)", fc);
     }
     if (!s_open && !ghost) return;
     // Same per-frame suppressions as the Library, but a transient popup just
@@ -395,8 +371,6 @@ void PaletteRender() {
     // instead of waiting them out.
     if (!NexusLink || !NexusLink->IsGameplay ||
         (MumbleLink && MumbleLink->Context.IsMapOpen)) {
-        if (s_open.load(std::memory_order_relaxed))
-            LOG_DEBUG("palette diag: close GAMEPLAY-GATE (frame=%d)", fc);
         s_open = false;
         return;
     }
@@ -419,14 +393,7 @@ void PaletteRender() {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
     if (ghost) flags |= ImGuiWindowFlags_NoInputs;  // pure preview - never steals anything
-    if (!ImGui::Begin(PALETTE_WND_NAME, nullptr, flags)) {
-        // TEMP diagnostics (flicker hunt): an AlwaysAutoResize window that
-        // ImGui considers newly "appearing" is HIDDEN for one measuring frame
-        // and Begin returns false - a state-invisible one-frame blink.
-        LOG_DEBUG("palette diag2: Begin=false (hidden frame) frame=%d", fc);
-        ImGui::End();
-        return;
-    }
+    if (!ImGui::Begin(PALETTE_WND_NAME, nullptr, flags)) { ImGui::End(); return; }
 
     // Always on top: a focused window is normally frontmost anyway, but this
     // covers the frames where another window was submitted later or a refocus
@@ -437,43 +404,6 @@ void PaletteRender() {
     if (!s_ctxOpen)
         ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
 
-    // TEMP diagnostics (flicker hunt round 2): the open/close state machine is
-    // proven clean through the options-toggle close (one open, one close, no
-    // transient causes), so the blink must be a VISIBLE property of the
-    // still-open window. Change-only trace: one line whenever anything the eye
-    // could notice changes - position, size, z-order, hidden flag, focus,
-    // query-field activity.
-    {
-        ImGuiWindow*  wnd = ImGui::GetCurrentWindow();
-        ImGuiContext& g   = *GImGui;
-        int z = -1;
-        for (int i = 0; i < g.Windows.Size; ++i)
-            if (g.Windows[i] == wnd) { z = i; break; }
-        const int x = (int)wnd->Pos.x,  y = (int)wnd->Pos.y;
-        const int w = (int)wnd->Size.x, h = (int)wnd->Size.y;
-        const int f = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) ? 1 : 0;
-        const int q = (g.ActiveId != 0 && g.ActiveId == ImGui::GetID("##palquery")) ? 1 : 0;
-        const int hid = wnd->Hidden ? 1 : 0;
-        const int md  = ImGui::IsAnyMouseDown() ? 1 : 0;
-        const int tf  = s_takeFocus ? 1 : 0;
-        const int cx  = s_ctxOpen ? 1 : 0;
-        static int lx = -9999, ly = -9999, lw = -1, lh = -1, lz = -1,
-                   lf = -1, lq = -1, lk = -1, lhid = -1, lmd = -1, ltf = -1,
-                   lcx = -1;
-        if (x != lx || y != ly || w != lw || h != lh || z != lz ||
-            f != lf || q != lq || (int)keepAlive != lk || hid != lhid ||
-            md != lmd || tf != ltf || cx != lcx) {
-            LOG_DEBUG("palette diag2: frame=%d pos=%d,%d size=%dx%d z=%d/%d "
-                      "hidden=%d focus=%d queryActive=%d keepAlive=%d ghost=%d "
-                      "mouseDown=%d takeFocus=%d ctx=%d",
-                      fc, x, y, w, h, z, g.Windows.Size, hid, f, q,
-                      (int)keepAlive, (int)ghost, md, tf, cx);
-            lx = x; ly = y; lw = w; lh = h; lz = z;
-            lf = f; lq = q; lk = (int)keepAlive; lhid = hid;
-            lmd = md; ltf = tf; lcx = cx;
-        }
-    }
-
     // Esc closes in ONE press. Handled here, not via Nexus' CloseOnEscape:
     // an active InputText eats the first Esc to deactivate-and-REVERT the
     // buffer (the query visibly jumped back to its pre-edit text) and only a
@@ -483,7 +413,6 @@ void PaletteRender() {
         ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
         ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape), false)) {
         s_open = false;
-        LOG_DEBUG("palette diag: close ESC (frame=%d)", fc);
         ImGui::End();
         return;
     }
@@ -500,33 +429,12 @@ void PaletteRender() {
     // context menu counts as "ours" even though it's a separate ImGui window;
     // keepAlive covers tuning from the options section (focus is over there).
     // A ghost has no focus to lose.
-    // TEMP diagnostics (flicker hunt round 3): when the palette is UNFOCUSED
-    // yet stays open, name the gate that saved it (change-only). If no gate
-    // is set the close below fires and logs FOCUS-LOSS instead.
-    {
-        static int s_lastSaved = -2;
-        int saved = -2;  // -2 = focused (nothing to save)
-        if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
-            saved = (s_takeFocus ? 1 : 0) | (s_ctxOpen ? 2 : 0) |
-                    (keepAlive ? 4 : 0) | (ghost ? 8 : 0);
-        if (saved != s_lastSaved) {
-            if (saved > 0)
-                LOG_DEBUG("palette diag2: unfocused but kept open by:%s%s%s%s (frame=%d)",
-                          (saved & 1) ? " takeFocus" : "",
-                          (saved & 2) ? " ctxMenu"   : "",
-                          (saved & 4) ? " keepAlive" : "",
-                          (saved & 8) ? " ghost"     : "", fc);
-            s_lastSaved = saved;
-        }
-    }
     if (!ghost && !s_takeFocus && !s_ctxOpen && !keepAlive &&
         !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
         s_open = false;
         // Click on another ImGui window (the Nexus icon included) - arm the
         // same-click toggle suppression; a non-click focus loss doesn't.
         if (ImGui::IsAnyMouseDown()) s_closedByClick = true;
-        LOG_DEBUG("palette diag: close FOCUS-LOSS%s (frame=%d)",
-                  ImGui::IsAnyMouseDown() ? " (click)" : "", fc);
         ImGui::End();
         return;
     }
@@ -693,10 +601,7 @@ void PaletteRender() {
                 ImGui::CloseCurrentPopup();
             const bool sent = r.isMeMote ? MeMoteVariantItems(r.m)
                                          : RenderSendVariants(r.e);
-            if (sent) {
-                s_open = false;  // finishes this frame, gone the next
-                LOG_DEBUG("palette diag: close MENU-SEND (frame=%d)", fc);
-            }
+            if (sent) s_open = false;  // finishes this frame, gone the next
             ImGui::EndPopup();
         }
         ImGui::PopID();
@@ -740,12 +645,8 @@ void PaletteRender() {
             ? SendOrFillMeMote(r.m, EMeMoteVariant::Default)
             : SendOrFillEmote(r.e, /*useTarget=*/g_Settings.SendTargetableOnTarget,
                               /*useSync=*/false);
-        if (sent) {
-            s_open = false;
-            LOG_DEBUG("palette diag: close SEND (enter=%d, frame=%d)", (int)enter, fc);
-        } else if (enter) {
-            s_takeFocus = true;
-        }
+        if (sent) s_open = false;
+        else if (enter) s_takeFocus = true;
     }
 
     // Refusal overlay on THIS surface (the palette is open + focused, so the
