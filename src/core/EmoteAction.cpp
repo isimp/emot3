@@ -14,7 +14,7 @@
 #include "Usage.h"          // usage::Record - feeds the Recently/Frequently used categories
 #include "Profiling.h"      // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "send" path
 
-#include <Windows.h>
+#include <windows.h>
 #include <algorithm>
 #include <atomic>
 #include <cmath>

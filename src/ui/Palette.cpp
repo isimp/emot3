@@ -18,7 +18,7 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"  // BringWindowToDisplayFront (always-on-top)
 
-#include <Windows.h>  // GetTickCount64 (same-click toggle suppression)
+#include <windows.h>  // GetTickCount64 (same-click toggle suppression)
 
 #include <algorithm>
 #include <atomic>

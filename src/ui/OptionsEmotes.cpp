@@ -25,7 +25,7 @@
 #include "imgui/imgui_internal.h"  // PushItemFlag / ImGuiItemFlags_Disabled
 
 #define NOMINMAX
-#include <Windows.h>     // GetFileAttributesA for icon-source status
+#include <windows.h>     // GetFileAttributesA for icon-source status
 
 #include <algorithm>
 #include <cctype>

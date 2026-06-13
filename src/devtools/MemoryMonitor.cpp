@@ -19,6 +19,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <malloc.h>     // _msize (MSVC heap-block size for malloc'd pointers)
+
+// Heap-block size of a malloc'd pointer. MSVC and MinGW-w64 both spell it
+// _msize (in <malloc.h>); a non-Windows libc would use malloc_usable_size.
+// Devtools-only TU, so this never affects a shipped build either way.
+#if defined(_MSC_VER) || defined(__MINGW32__)
+#define EMOT3_MSIZE(p) _msize(p)
+#else
+#define EMOT3_MSIZE(p) malloc_usable_size(p)
+#endif
 #include <map>
 #include <mutex>
 #include <new>
@@ -43,7 +52,7 @@
 #include "Profiling.h"     // prof::Ring, prof::kHistLen, prof::displayMap
 
 #pragma comment(lib, "psapi.lib")
-#include <Windows.h>
+#include <windows.h>
 #include <psapi.h>
 
 // =====================================================================
@@ -100,8 +109,8 @@ namespace memmon {
 void* operator new(size_t n) {
     void* p = std::malloc(n);
     if (!p) throw std::bad_alloc{};
-    memmon::g_DllBytesAllocated.fetch_add(_msize(p), std::memory_order_relaxed);
-    memmon::g_DllAllocCount    .fetch_add(1,         std::memory_order_relaxed);
+    memmon::g_DllBytesAllocated.fetch_add(EMOT3_MSIZE(p), std::memory_order_relaxed);
+    memmon::g_DllAllocCount    .fetch_add(1,             std::memory_order_relaxed);
     return p;
 }
 
@@ -113,8 +122,8 @@ void* operator new[](size_t n) {
 
 void operator delete(void* p) noexcept {
     if (!p) return;
-    memmon::g_DllBytesAllocated.fetch_sub(_msize(p), std::memory_order_relaxed);
-    memmon::g_DllAllocCount    .fetch_sub(1,         std::memory_order_relaxed);
+    memmon::g_DllBytesAllocated.fetch_sub(EMOT3_MSIZE(p), std::memory_order_relaxed);
+    memmon::g_DllAllocCount    .fetch_sub(1,             std::memory_order_relaxed);
     std::free(p);
 }
 

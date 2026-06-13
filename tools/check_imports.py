@@ -5,7 +5,7 @@ dynamic MSVC runtime.
 
 emot3 runs on Linux under Proton/Wine inside the GW2 prefix. The single
 most important factor that keeps it loading there is that every SHIPPED
-config links the CRT statically (/MT in src/emot3.vcxproj). A static-CRT
+config links the CRT statically (/MT, set in CMakeLists.txt). A static-CRT
 DLL is self-contained: it imports only core Win32 system DLLs that Wine
 implements, and needs NO vcruntime140.dll / msvcp140.dll / UCRT redist in
 the prefix. Flip a config to /MD (or link something that drags the dynamic
@@ -19,8 +19,16 @@ runs anywhere) and exits non-zero if any imported DLL name matches a
 forbidden substring (the dynamic CRT). It also prints the full import list
 so the CI log shows exactly what the DLL depends on.
 
+The same guard covers the MinGW-w64 cross-build (the Linux CI portability
+gate). Pass --mingw and it ALSO flags the MinGW dynamic runtimes
+(libgcc_s_*, libstdc++-6, libwinpthread-1, ...): a correctly static-linked
+cross DLL (-static -static-libgcc -static-libstdc++) imports none of them,
+so their presence means the static flags didn't take and the DLL would need
+those runtimes shipped into the Wine prefix.
+
 Usage:
     py -3 tools/check_imports.py build/Distribution/emot3.dll [more.dll ...]
+    python3 tools/check_imports.py --mingw build-mingw/Distribution/emot3.dll [...]
 
 Exit codes: 0 = all clean, 1 = a forbidden import found, 2 = bad args /
 unparseable file.
@@ -42,6 +50,13 @@ _DEFAULT_FORBIDDEN = ("vcruntime", "msvcp", "ucrtbase", "api-ms-win-crt")
 _extra = [s.strip().lower() for s in
           os.environ.get("EMOT3_FORBIDDEN_IMPORTS", "").split(",") if s.strip()]
 FORBIDDEN = tuple(_DEFAULT_FORBIDDEN) + tuple(_extra)
+
+# Added (on top of FORBIDDEN) in --mingw mode: the GCC/C++/pthread runtime DLLs a
+# non-static MinGW cross-build would import. -static -static-libgcc
+# -static-libstdc++ folds them all into the DLL, so a clean cross-build imports
+# none of these.
+_MINGW_FORBIDDEN = ("libgcc_s_seh-1", "libgcc_s_dw2-1", "libstdc++-6",
+                    "libwinpthread-1", "libssp-0")
 
 
 def _u16(b, o):
@@ -117,39 +132,51 @@ def imported_dlls(path):
     return names
 
 
-def check(path):
+def check(path, forbidden):
     """Print imports for `path`; return list of offending DLL names."""
     names = imported_dlls(path)
     print("  imports (%d):" % len(names))
     for n in sorted(names, key=str.lower):
-        flagged = any(bad in n.lower() for bad in FORBIDDEN)
+        flagged = any(bad in n.lower() for bad in forbidden)
         print("    %s %s" % ("FAIL ->" if flagged else "      ", n))
-    return [n for n in names if any(bad in n.lower() for bad in FORBIDDEN)]
+    return [n for n in names if any(bad in n.lower() for bad in forbidden)]
 
 
 def main(argv):
     paths = argv[1:]
+    mingw = False
+    if paths and paths[0] == "--mingw":
+        mingw = True
+        paths = paths[1:]
     if not paths:
-        print("usage: check_imports.py <dll> [<dll> ...]", file=sys.stderr)
+        print("usage: check_imports.py [--mingw] <dll> [<dll> ...]", file=sys.stderr)
         return 2
+
+    forbidden = FORBIDDEN + (_MINGW_FORBIDDEN if mingw else ())
 
     any_bad = False
     for path in paths:
         print("Checking %s" % path)
         try:
-            bad = check(path)
+            bad = check(path, forbidden)
         except (OSError, ValueError) as e:
             print("  ERROR: %s" % e, file=sys.stderr)
             return 2
         if bad:
             any_bad = True
-            print("  -> FORBIDDEN dynamic-CRT import(s): %s" % ", ".join(bad))
-            print("  -> This DLL needs an MSVC redist in the Wine/Proton prefix "
-                  "and will fail to load on a stock Linux setup.")
-            print("  -> Fix: ensure this config links the CRT statically "
-                  "(RuntimeLibrary = MultiThreaded /MT) in src/emot3.vcxproj.")
+            print("  -> FORBIDDEN dynamic-runtime import(s): %s" % ", ".join(bad))
+            if mingw:
+                print("  -> This MinGW cross-build isn't fully static; it would "
+                      "need those runtimes in the Wine/Proton prefix.")
+                print("  -> Fix: ensure the link uses -static -static-libgcc "
+                      "-static-libstdc++ (see cmake/toolchain-mingw-w64.cmake).")
+            else:
+                print("  -> This DLL needs an MSVC redist in the Wine/Proton prefix "
+                      "and will fail to load on a stock Linux setup.")
+                print("  -> Fix: ensure this config links the CRT statically "
+                      "(MSVC_RUNTIME_LIBRARY = MultiThreaded /MT) in CMakeLists.txt.")
         else:
-            print("  -> OK: static CRT, no dynamic-runtime dependency.")
+            print("  -> OK: static runtime, no dynamic-runtime dependency.")
         print("")
 
     if any_bad:

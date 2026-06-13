@@ -26,7 +26,7 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"  // BeginDragDropTargetCustom + ImRect (trash-zone drop target)
 
-#include <Windows.h>
+#include <windows.h>
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
