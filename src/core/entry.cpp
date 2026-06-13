@@ -11,6 +11,7 @@
 
 #include "Globals.h"
 #include "CharacterState.h" // RTAPI integration + can't-emote/combat state
+#include "ChatWatch.h"       // auto-motes: optional Events:Chat subscription (v1.5)
 #include "EmoteAction.h"     // NoteKeyEvent/Clear/Reseed held-key tracking (WndProc-fed gate)
 #include "UnlockScan.h"      // GW2-API emote-unlock sync (Hoard & Seek / own key)
 #include "UpdateCheck.h"     // Plus-only "update available" check (no-op stub otherwise)
@@ -188,6 +189,11 @@ void AddonLoad(AddonAPI* aApi) {
     // load/unload so precise can't-emote detection (swimming/gliding/downed/...)
     // works when that addon is present and degrades to mounted-only when it isn't.
     InitCharacterState();
+
+    // Auto-motes: subscribe to the optional "Events: Chat" addon so the user's
+    // own chat lines can fire catalog emotes. Inert (no crash) when that addon
+    // isn't installed; the rules themselves are loaded later in this function.
+    InitChatWatch();
 
     // Subscribe to the optional Hoard & Seek proxy's response event for the
     // GW2-API emote-unlock sync. Inert when H&S isn't installed / API mode off.
@@ -457,6 +463,7 @@ void AddonUnload() {
     APIDefs->Renderer.Deregister(AddonOptions);
     ResetPalette();  // a Nexus reload must not resurrect a stale palette
     ShutdownCharacterState();  // unsubscribe the RTAPI addon load/unload events
+    ShutdownChatWatch();       // unsubscribe the Events:Chat + addon load/unload events
     ShutdownUnlockScan();      // unsubscribe the Hoard & Seek response event
 #ifdef EMOT3_DEVTOOLS
     APIDefs->Renderer.Deregister(RenderDevToolOverlays);  // dev-tools framework

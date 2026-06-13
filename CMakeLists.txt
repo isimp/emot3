@@ -94,6 +94,7 @@ add_custom_target(emot3_codegen DEPENDS ${EMOT3_GEN_RC} ${EMOT3_GEN_CPP})
 add_library(emot3 SHARED
   src/core/AirborneDetect.cpp
   src/core/CharacterState.cpp
+  src/core/ChatWatch.cpp
   src/core/UnlockScan.cpp
   src/plus/UpdateCheck.cpp
   src/plus/PlusSettings.cpp

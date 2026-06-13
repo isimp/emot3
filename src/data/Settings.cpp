@@ -298,6 +298,28 @@ bool SanitizeSettings(Settings& s) {
         }
     }
 
+    // Global send min-interval: clamp into [floor, ceil].
+    if (s.SendMinIntervalMs < kSendMinIntervalFloorMs) {
+        LOG_WARNING("settings: general.send_min_interval_ms %u below floor -> clamped to %u",
+                    s.SendMinIntervalMs, kSendMinIntervalFloorMs);
+        s.SendMinIntervalMs = kSendMinIntervalFloorMs; changed = true;
+    } else if (s.SendMinIntervalMs > kSendMinIntervalCeilMs) {
+        LOG_WARNING("settings: general.send_min_interval_ms %u above ceiling -> clamped to %u",
+                    s.SendMinIntervalMs, kSendMinIntervalCeilMs);
+        s.SendMinIntervalMs = kSendMinIntervalCeilMs; changed = true;
+    }
+
+    // Auto-mote-specific (additional) interval: clamp into [floor, ceil].
+    if (s.AutoMoteMinIntervalMs < kAutoMoteMinIntervalFloorMs) {
+        LOG_WARNING("settings: automotes.min_interval_ms %u below floor -> clamped to %u",
+                    s.AutoMoteMinIntervalMs, kAutoMoteMinIntervalFloorMs);
+        s.AutoMoteMinIntervalMs = kAutoMoteMinIntervalFloorMs; changed = true;
+    } else if (s.AutoMoteMinIntervalMs > kAutoMoteMinIntervalCeilMs) {
+        LOG_WARNING("settings: automotes.min_interval_ms %u above ceiling -> clamped to %u",
+                    s.AutoMoteMinIntervalMs, kAutoMoteMinIntervalCeilMs);
+        s.AutoMoteMinIntervalMs = kAutoMoteMinIntervalCeilMs; changed = true;
+    }
+
     // Unlock key-source enum is 0/1; clamp any out-of-range hand edit to 0.
     if (s.UnlockApiKeySource < 0 || s.UnlockApiKeySource > 1) {
         LOG_WARNING("settings: unlock key_source %d invalid -> 0", s.UnlockApiKeySource);
@@ -529,6 +551,7 @@ bool LoadSettings(const std::string& path) {
     s.SendOnClick       = GetBool(general, "send_on_click",         s.SendOnClick);
     s.MeMoteSendOnClick = GetBool(general, "me_mote_send_on_click", s.MeMoteSendOnClick);
     s.CloseChatOnSend   = GetBool(general, "close_chat_on_send",    s.CloseChatOnSend);
+    s.SendMinIntervalMs = (uint32_t)GetInt(general, "send_min_interval_ms", (int)s.SendMinIntervalMs);
     s.SendTargetableOnTarget = GetBool(general, "send_targetable_on_target", s.SendTargetableOnTarget);
     s.UseAIIconFallback = GetBool(general, "use_ai_icon_fallback", s.UseAIIconFallback);
     s.ShowTargetDot     = GetBool(general, "show_target_dot",       s.ShowTargetDot);
@@ -570,6 +593,17 @@ bool LoadSettings(const std::string& path) {
     s.UnlockApiKeySource = GetInt(unlockTracking, "key_source",  s.UnlockApiKeySource);
     s.Gw2ApiKey          = GetString(unlockTracking, "api_key",  s.Gw2ApiKey);
     s.UnlockAutoSync     = GetBool(unlockTracking, "auto_sync",  s.UnlockAutoSync);
+
+    const json& automotes = GetObj(j, "automotes");
+    s.AutoMotesEnabled = GetBool(automotes, "enabled", s.AutoMotesEnabled);
+    const json& amChannels = GetObj(automotes, "channels");
+    s.AutoMoteWatchLocal   = GetBool(amChannels, "local",   s.AutoMoteWatchLocal);
+    s.AutoMoteWatchParty   = GetBool(amChannels, "party",   s.AutoMoteWatchParty);
+    s.AutoMoteWatchMap     = GetBool(amChannels, "map",     s.AutoMoteWatchMap);
+    s.AutoMoteWatchSquad   = GetBool(amChannels, "squad",   s.AutoMoteWatchSquad);
+    s.AutoMoteWatchGuild   = GetBool(amChannels, "guild",   s.AutoMoteWatchGuild);
+    s.AutoMoteWatchWhisper = GetBool(amChannels, "whisper", s.AutoMoteWatchWhisper);
+    s.AutoMoteMinIntervalMs = (uint32_t)GetInt(automotes, "min_interval_ms", (int)s.AutoMoteMinIntervalMs);
 
     if (j.contains("unlocks"))
         s.ManuallyUnlocked = readStringArray(GetArray(j, "unlocks"));
@@ -724,6 +758,7 @@ std::string SerializeSettings() {
     f << "    \"send_on_click\": "         << B(s.SendOnClick)         << ",\n";
     f << "    \"me_mote_send_on_click\": " << B(s.MeMoteSendOnClick)   << ",\n";
     f << "    \"close_chat_on_send\": "    << B(s.CloseChatOnSend)     << ",\n";
+    f << "    \"send_min_interval_ms\": " << s.SendMinIntervalMs       << ",\n";
     f << "    \"send_targetable_on_target\": " << B(s.SendTargetableOnTarget) << ",\n";
     f << "    \"use_ai_icon_fallback\": "  << B(s.UseAIIconFallback) << ",\n";
     f << "    \"show_target_dot\": "        << B(s.ShowTargetDot)     << ",\n";
@@ -759,6 +794,20 @@ std::string SerializeSettings() {
     f << "    \"key_source\": "    << s.UnlockApiKeySource      << ",\n";
     f << "    \"api_key\": "       << quoted(s.Gw2ApiKey)       << ",\n";
     f << "    \"auto_sync\": "     << B(s.UnlockAutoSync)       << "\n";
+    f << "  },\n";
+
+    // --- automotes (Auto-motes tab; rules live in auto_motes.json) -----
+    f << "  \"automotes\": {\n";
+    f << "    \"enabled\": "         << B(s.AutoMotesEnabled)   << ",\n";
+    f << "    \"min_interval_ms\": " << s.AutoMoteMinIntervalMs << ",\n";
+    f << "    \"channels\": {\n";
+    f << "      \"local\": "   << B(s.AutoMoteWatchLocal)   << ",\n";
+    f << "      \"party\": "   << B(s.AutoMoteWatchParty)   << ",\n";
+    f << "      \"map\": "     << B(s.AutoMoteWatchMap)     << ",\n";
+    f << "      \"squad\": "   << B(s.AutoMoteWatchSquad)   << ",\n";
+    f << "      \"guild\": "   << B(s.AutoMoteWatchGuild)   << ",\n";
+    f << "      \"whisper\": " << B(s.AutoMoteWatchWhisper) << "\n";
+    f << "    }\n";
     f << "  },\n";
 
     // --- unlocks (inline array) ---------------------------------------

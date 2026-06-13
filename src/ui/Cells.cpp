@@ -837,15 +837,25 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
     if (!suppressTip &&
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         const char* lockTag = isLocked ? L("cells.locked_tag") : "";
+        // Built up line-by-line so optional rows (search-match note, auto-mote
+        // triggers) slot in cleanly between the command and the right-click hint.
+        std::string tip = e.Command;
+        tip += lockTag;
         // ci.searchNote (main-panel search only) explains a non-obvious match -
-        // e.g. an alias hit, which shows nowhere else - so a result you can't
-        // otherwise account for makes sense. Slots between the command and the hint.
-        if (!ci.searchNote.empty())
-            ImGui::SetTooltip("%s%s\n%s\n%s", e.Command.c_str(), lockTag,
-                              ci.searchNote.c_str(), L("cells.rightclick"));
-        else
-            ImGui::SetTooltip("%s%s\n%s",
-                              e.Command.c_str(), lockTag, L("cells.rightclick"));
+        // e.g. an alias hit, which shows nowhere else.
+        if (!ci.searchNote.empty()) { tip += '\n'; tip += ci.searchNote; }
+        // Auto-mote chat triggers, when set — surfaces the wiring where you see
+        // the emote (neutral wording: describes the config, not a promise it's on).
+        if (!e.AutoKeywords.empty()) {
+            std::string words;
+            for (size_t i = 0; i < e.AutoKeywords.size(); ++i) {
+                if (i) words += ", ";
+                words += e.AutoKeywords[i];
+            }
+            tip += '\n'; tip += L("cells.auto_triggers"); tip += ' '; tip += words;
+        }
+        tip += '\n'; tip += L("cells.rightclick");
+        ImGui::SetTooltip("%s", tip.c_str());
     }
     // Re-apply the dim alpha for the label drawn below the button (Full mode)
     // and balance the PopStyleVar at the end of the function.

@@ -8,6 +8,7 @@
 #include "MeMotes.h"           // /me-motes Library section + favorites mixing
 #include "EmoteAction.h"
 #include "CharacterState.h" // TickCharacterState (per-frame falling check)
+#include "ChatWatch.h"      // DrainAutoMotes (per-frame auto-mote fire drain)
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
 #include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
@@ -545,6 +546,10 @@ void AddonRender() {
     // velocity). Before the visibility early-returns below so the Quickbar's
     // grey/hide sees a fresh value even when the main window is hidden.
     TickCharacterState();
+    // Auto-motes: fire any emote queued by the chat watch (core/ChatWatch) since
+    // last frame, through the normal send gate. Before the visibility early-returns
+    // below so it works even when the Library window is hidden. No-op when idle.
+    DrainAutoMotes();
     // Plus-only: tick the "newer release available" check (no-op stub otherwise).
     DrainUpdateCheck();
     // Auto-hide while the fullscreen world map is open. It covers the screen,

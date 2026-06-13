@@ -16,7 +16,10 @@ enum class EmoteBlock;   // core/CharacterState.h (PickQbBlockReason param)
 // at it). A bind / RadialMenus-wheel Invoke uses Nexus' SendAlert instead: emot3's
 // window is usually closed at that point, so the in-window overlay wouldn't show -
 // and SendAlert is exactly what RadialMenus itself uses for its own cancels.
-enum class EFeedbackSink { InWindow, Alert };
+// Silent suppresses the refusal entirely — for sends with no human behind them
+// (auto-motes): there's no click/cursor to anchor an in-window cue to, and a
+// toast for an action the user didn't knowingly trigger reads as noise.
+enum class EFeedbackSink { InWindow, Alert, Silent };
 
 // Inject the slash command for `e` into the game's chat box.
 //   useTarget — appends " @" when the emote is targetable (caller decides;
@@ -70,8 +73,11 @@ enum class ESendModeOverride { None = 0, Send = 1, Fill = 2 };
 void SetSendModeOverride(ESendModeOverride m);
 
 // A *transient* reason the send would be refused RIGHT NOW that can clear on its
-// own: a GW2 text box is focused (Typing) or a printable key is held (KeysHeld).
-enum class SendBusy { None, Typing, KeysHeld };
+// own: a GW2 text box is focused (Typing), a printable key is held (KeysHeld), or
+// we're inside the global anti-spam interval since the last send (Throttled). One
+// shared detector so the click-time refusal AND the Quickbar's grey-while-busy
+// can't drift — each maps the result to its own wording.
+enum class SendBusy { None, Typing, KeysHeld, Throttled };
 
 // Detect the current transient busy state. checkHeldKeys gates the held-key probe
 // ("send while moving" passes false; see EmoteSendSwallowActive). This single
@@ -113,6 +119,12 @@ int  HeldPrintableCount();
 // keys during injection instead of refusing). Always false in base builds.
 // Callers gate the held-key checks on its negation.
 bool EmoteSendSwallowActive();
+
+// Milliseconds left on the global anti-spam send throttle (0 when a send is
+// allowed right now). The throttle is the SendBusy::Throttled reason behind the
+// gate refusal + the Quickbar grey; this accessor is for the dev-state readout
+// ("why didn't it fire?"). Cheap atomic read.
+unsigned SendThrottleRemainingMs();
 
 // --- Manual unlock state -----------------------------------------------
 // The GW2 API can't reliably tell us which emotes the user has unlocked

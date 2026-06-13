@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstring>   // std::strcmp (throttle-reason check)
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -183,12 +184,42 @@ void QuickbarRender() {
         // a real reason (mounted, typing, moving) still owns the explainer.
         if (!reason && greying && IsPaletteOpen())
             reason = "cells.blocked_palette";
+
+        // Send throttle - an INDEPENDENT low-priority greying source, NOT a
+        // CurrentSendBusy value. It must not ride the busy single-value priority:
+        // a movement key TAPPED during the cooldown makes busy==KeysHeld, which
+        // (until the 0.25s debounce elapses) yields no reason - and if the throttle
+        // were a busy value it'd be masked away, briefly un-greying the bar and
+        // looking like the cooldown cleared. As a separate fallback it just fills
+        // the gap: still throttled + nothing else greyed => stay greyed.
+        if (!reason && greying && SendThrottleRemainingMs() > 0)
+            reason = "cells.blocked_too_fast";
     }
+
+    // Hide-mode exemption for the send-throttle window. While the throttle is
+    // active (we just sent), the bar GREYS in place instead of hiding for the two
+    // reasons that are a consequence of that very send: the throttle itself
+    // ("too fast"), AND the transient "textbox focused" (Typing) that our OWN emote
+    // injection raises while it briefly opens chat to type the command. Without
+    // this, a click under Hide mode FLICKERS: the injection's chat-open reads as
+    // Typing and hides the bar, which then pops back greyed once the throttle
+    // reason takes over. The throttle window always brackets the injection, so
+    // exempting these two for its duration keeps the bar steady (visible + greyed)
+    // from click through cooldown. A genuine state (mounted / moving) still hides
+    // normally - "Typing while throttled" is the only one we attribute to ourselves
+    // (a user can't open chat in the sub-second between their click and our inject).
+    const bool throttleActive = SendThrottleRemainingMs() > 0;
+    const bool selfSendReason  = reason &&
+        (std::strcmp(reason, "cells.blocked_too_fast") == 0 ||
+         std::strcmp(reason, "cells.blocked_typing")   == 0);
+    const bool exemptFromHide  = throttleActive && selfSendReason;
 
     // One interaction applies to whichever source fired: Hide pulls the whole bar
     // (was game-state only; now any enabled source, since the debounce tamed the
-    // transient cases); Grey dims + blocks the cells in place further down.
-    if (reason && g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide) {
+    // transient cases); Grey dims + blocks the cells in place further down. The
+    // self-send reasons opt out of Hide (above) and fall through to the grey path.
+    if (reason && !exemptFromHide &&
+        g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide) {
         g_QbUnusableKey = nullptr;
         return;
     }

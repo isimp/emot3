@@ -28,6 +28,11 @@ them from the official ArenaNet artwork.
   while empty, Tab cycles a result's send variants (target / sync / You / All), 
   and your favorites category names double as search terms. Position, size, 
   grow direction, and behavior are all configurable.
+- **Auto-motes** - auto-fire a catalog emote when one of your own chat messages
+  contains a trigger word you set (type "lol" → `/laugh`). Off by default;
+  per-emote triggers, watched channels, and an anti-spam cooldown are all
+  configurable. Needs the optional [Events: Chat](https://github.com/jsantorek/GW2-Chat)
+  addon to read chat.
 - **Keybinds** - bind individual emotes and /me-mote variants as Nexus keybinds;
   RadialMenus wheels can invoke them without you blocking a key.
 - **RadialMenus export** - export a favorites category as a wheel for the
@@ -46,11 +51,11 @@ them from the official ArenaNet artwork.
 <table>
 <tr>
 <td align="center" width="33%">
-  <a href="https://github.com/user-attachments/assets/e23a9696-a2cd-466a-946b-d73ffcd944ff"><img src="https://github.com/user-attachments/assets/e23a9696-a2cd-466a-946b-d73ffcd944ff" alt="Library" width="280"></a>
+  <a href="https://github.com/user-attachments/assets/9ff450d5-5d1e-4f7b-ba47-e6443c5649e5"><img src="https://github.com/user-attachments/assets/9ff450d5-5d1e-4f7b-ba47-e6443c5649e5" alt="Library" width="280"></a>
   <br><b>Library</b>
 </td>
 <td align="center" width="33%">
-  <a href="https://github.com/user-attachments/assets/bc7a390a-ea8a-4485-9dbb-391e62d903b9"><img src="https://github.com/user-attachments/assets/bc7a390a-ea8a-4485-9dbb-391e62d903b9" alt="Quickbar" width="280"></a>
+  <a href="https://github.com/user-attachments/assets/70fc159a-481d-42c7-9766-373986d70be1"><img src="https://github.com/user-attachments/assets/70fc159a-481d-42c7-9766-373986d70be1" alt="Quickbar" width="280"></a>
   <br><b>Quickbar</b>
 </td>
 <td align="center" width="33%">
@@ -60,7 +65,7 @@ them from the official ArenaNet artwork.
 </tr>
 <tr>
 <td align="center" width="33%">
-  <a href="https://github.com/user-attachments/assets/ca292a86-86da-4ae9-9a2f-a3df4a0d55e9"><img src="https://github.com/user-attachments/assets/ca292a86-86da-4ae9-9a2f-a3df4a0d55e9" alt="Catalog & /me-motes" width="280"></a>
+  <a href="https://github.com/user-attachments/assets/28697d89-a665-450a-9fe9-4b46380c5556"><img src="https://github.com/user-attachments/assets/28697d89-a665-450a-9fe9-4b46380c5556" alt="Catalog & /me-motes" width="280"></a>
   <br><b>Catalog & /me-motes</b>
 </td>
 <td align="center" width="33%">
@@ -84,6 +89,7 @@ animated emote covers ("LFG", "BRB", "Ready to pull"). Each one ships up to
 three pre-written bodies — **Default** on left-click, **You** and **All** on
 right-click — so you pick the context at send time. The catalog lives in
 `addons/emot3/me_motes.json` and is editable under *Options > /me-motes*.
+
 
 ## Install
 
@@ -114,9 +120,10 @@ available.
 ## Notes
 
 - **Sending** opens chat with your GW2 command-chat keybind, types the command,
-  and presses Enter. It skips with a short note if chat's open with text, you're
-  holding a key, or the keybind isn't set (bind it under *GW2 Options > Control
-  Options > User Interface > Chat Command*).
+  and presses Enter. It skips with a short note if chat's open with text, 
+  you're holding a key, you just sent one (a brief anti-spam cooldown, 
+  Options > General > Sending), or the keybind isn't set (bind it under 
+  *GW2 Options > Control Options > User Interface > Chat Command*).
 - **Unlock tracking** is manual by default - right-click an unlockable emote to
   toggle. The Unlocks tab can also read your account from the GW2 API (via Hoard
   & Seek or your own key) to fill these in; it only ever adds unlocks.
@@ -176,6 +183,8 @@ Build from source (Windows/MSVC or Linux/MinGW cross-compile) — see
   proxy emot3 can use to read your unlocks without ever handling your API key.
 - [RadialMenus](https://github.com/RaidcoreGG/GW2-RadialMenus) — the
   wheel-menu addon emot3 can export favorites categories to.
+- [Events: Chat](https://github.com/jsantorek/GW2-Chat) — the optional
+  addon emot3 subscribes to so auto-motes can read your chat lines.
 
 ## License
 

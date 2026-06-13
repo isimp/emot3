@@ -47,6 +47,16 @@ struct Emote {
     // eligible for a RadialMenus wheel. Persisted as "keybind" in emotes.json.
     // See core/EmoteBinds.
     bool UserKeybind = false;
+
+    // Auto-motes (v1.5): chat trigger words. When auto-motes is enabled
+    // (g_Settings.AutoMotesEnabled) and ANY of these appears WHOLE-WORD,
+    // case-insensitive in one of the user's OWN sent chat lines on a watched
+    // channel, this emote auto-fires through the normal send gate. Empty (the
+    // default) = this emote never auto-fires. Stored lowercased + trimmed at
+    // ingress; serialized as "auto_keywords" in emotes.json (omitted when empty).
+    // Distinct from Aliases (which are search/unlock slash-command variants) so
+    // search aliases don't silently become chat triggers. See core/ChatWatch.
+    std::vector<std::string> AutoKeywords;
 };
 
 // Runtime emote catalog. All emotes (core + unlockable) live here, and
