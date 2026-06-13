@@ -186,20 +186,29 @@ void QuickbarRender() {
             reason = "cells.blocked_palette";
     }
 
-    // The send throttle is the ONE reason exempt from Hide: it greys/disables the
-    // cells in place but never pulls the bar. Hiding the whole bar for ~2s right
-    // after your OWN click reads as a glitch (the bar you just used vanishes),
-    // unlike an external state (mounted / typing / moving) where Hide makes sense.
-    // strcmp against the key PickQbBlockReason returns for SendBusy::Throttled, so
-    // the exemption tracks that mapping rather than re-deriving the priority tree.
-    const bool throttleReason =
-        reason && std::strcmp(reason, "cells.blocked_too_fast") == 0;
+    // Hide-mode exemption for the send-throttle window. While the throttle is
+    // active (we just sent), the bar GREYS in place instead of hiding for the two
+    // reasons that are a consequence of that very send: the throttle itself
+    // ("too fast"), AND the transient "textbox focused" (Typing) that our OWN emote
+    // injection raises while it briefly opens chat to type the command. Without
+    // this, a click under Hide mode FLICKERS: the injection's chat-open reads as
+    // Typing and hides the bar, which then pops back greyed once the throttle
+    // reason takes over. The throttle window always brackets the injection, so
+    // exempting these two for its duration keeps the bar steady (visible + greyed)
+    // from click through cooldown. A genuine state (mounted / moving) still hides
+    // normally - "Typing while throttled" is the only one we attribute to ourselves
+    // (a user can't open chat in the sub-second between their click and our inject).
+    const bool throttleActive = SendThrottleRemainingMs() > 0;
+    const bool selfSendReason  = reason &&
+        (std::strcmp(reason, "cells.blocked_too_fast") == 0 ||
+         std::strcmp(reason, "cells.blocked_typing")   == 0);
+    const bool exemptFromHide  = throttleActive && selfSendReason;
 
     // One interaction applies to whichever source fired: Hide pulls the whole bar
     // (was game-state only; now any enabled source, since the debounce tamed the
     // transient cases); Grey dims + blocks the cells in place further down. The
-    // throttle opts out of Hide (above) and always falls through to the grey path.
-    if (reason && !throttleReason &&
+    // self-send reasons opt out of Hide (above) and fall through to the grey path.
+    if (reason && !exemptFromHide &&
         g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide) {
         g_QbUnusableKey = nullptr;
         return;

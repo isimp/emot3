@@ -285,7 +285,7 @@ void RenderGeneralOptionsTab() {
             const float hi = kAutoMoteMinIntervalCeilMs  / 1000.0f;
             float sec = g_Settings.AutoMoteMinIntervalMs / 1000.0f;
             ImGui::SetNextItemWidth(200.f);
-            if (ImGui::SliderFloat(L("opt.am.min_interval"), &sec, lo, hi, "%.2f s"))
+            if (ImGui::SliderFloat(L("opt.am.min_interval"), &sec, lo, hi, "%.0f s"))
                 g_Settings.AutoMoteMinIntervalMs = (uint32_t)(sec * 1000.0f + 0.5f);
             if (ImGui::IsItemDeactivatedAfterEdit()) RequestSave(SaveKind::Settings);
             if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {

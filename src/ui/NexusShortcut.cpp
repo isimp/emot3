@@ -6,6 +6,7 @@
 #include "Settings.h"
 #include "SaveScheduler.h" // RequestSave (debounced settings persist)
 #include "Palette.h"        // TogglePalette / IsPaletteOpen (palette menu item)
+#include "ChatWatch.h"      // ChatWatchAvailable (auto-motes menu toggle gate)
 #include "QuickbarPresets.h"
 #include "Options.h"        // ApplyQbCloseOnEsc (preset apply re-registers it)
 #include "UpdateCheck.h"    // Plus update hint (PlusUpdateAvailable / OpenReleasesPage; stubs otherwise)
@@ -94,6 +95,23 @@ void ShortcutContextMenu() {
         TogglePalette();
         LOG_DEBUG("Shortcut menu > palette %s",
                   IsPaletteOpen() ? "opened" : "closed");
+    }
+
+    // Auto-motes quick toggle — checkable; greyed (can't enable) when the
+    // optional "Events: Chat" addon isn't present, matching the General checkbox.
+    // A real settings change, so it persists (debounced), unlike the ride-along
+    // window-visibility items above.
+    {
+        const bool amAvail = ChatWatchAvailable();
+        if (ImGui::MenuItem(L("shortcut.automotes"), nullptr,
+                            /*selected=*/g_Settings.AutoMotesEnabled, /*enabled=*/amAvail)) {
+            g_Settings.AutoMotesEnabled = !g_Settings.AutoMotesEnabled;
+            LOG_DEBUG("Shortcut menu > auto-motes %s",
+                      g_Settings.AutoMotesEnabled ? "enabled" : "disabled");
+            RequestSave(SaveKind::Settings);
+        }
+        if (!amAvail && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            TooltipText("opt.am.enabled_disabled_tip");
     }
 
     // Quickbar presets submenu — apply one by name. The active preset (the one

@@ -373,7 +373,7 @@ struct Settings {
     // drain against a separate auto-only timestamp; the global gate throttle still
     // applies too, so the effective auto cadence is max(this, global). Clamped to
     // [kAutoMoteMinIntervalFloorMs, kAutoMoteMinIntervalCeilMs] on load.
-    uint32_t                      AutoMoteMinIntervalMs = 5000;
+    uint32_t                      AutoMoteMinIntervalMs = 15000;
 
     // Global minimum interval between any two emote/me-mote sends, across EVERY
     // surface (click, keybind, radial, auto-mote). Anti-spam throttle enforced at
@@ -395,9 +395,9 @@ constexpr uint32_t kSendMinIntervalCeilMs    = 5000;
 constexpr uint32_t kSendMinIntervalDefaultMs = 2000;
 
 // Auto-mote-specific interval bounds + default (the additional auto-only floor).
-constexpr uint32_t kAutoMoteMinIntervalFloorMs   = 750;
-constexpr uint32_t kAutoMoteMinIntervalCeilMs    = 30000;
-constexpr uint32_t kAutoMoteMinIntervalDefaultMs = 5000;
+constexpr uint32_t kAutoMoteMinIntervalFloorMs   = 5000;
+constexpr uint32_t kAutoMoteMinIntervalCeilMs    = 60000;
+constexpr uint32_t kAutoMoteMinIntervalDefaultMs = 15000;
 
 extern Settings g_Settings;
 
