@@ -309,6 +309,17 @@ bool SanitizeSettings(Settings& s) {
         s.SendMinIntervalMs = kSendMinIntervalCeilMs; changed = true;
     }
 
+    // Auto-mote-specific (additional) interval: clamp into [floor, ceil].
+    if (s.AutoMoteMinIntervalMs < kAutoMoteMinIntervalFloorMs) {
+        LOG_WARNING("settings: automotes.min_interval_ms %u below floor -> clamped to %u",
+                    s.AutoMoteMinIntervalMs, kAutoMoteMinIntervalFloorMs);
+        s.AutoMoteMinIntervalMs = kAutoMoteMinIntervalFloorMs; changed = true;
+    } else if (s.AutoMoteMinIntervalMs > kAutoMoteMinIntervalCeilMs) {
+        LOG_WARNING("settings: automotes.min_interval_ms %u above ceiling -> clamped to %u",
+                    s.AutoMoteMinIntervalMs, kAutoMoteMinIntervalCeilMs);
+        s.AutoMoteMinIntervalMs = kAutoMoteMinIntervalCeilMs; changed = true;
+    }
+
     // Unlock key-source enum is 0/1; clamp any out-of-range hand edit to 0.
     if (s.UnlockApiKeySource < 0 || s.UnlockApiKeySource > 1) {
         LOG_WARNING("settings: unlock key_source %d invalid -> 0", s.UnlockApiKeySource);
@@ -592,6 +603,7 @@ bool LoadSettings(const std::string& path) {
     s.AutoMoteWatchSquad   = GetBool(amChannels, "squad",   s.AutoMoteWatchSquad);
     s.AutoMoteWatchGuild   = GetBool(amChannels, "guild",   s.AutoMoteWatchGuild);
     s.AutoMoteWatchWhisper = GetBool(amChannels, "whisper", s.AutoMoteWatchWhisper);
+    s.AutoMoteMinIntervalMs = (uint32_t)GetInt(automotes, "min_interval_ms", (int)s.AutoMoteMinIntervalMs);
 
     if (j.contains("unlocks"))
         s.ManuallyUnlocked = readStringArray(GetArray(j, "unlocks"));
@@ -786,7 +798,8 @@ std::string SerializeSettings() {
 
     // --- automotes (Auto-motes tab; rules live in auto_motes.json) -----
     f << "  \"automotes\": {\n";
-    f << "    \"enabled\": "     << B(s.AutoMotesEnabled)  << ",\n";
+    f << "    \"enabled\": "         << B(s.AutoMotesEnabled)   << ",\n";
+    f << "    \"min_interval_ms\": " << s.AutoMoteMinIntervalMs << ",\n";
     f << "    \"channels\": {\n";
     f << "      \"local\": "   << B(s.AutoMoteWatchLocal)   << ",\n";
     f << "      \"party\": "   << B(s.AutoMoteWatchParty)   << ",\n";

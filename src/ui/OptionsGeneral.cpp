@@ -177,6 +177,25 @@ void RenderGeneralOptionsTab() {
     // ===== Sending =====
     OptionsSection(L("opt.sec.sending"));
 
+    // Global minimum interval between any two sends (anti-spam) - top of the
+    // section. Shown in SECONDS (stored as ms); applies to EVERY surface (clicks,
+    // keybinds, radial, auto-motes) via the shared send gate. Label behind the
+    // slider, saves on release, right-click resets - matching the other sliders.
+    {
+        const float lo = kSendMinIntervalFloorMs / 1000.0f;
+        const float hi = kSendMinIntervalCeilMs  / 1000.0f;
+        float sec = g_Settings.SendMinIntervalMs / 1000.0f;
+        ImGui::SetNextItemWidth(200.f);
+        if (ImGui::SliderFloat(L("opt.gen.send_interval"), &sec, lo, hi, "%.2f s"))
+            g_Settings.SendMinIntervalMs = (uint32_t)(sec * 1000.0f + 0.5f);  // round to ms
+        if (ImGui::IsItemDeactivatedAfterEdit()) RequestSave(SaveKind::Settings);
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+            g_Settings.SendMinIntervalMs = kSendMinIntervalDefaultMs;
+            RequestSave(SaveKind::Settings);
+        }
+        if (ImGui::IsItemHovered()) TooltipText("opt.gen.send_interval_tip");
+    }
+
     CheckboxWithSaveAndTooltip("opt.gen.send_on_click", &g_Settings.SendOnClick, /*defaultIsOn=*/true);
 
     // Independent of SendOnClick — /me-motes commit free-form text to chat,
@@ -186,28 +205,6 @@ void RenderGeneralOptionsTab() {
 
     // Close an open chat / text box (Escape) and send, instead of refusing.
     CheckboxWithSaveAndTooltip("opt.gen.close_chat_on_send", &g_Settings.CloseChatOnSend, /*defaultIsOn=*/false);
-
-    // Global minimum interval between sends (anti-spam). Applies to EVERY surface
-    // — clicks, keybinds, radial, and auto-motes — enforced at the shared send
-    // gate. A manual send inside the window shows the "slow down" cue; an
-    // auto-fire is dropped silently. Persist on release (debounced).
-    {
-        // Shown in SECONDS (stored as ms). 0.75 .. 5.00 s.
-        const float lo = kSendMinIntervalFloorMs / 1000.0f;
-        const float hi = kSendMinIntervalCeilMs  / 1000.0f;
-        float sec = g_Settings.SendMinIntervalMs / 1000.0f;
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(L("opt.gen.send_interval"));
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(220.f);
-        if (ImGui::SliderFloat("##send_interval", &sec, lo, hi, "%.2f s")) {
-            if (sec < lo) sec = lo;
-            if (sec > hi) sec = hi;
-            g_Settings.SendMinIntervalMs = (uint32_t)(sec * 1000.0f + 0.5f);  // round to ms
-        }
-        if (ImGui::IsItemDeactivatedAfterEdit()) RequestSave(SaveKind::Settings);
-        if (ImGui::IsItemHovered()) TooltipText("opt.gen.send_interval_tip");
-    }
 
     // Passive warning when the chat keybind isn't bound. See "Emote
     // send refusal gate" in emot3.md for the design.
@@ -278,6 +275,26 @@ void RenderGeneralOptionsTab() {
         channelToggle("opt.am.ch_guild",   &g_Settings.AutoMoteWatchGuild);
         ImGui::SameLine(340.f);
         channelToggle("opt.am.ch_whisper", &g_Settings.AutoMoteWatchWhisper);
+
+        // Auto-mote-specific minimum interval - ADDITIONAL to the global "Minimum
+        // time between sends" above (auto-fires obey both). Seconds (stored ms),
+        // label behind the slider, right-click resets. Greyed with the channels.
+        ImGui::Spacing();
+        {
+            const float lo = kAutoMoteMinIntervalFloorMs / 1000.0f;
+            const float hi = kAutoMoteMinIntervalCeilMs  / 1000.0f;
+            float sec = g_Settings.AutoMoteMinIntervalMs / 1000.0f;
+            ImGui::SetNextItemWidth(200.f);
+            if (ImGui::SliderFloat(L("opt.am.min_interval"), &sec, lo, hi, "%.2f s"))
+                g_Settings.AutoMoteMinIntervalMs = (uint32_t)(sec * 1000.0f + 0.5f);
+            if (ImGui::IsItemDeactivatedAfterEdit()) RequestSave(SaveKind::Settings);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                g_Settings.AutoMoteMinIntervalMs = kAutoMoteMinIntervalDefaultMs;
+                RequestSave(SaveKind::Settings);
+            }
+            if (ImGui::IsItemHovered()) TooltipText("opt.am.min_interval_tip");
+        }
+
         if (!active) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
 
         // Tie to the Catalog, where the per-emote trigger WORDS are set: show how

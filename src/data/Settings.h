@@ -366,6 +366,14 @@ struct Settings {
     bool                          AutoMoteWatchSquad   = false;
     bool                          AutoMoteWatchGuild   = false;
     bool                          AutoMoteWatchWhisper = false;
+    // ADDITIONAL minimum interval between two AUTO-fires specifically, on top of
+    // the global SendMinIntervalMs below. Auto-motes fire passively from your own
+    // typing, so they get a longer floor of their own (e.g. /laugh shouldn't
+    // re-fire every couple seconds in a chatty map). Enforced in core/ChatWatch's
+    // drain against a separate auto-only timestamp; the global gate throttle still
+    // applies too, so the effective auto cadence is max(this, global). Clamped to
+    // [kAutoMoteMinIntervalFloorMs, kAutoMoteMinIntervalCeilMs] on load.
+    uint32_t                      AutoMoteMinIntervalMs = 5000;
 
     // Global minimum interval between any two emote/me-mote sends, across EVERY
     // surface (click, keybind, radial, auto-mote). Anti-spam throttle enforced at
@@ -378,11 +386,18 @@ struct Settings {
     std::vector<FavoriteCategory> FavoriteCategories;
 };
 
-// Global send-interval bounds — shared by the settings sanitize clamp, the
-// General > Sending slider, and the gate throttle. constexpr at namespace scope =
-// internal linkage (matches kMaxNameBytes), so each TU sees one value.
-constexpr uint32_t kSendMinIntervalFloorMs = 750;
-constexpr uint32_t kSendMinIntervalCeilMs  = 5000;
+// Global send-interval bounds + default — shared by the settings sanitize clamp,
+// the General > Sending slider (incl. its right-click reset), and the gate
+// throttle. constexpr at namespace scope = internal linkage (matches
+// kMaxNameBytes), so each TU sees one value.
+constexpr uint32_t kSendMinIntervalFloorMs   = 750;
+constexpr uint32_t kSendMinIntervalCeilMs    = 5000;
+constexpr uint32_t kSendMinIntervalDefaultMs = 2000;
+
+// Auto-mote-specific interval bounds + default (the additional auto-only floor).
+constexpr uint32_t kAutoMoteMinIntervalFloorMs   = 750;
+constexpr uint32_t kAutoMoteMinIntervalCeilMs    = 30000;
+constexpr uint32_t kAutoMoteMinIntervalDefaultMs = 5000;
 
 extern Settings g_Settings;
 

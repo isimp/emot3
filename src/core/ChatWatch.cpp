@@ -296,6 +296,17 @@ void DrainAutoMotes() {
         id.swap(s_pending);
     }
 
+    // Auto-only minimum interval, ADDITIONAL to the global send-gate throttle:
+    // auto-fires get their own (typically longer) floor so passive chat triggers
+    // don't fire too often. Render-thread only (DrainAutoMotes is the sole user),
+    // so a plain static needs no lock. Stamped ONLY on an actual dispatch below —
+    // a drop here, or a gate refusal in SendOrFillEmote, must not burn the clock.
+    static uint64_t s_lastAutoFireMs = 0;
+    const uint64_t now = GetTickCount64();
+    if (s_lastAutoFireMs != 0 &&
+        now - s_lastAutoFireMs < (uint64_t)g_Settings.AutoMoteMinIntervalMs)
+        return;  // too soon for another auto-fire; drop silently
+
     // Resolve + copy the Emote under the catalog lock (SendOrFillEmote only needs
     // it for the synchronous command build; its detached worker copies the string
     // it types). A trigger whose emote no longer resolves is inert, logged once.
@@ -323,7 +334,10 @@ void DrainAutoMotes() {
     // is also what keeps a gate throttle or a "you're typing" refusal right after
     // you hit Enter from popping a confusing alert). The send gate
     // (ShouldSkipEmoteSend + the global min-interval throttle) applies for free.
-    SendOrFillEmote(e, /*useTarget=*/false, /*useSync=*/false, EFeedbackSink::Silent);
+    // Stamp the auto clock only when it actually dispatched — if the global gate
+    // refused (throttle / typing / competitive / ...), the auto floor isn't spent.
+    if (SendOrFillEmote(e, /*useTarget=*/false, /*useSync=*/false, EFeedbackSink::Silent))
+        s_lastAutoFireMs = now;
 }
 
 #ifdef EMOT3_DEVTOOLS
