@@ -221,7 +221,33 @@ void RenderQuickbarOptionsTab() {
                                                       : L("opt.currently_hidden"));
     ImGui::Spacing();
 
-    // ===== Presets ===== (top of the tab; the controls below are its editor)
+    // ===== Quickbar categories =====
+    // Which built-in (synthetic) categories the category bar offers alongside
+    // your favorites categories. (Keys stay opt.gen.* / settings.json
+    // general.quickbar_categories for back-compat - these controls used to live
+    // on the General tab.) See Quickbar.cpp.
+    OptionsSection(L("opt.sec.qb_categories"));
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_favorites", &g_Settings.QuickbarShowFavoriteCategories, /*defaultIsOn=*/true);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_core", &g_Settings.QuickbarShowCoreCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_mad_king", &g_Settings.QuickbarShowMadKingCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked", &g_Settings.QuickbarShowUnlockedCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked_all", &g_Settings.QuickbarShowUnlockedAllCategory, /*defaultIsOn=*/true);
+
+    // /me-motes - opt-in like the other built-in categories.
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_me_motes", &g_Settings.QuickbarShowMeMotesCategory, /*defaultIsOn=*/false);
+
+    // Synthetic usage categories (data/Usage.h) - derived from the usage log,
+    // not editable, so they live only in the Quickbar (no Library section).
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_recently_used", &g_Settings.QuickbarShowRecentlyUsedCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_frequent", &g_Settings.QuickbarShowFrequentCategory, /*defaultIsOn=*/false);
+
+    // ===== Presets =====
     RenderQuickbarPresetsSection();
 
     // ===== Layout =====

@@ -228,96 +228,6 @@ void RenderGeneralOptionsTab() {
                  /*defaultIsOn=*/false);
 #endif
 
-    // ===== Auto-motes (chat triggers) =====
-    // Master enable + watched channels. The per-emote trigger WORDS live in the
-    // Catalog tab's "Chat triggers" field; this is the on/off + scope. Requires
-    // the optional "Events: Chat" addon (core/ChatWatch) — the enable is greyed
-    // until it's present, and nothing fires without it.
-    OptionsSection(L("opt.am.section"));
-    {
-        const bool available = ChatWatchAvailable();
-        ImGui::TextWrapped("%s", L("opt.am.hlp_top"));
-        if (!available) {
-            // Amber dependency notice (same styling as the competitive banner).
-            // Reads false until the first chat line if it loaded before us, so the
-            // wording stays soft ("not detected").
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
-            ImGui::TextWrapped("%s", L("opt.am.needs_events_chat"));
-            ImGui::PopStyleColor();
-        }
-        ImGui::Spacing();
-
-        // Master enable. ALWAYS toggleable — the "not detected" notice above is
-        // advisory, not a gate. A push-only dependency like Events: Chat can't be
-        // probed reliably the way RTAPI's DataLink can (its EV_ADDON_LOADED doesn't
-        // replay for our re-subscribe after a reload), so hard-disabling on
-        // detection made an emot3 reload look broken until the first chat line.
-        // Firing degrades gracefully to a no-op when the addon is absent. Mirrors
-        // RTAPI's precise-state toggle, which is likewise usable + status-lined,
-        // not disabled. Auto-saves like the other g_Settings checkboxes.
-        CheckboxWithSaveAndTooltip("opt.am.enabled", &g_Settings.AutoMotesEnabled,
-                                   /*defaultIsOn=*/false);
-
-        // Watched channels — sub-settings, disabled until the feature is on. Manual
-        // checkboxes wrapped in the disabled idiom (DisabledCheckbox would need
-        // per-channel on/off tooltip keys; a single help label is plenty here).
-        const bool active = g_Settings.AutoMotesEnabled;
-        if (!active) {
-            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-        }
-        ImGui::TextDisabled("%s", L("opt.am.channels_label"));
-        auto channelToggle = [&](const char* key, bool* v) {
-            if (ImGui::Checkbox(L(key), v)) RequestSave(SaveKind::Settings);
-        };
-        channelToggle("opt.am.ch_local",   &g_Settings.AutoMoteWatchLocal);
-        ImGui::SameLine(180.f);
-        channelToggle("opt.am.ch_party",   &g_Settings.AutoMoteWatchParty);
-        ImGui::SameLine(340.f);
-        channelToggle("opt.am.ch_map",     &g_Settings.AutoMoteWatchMap);
-        channelToggle("opt.am.ch_squad",   &g_Settings.AutoMoteWatchSquad);
-        ImGui::SameLine(180.f);
-        channelToggle("opt.am.ch_guild",   &g_Settings.AutoMoteWatchGuild);
-        ImGui::SameLine(340.f);
-        channelToggle("opt.am.ch_whisper", &g_Settings.AutoMoteWatchWhisper);
-
-        // Auto-mote-specific minimum interval - ADDITIONAL to the global "Minimum
-        // time between sends" above (auto-fires obey both). Seconds (stored ms),
-        // label behind the slider, right-click resets. Greyed with the channels.
-        ImGui::Spacing();
-        {
-            const float lo = kAutoMoteMinIntervalFloorMs / 1000.0f;
-            const float hi = kAutoMoteMinIntervalCeilMs  / 1000.0f;
-            float sec = g_Settings.AutoMoteMinIntervalMs / 1000.0f;
-            ImGui::SetNextItemWidth(200.f);
-            if (ImGui::SliderFloat(L("opt.am.min_interval"), &sec, lo, hi, "%.0f s"))
-                g_Settings.AutoMoteMinIntervalMs = (uint32_t)(sec * 1000.0f + 0.5f);
-            if (ImGui::IsItemDeactivatedAfterEdit()) RequestSave(SaveKind::Settings);
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-                g_Settings.AutoMoteMinIntervalMs = kAutoMoteMinIntervalDefaultMs;
-                RequestSave(SaveKind::Settings);
-            }
-            if (ImGui::IsItemHovered()) TooltipText("opt.am.min_interval_tip");
-        }
-
-        if (!active) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
-
-        // Tie to the Catalog, where the per-emote trigger WORDS are set: show how
-        // many emotes carry triggers, and nudge when the feature's on but nothing
-        // is wired yet. Counting the catalog here is cheap (only while this tab is
-        // open). Shown un-greyed — it's an informational link, not a control.
-        int triggerCount = 0;
-        {
-            std::lock_guard<std::mutex> lk(g_EmotesMutex);
-            for (const auto& e : g_Emotes) if (!e.AutoKeywords.empty()) ++triggerCount;
-        }
-        ImGui::Spacing();
-        if (triggerCount > 0)
-            ImGui::TextDisabled(L("opt.am.trigger_count"), triggerCount);
-        else if (active)
-            ImGui::TextDisabled("%s", L("opt.am.no_triggers"));
-    }
-
     // ===== Icons =====
     OptionsSection(L("opt.sec.icons"));
 
@@ -398,38 +308,101 @@ void RenderGeneralOptionsTab() {
 
     // (The Unlocks section moved to its own "Unlocks" tab — see OptionsUnlocks.cpp.)
 
-    // ===== Quickbar categories =====
-    // Built-in (synthetic) categories the Quickbar's category bar offers
-    // alongside the user's favorites categories. See Quickbar.cpp.
-    OptionsSection(L("opt.sec.qb_categories"));
+    // ===== Auto-motes (chat triggers) =====
+    // Master enable + watched channels + the auto-fire cooldown. The per-emote
+    // trigger WORDS live in the Catalog tab's "Chat triggers" field; this is the
+    // on/off + scope. Needs the optional "Events: Chat" addon (core/ChatWatch) -
+    // the notice below is advisory and the feature no-ops without it.
+    OptionsSection(L("opt.am.section"));
+    {
+        const bool available = ChatWatchAvailable();
+        ImGui::TextWrapped("%s", L("opt.am.hlp_top"));
+        if (!available) {
+            // Amber dependency notice (same styling as the competitive banner).
+            // Reads false until the first chat line if it loaded before us, so the
+            // wording stays soft ("not detected").
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+            ImGui::TextWrapped("%s", L("opt.am.needs_events_chat"));
+            ImGui::PopStyleColor();
+        }
+        ImGui::Spacing();
 
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_favorites", &g_Settings.QuickbarShowFavoriteCategories, /*defaultIsOn=*/true);
+        // Master enable. ALWAYS toggleable - the "not detected" notice above is
+        // advisory, not a gate. A push-only dependency like Events: Chat can't be
+        // probed reliably the way RTAPI's DataLink can (its EV_ADDON_LOADED doesn't
+        // replay for our re-subscribe after a reload), so hard-disabling on
+        // detection made an emot3 reload look broken until the first chat line.
+        // Firing degrades gracefully to a no-op when the addon is absent. Mirrors
+        // RTAPI's precise-state toggle, which is likewise usable + status-lined,
+        // not disabled. Auto-saves like the other g_Settings checkboxes.
+        CheckboxWithSaveAndTooltip("opt.am.enabled", &g_Settings.AutoMotesEnabled,
+                                   /*defaultIsOn=*/false);
 
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_core", &g_Settings.QuickbarShowCoreCategory, /*defaultIsOn=*/false);
+        // Watched channels - sub-settings, disabled until the feature is on. Manual
+        // checkboxes wrapped in the disabled idiom (DisabledCheckbox would need
+        // per-channel on/off tooltip keys; a single help label is plenty here).
+        const bool active = g_Settings.AutoMotesEnabled;
+        if (!active) {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+        }
+        ImGui::TextDisabled("%s", L("opt.am.channels_label"));
+        auto channelToggle = [&](const char* key, bool* v) {
+            if (ImGui::Checkbox(L(key), v)) RequestSave(SaveKind::Settings);
+        };
+        channelToggle("opt.am.ch_local",   &g_Settings.AutoMoteWatchLocal);
+        ImGui::SameLine(180.f);
+        channelToggle("opt.am.ch_party",   &g_Settings.AutoMoteWatchParty);
+        ImGui::SameLine(340.f);
+        channelToggle("opt.am.ch_map",     &g_Settings.AutoMoteWatchMap);
+        channelToggle("opt.am.ch_squad",   &g_Settings.AutoMoteWatchSquad);
+        ImGui::SameLine(180.f);
+        channelToggle("opt.am.ch_guild",   &g_Settings.AutoMoteWatchGuild);
+        ImGui::SameLine(340.f);
+        channelToggle("opt.am.ch_whisper", &g_Settings.AutoMoteWatchWhisper);
 
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_mad_king", &g_Settings.QuickbarShowMadKingCategory, /*defaultIsOn=*/false);
+        // Auto-mote-specific minimum interval - ADDITIONAL to the global "Minimum
+        // time between sends" (auto-fires obey both). Seconds (stored ms), label
+        // behind the slider, right-click resets. Greyed with the channels.
+        ImGui::Spacing();
+        {
+            const float lo = kAutoMoteMinIntervalFloorMs / 1000.0f;
+            const float hi = kAutoMoteMinIntervalCeilMs  / 1000.0f;
+            float sec = g_Settings.AutoMoteMinIntervalMs / 1000.0f;
+            ImGui::SetNextItemWidth(200.f);
+            if (ImGui::SliderFloat(L("opt.am.min_interval"), &sec, lo, hi, "%.0f s"))
+                g_Settings.AutoMoteMinIntervalMs = (uint32_t)(sec * 1000.0f + 0.5f);
+            if (ImGui::IsItemDeactivatedAfterEdit()) RequestSave(SaveKind::Settings);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                g_Settings.AutoMoteMinIntervalMs = kAutoMoteMinIntervalDefaultMs;
+                RequestSave(SaveKind::Settings);
+            }
+            if (ImGui::IsItemHovered()) TooltipText("opt.am.min_interval_tip");
+        }
 
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked", &g_Settings.QuickbarShowUnlockedCategory, /*defaultIsOn=*/false);
+        if (!active) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
 
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked_all", &g_Settings.QuickbarShowUnlockedAllCategory, /*defaultIsOn=*/true);
+        // Tie to the Catalog, where the per-emote trigger WORDS are set: show how
+        // many emotes carry triggers, and nudge when the feature's on but nothing
+        // is wired yet. Counting the catalog here is cheap (only while this tab is
+        // open). Shown un-greyed - it's an informational link, not a control.
+        int triggerCount = 0;
+        {
+            std::lock_guard<std::mutex> lk(g_EmotesMutex);
+            for (const auto& e : g_Emotes) if (!e.AutoKeywords.empty()) ++triggerCount;
+        }
+        ImGui::Spacing();
+        if (triggerCount > 0)
+            ImGui::TextDisabled(L("opt.am.trigger_count"), triggerCount);
+        else if (active)
+            ImGui::TextDisabled("%s", L("opt.am.no_triggers"));
+    }
 
-    // /me-motes — opt-in like the other built-in categories. Inert until the
-    // Quickbar's category-build code surfaces the /me-mote category (next
-    // checkpoint), but the toggle persists either way.
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_me_motes", &g_Settings.QuickbarShowMeMotesCategory, /*defaultIsOn=*/false);
-
-    // Synthetic usage categories (data/Usage.h) — derived from the usage log,
-    // not editable, so they live only in the Quickbar (no Library section).
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_recently_used", &g_Settings.QuickbarShowRecentlyUsedCategory, /*defaultIsOn=*/false);
-
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_frequent", &g_Settings.QuickbarShowFrequentCategory, /*defaultIsOn=*/false);
-
-    // Reset the usage history that feeds the two categories above. Its own section
-    // (like the Catalog tab's "Clear catalog") so the destructive action reads as
-    // separate from the category toggles. Modeled on Clear catalog (destructive
-    // button + centered confirm modal) but a MILDER red - clearing usage is
-    // recoverable (it re-accrues as you use emotes), not the catalog-wipe it rhymes
-    // with.
+    // Reset the usage history that feeds the recently/frequently-used Quickbar
+    // categories (the toggles now live on the Quickbar tab). Its own section (like
+    // the Catalog tab's "Clear catalog") so the destructive action reads as
+    // separate. Modeled on Clear catalog (destructive button + centered confirm
+    // modal) but a MILDER red - clearing usage is recoverable (it re-accrues).
     OptionsSection(L("opt.sec.usage"));
     {
         ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.42f, 0.22f, 0.22f, 0.40f));

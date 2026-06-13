@@ -230,9 +230,9 @@ struct Settings {
     bool                          ShowQuickbarTooltips     = true;   // per-emote hover tooltips in the QB
     bool                          QuickbarClickThrough     = false;  // pass clicks through empty QB area
     bool                          ShowQuickbarCategoryBar = true;   // tab/dropdown row above the icons
-    // Which categories the Quickbar's category bar lists. The controls live
-    // in the Options General tab, so these persist under
-    // general.quickbar_categories in settings.json (see Settings.cpp).
+    // Which categories the Quickbar's category bar lists. The controls live in
+    // the Options Quickbar tab; the keys + settings.json nesting stay
+    // general.quickbar_categories for back-compat (see Settings.cpp).
     //   Favorites    — the user's own favorites categories (all of them).
     //   Core         — every core emote.
     //   Unlocked     — unlockable emotes the user has marked unlocked.
