@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>   // uint32_t (SendMinIntervalMs + the interval-bound consts)
 #include <string>
 #include <vector>
 
