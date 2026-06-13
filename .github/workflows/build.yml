@@ -83,11 +83,14 @@ jobs:
           # the default checkout does NOT init submodules.
           submodules: recursive
 
-      # CMake + the VS 2022 toolchain + the `py` launcher are preinstalled on the
+      # CMake + the VS toolchain + the `py` launcher are preinstalled on the
       # runner image. The resource codegen (tools/gen_rc.py) runs as a build
       # dependency, so no separate generate step is needed.
-      - name: Configure (CMake, VS 2022 x64)
-        run: cmake -B build-vs -G "Visual Studio 17 2022" -A x64
+      # No -G: let CMake auto-detect the newest installed VS, so this doesn't
+      # break when the runner image bumps its Visual Studio version (e.g.
+      # windows-latest moving from VS 2022 to VS 2026). -A x64 still pins x64.
+      - name: Configure (CMake, MSVC x64)
+        run: cmake -B build-vs -A x64
 
       # Build matrix: PRs only build the +devtools flavors (DevTools +
       # PlusDevTools); main pushes build all four. The +devtools macro is

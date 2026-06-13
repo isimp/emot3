@@ -55,11 +55,12 @@ git clone --recurse-submodules https://github.com/isimp/emot3
 Multi-config generator: configure once, then build any flavor with `--config`.
 
 ```sh
-cmake -B build-vs -G "Visual Studio 17 2022" -A x64
+cmake -B build-vs -A x64        # auto-detects the newest installed VS
 cmake --build build-vs --config PlusDevTools      # or Distribution / Plus / DevTools / Debug
 ```
 
-(Using VS 2026? pass `-G "Visual Studio 18 2026"`.) Output lands in
+Omitting `-G` lets CMake pick whichever Visual Studio is installed (2022, 2026,
+…); pass `-G "Visual Studio 18 2026"` to pin a specific one. Output lands in
 `build-vs/<Config>/emot3*.dll`. `tools/gen_rc.py` runs automatically as a build
 dependency — no manual codegen step.
 
