@@ -46,25 +46,25 @@ them from the official ArenaNet artwork.
 <table>
 <tr>
 <td align="center" width="33%">
-  <a href="https://i.ibb.co/Rp8Wp47g/library.png"><img src="https://i.ibb.co/Rp8Wp47g/library.png" alt="Library" width="280"></a>
+  <a href="https://github.com/user-attachments/assets/e23a9696-a2cd-466a-946b-d73ffcd944ff"><img src="https://github.com/user-attachments/assets/e23a9696-a2cd-466a-946b-d73ffcd944ff" alt="Library" width="280"></a>
   <br><b>Library</b>
 </td>
 <td align="center" width="33%">
-  <a href="https://i.ibb.co/C5wDH6Jg/quickbar.png"><img src="https://i.ibb.co/C5wDH6Jg/quickbar.png" alt="Quickbar" width="280"></a>
+  <a href="https://github.com/user-attachments/assets/bc7a390a-ea8a-4485-9dbb-391e62d903b9"><img src="https://github.com/user-attachments/assets/bc7a390a-ea8a-4485-9dbb-391e62d903b9" alt="Quickbar" width="280"></a>
   <br><b>Quickbar</b>
 </td>
 <td align="center" width="33%">
-  <a href="https://i.ibb.co/CKDC7Wj0/image.png"><img src="https://i.ibb.co/CKDC7Wj0/image.png" alt="Palette" width="280"></a>
+  <a href="https://github.com/user-attachments/assets/0e5a29de-9fd9-4a93-9b40-2e0cd8332bc4"><img src="https://github.com/user-attachments/assets/0e5a29de-9fd9-4a93-9b40-2e0cd8332bc4" alt="Palette" width="280"></a>
   <br><b>Palette</b>
 </td>
 </tr>
 <tr>
 <td align="center" width="33%">
-  <a href="https://i.ibb.co/VWjWv5t9/emote-memote.png"><img src="https://i.ibb.co/VWjWv5t9/emote-memote.png" alt="Catalog & /me-motes" width="280"></a>
+  <a href="https://github.com/user-attachments/assets/ca292a86-86da-4ae9-9a2f-a3df4a0d55e9"><img src="https://github.com/user-attachments/assets/ca292a86-86da-4ae9-9a2f-a3df4a0d55e9" alt="Catalog & /me-motes" width="280"></a>
   <br><b>Catalog & /me-motes</b>
 </td>
 <td align="center" width="33%">
-  <a href="https://i.ibb.co/xtWfDKx0/unlocks-radialmenus.png"><img src="https://i.ibb.co/xtWfDKx0/unlocks-radialmenus.png" alt="Unlocks & RadialMenus" width="280"></a>
+  <a href="https://github.com/user-attachments/assets/2172af6e-a9c6-40b1-995f-71ce99cfe9b4"><img src="https://github.com/user-attachments/assets/2172af6e-a9c6-40b1-995f-71ce99cfe9b4" alt="Unlocks & RadialMenus" width="280"></a>
   <br><b>Unlocks & RadialMenus</b>
 </td>
 </tr>
