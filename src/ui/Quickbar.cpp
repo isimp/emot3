@@ -184,6 +184,16 @@ void QuickbarRender() {
         // a real reason (mounted, typing, moving) still owns the explainer.
         if (!reason && greying && IsPaletteOpen())
             reason = "cells.blocked_palette";
+
+        // Send throttle - an INDEPENDENT low-priority greying source, NOT a
+        // CurrentSendBusy value. It must not ride the busy single-value priority:
+        // a movement key TAPPED during the cooldown makes busy==KeysHeld, which
+        // (until the 0.25s debounce elapses) yields no reason - and if the throttle
+        // were a busy value it'd be masked away, briefly un-greying the bar and
+        // looking like the cooldown cleared. As a separate fallback it just fills
+        // the gap: still throttled + nothing else greyed => stay greyed.
+        if (!reason && greying && SendThrottleRemainingMs() > 0)
+            reason = "cells.blocked_too_fast";
     }
 
     // Hide-mode exemption for the send-throttle window. While the throttle is

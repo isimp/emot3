@@ -241,8 +241,11 @@ const char* PickQbBlockReason(EmoteBlock block, bool greying, SendBusy busy,
     if (!greying) return nullptr;
     if (busy == SendBusy::Typing)                     return "cells.blocked_typing";
     if (busy == SendBusy::KeysHeld && heldLongEnough) return "cells.blocked_moving";
-    if (busy == SendBusy::Throttled)                  return "cells.blocked_too_fast";
     if (block == EmoteBlock::Airborne)                return "cells.blocked_airborne";
+    // NOTE: SendBusy::Throttled is deliberately NOT handled here. The throttle
+    // greys the Quickbar via an INDEPENDENT fallback in QuickbarRender, so a
+    // not-yet-debounced KeysHeld can't mask it (which would flicker the cooldown).
+    // The gate (ShouldSkipEmoteSend) still consumes SendBusy::Throttled to refuse.
     return nullptr;
 }
 
