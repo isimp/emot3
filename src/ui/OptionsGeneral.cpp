@@ -228,6 +228,20 @@ void RenderGeneralOptionsTab() {
                  /*defaultIsOn=*/false);
 #endif
 
+#ifdef EMOT3_PLUS
+    // ===== Updates (Plus only) =====
+    // The base build's auto-updates (incl. its "AllowPrereleases" channel) come
+    // from Nexus; Plus is Provider=None and runs its own notifier (UpdateCheck),
+    // which Nexus' prerelease toggle doesn't reach. This is Plus' own opt-in to be
+    // notified about preview/beta builds. Toggling re-arms the check so a pending
+    // beta surfaces without a reload.
+    OptionsSection(L("opt.sec.updates"));
+    if (PlusCheckbox("opt.gen.notify_prereleases", &g_PlusSettings.NotifyPrereleases,
+                     /*defaultIsOn=*/false)) {
+        InitUpdateCheck();  // re-check against the newly selected channel
+    }
+#endif
+
     // ===== Icons =====
     OptionsSection(L("opt.sec.icons"));
 
