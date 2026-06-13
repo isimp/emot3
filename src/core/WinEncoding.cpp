@@ -3,7 +3,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <Windows.h>
+#include <windows.h>
 
 std::wstring Utf8ToWide(const std::string& utf8) {
     if (utf8.empty()) return std::wstring();

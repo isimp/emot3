@@ -15,12 +15,15 @@
 
 
 # ---- Build outputs --------------------------------------------------------
-# MSBuild writes every per-configuration output under build\<Config>\x64\ (DLL +
-# obj\ intermediates), so build/ is the single output root - each config gets
-# its own folder and incremental database. The .exp / .lib are import-library
-# by-products of the DLL we don't ship; the DLL itself is published via the
-# GitHub Actions release workflow, not from a local build.
+# CMake build trees: build-vs/ (MSVC, multi-config: build-vs/<Config>/...) and
+# build-mingw/ (one dir per flavor for the Ninja cross-build). These hold the
+# CMake cache, generated project/ninja files, intermediates, and the DLLs. The
+# DLL itself is published via the GitHub Actions release workflow, not from a
+# local build. (build/ kept for any legacy MSBuild output.)
 build/
+build-vs/
+build-mingw/
+CMakeUserPresets.json
 
 *.dll
 *.exp

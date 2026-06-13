@@ -24,7 +24,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <Windows.h>
+#include <windows.h>
 
 // WndProc: returns true if it consumed this WM_MOUSEWHEEL (caller returns 0 to
 // keep the game from also scrolling/zooming). Always false in base builds.

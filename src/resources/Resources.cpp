@@ -2,7 +2,7 @@
 #include "StringUtil.h"  // ToLower (shared helper)
 
 #define NOMINMAX
-#include <Windows.h>
+#include <windows.h>
 
 #include <cctype>
 #include <string>

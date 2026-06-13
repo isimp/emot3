@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Generate src/generated/emot3.rc and src/generated/ResourcesGenerated.cpp
-from the contents of resources/. Wired as a pre-build event in
-src/emot3.vcxproj so dropping a new PNG into resources/emotes_official/
+from the contents of resources/. Wired as a CMake build-time custom command
+(see CMakeLists.txt) so dropping a new PNG into resources/emotes_official/
 etc. gets picked up on the next compile without hand-editing anything.
 
 Layout (relative to project root):
@@ -26,8 +26,9 @@ Output:
     src/generated/emot3.rc               -> RCDATA entries for the resource
                                             compiler. Paths are written
                                             relative to the .rc's directory
-                                            (src/generated/), which rc.exe
-                                            resolves correctly under MSBuild.
+                                            (src/generated/); CMake puts that dir
+                                            on the RC include path so both rc.exe
+                                            (MSVC) and windres (MinGW) resolve them.
     src/generated/ResourcesGenerated.cpp -> manifest arrays consumed by
                                             Resources.cpp via the declarations
                                             in Resources.h.
@@ -118,8 +119,9 @@ def write_rc(buckets):
                 f"{BUCKET_CAPACITY}. Bump the base ID spacing in BUCKETS.")
         lines.append(f"// === {folder} (base ID {base_id}) ===")
         for i, (stem, path) in enumerate(files):
-            # Resource compiler under MSBuild runs from the vcxproj's dir
-            # (src/), so paths in the .rc are interpreted from there.
+            # Paths are written relative to the .rc's own directory
+            # (src/generated/); CMake puts that dir on the RC include path so
+            # both rc.exe and windres resolve them. Forward slashes work in both.
             rel = os.path.relpath(path, rc_dir).replace("\\", "/")
             lines.append(f"{base_id + i} RCDATA \"{rel}\"")
         lines.append("")
