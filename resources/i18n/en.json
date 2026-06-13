@@ -377,7 +377,6 @@
   "opt.am.enabled": "Enable auto-motes",
   "opt.am.enabled.on": "auto-motes are active; trigger words in your own watched-channel messages fire the matching emote.",
   "opt.am.enabled.off": "auto-motes never fire; you can still send emotes manually.",
-  "opt.am.enabled_disabled_tip": "Requires the \"Events: Chat\" addon. Install and enable it in Nexus, then this can be turned on.",
   "opt.am.channels_label": "Watched channels:",
   "opt.am.min_interval": "Minimum time between auto-motes",
   "opt.am.min_interval_tip": "Smallest gap between two auto-fires, on top of the global \"Minimum time between sends\" - auto-motes obey both. Keeps a chatty session from firing the same emote too often. Default 15s. Right-click to reset.",

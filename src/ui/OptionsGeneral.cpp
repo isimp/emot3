@@ -247,11 +247,16 @@ void RenderGeneralOptionsTab() {
         }
         ImGui::Spacing();
 
-        // Master enable — only togglable when Events: Chat is present (greyed +
-        // explained otherwise). Auto-saves like the other g_Settings checkboxes.
-        DisabledCheckbox("opt.am.enabled", &g_Settings.AutoMotesEnabled,
-                         /*enabled=*/available, /*defaultIsOn=*/false,
-                         /*disabledTipKey=*/"opt.am.enabled_disabled_tip");
+        // Master enable. ALWAYS toggleable — the "not detected" notice above is
+        // advisory, not a gate. A push-only dependency like Events: Chat can't be
+        // probed reliably the way RTAPI's DataLink can (its EV_ADDON_LOADED doesn't
+        // replay for our re-subscribe after a reload), so hard-disabling on
+        // detection made an emot3 reload look broken until the first chat line.
+        // Firing degrades gracefully to a no-op when the addon is absent. Mirrors
+        // RTAPI's precise-state toggle, which is likewise usable + status-lined,
+        // not disabled. Auto-saves like the other g_Settings checkboxes.
+        CheckboxWithSaveAndTooltip("opt.am.enabled", &g_Settings.AutoMotesEnabled,
+                                   /*defaultIsOn=*/false);
 
         // Watched channels — sub-settings, disabled until the feature is on. Manual
         // checkboxes wrapped in the disabled idiom (DisabledCheckbox would need

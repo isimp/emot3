@@ -374,7 +374,6 @@
   "opt.am.enabled": "Auto-motes aktivieren",
   "opt.am.enabled.on": "auto-motes sind aktiv; Auslösewörter in deinen eigenen Nachrichten auf den beobachteten Kanälen lösen das passende Emote aus.",
   "opt.am.enabled.off": "auto-motes lösen nie aus; du kannst Emotes weiterhin manuell senden.",
-  "opt.am.enabled_disabled_tip": "Benötigt das Addon \"Events: Chat\". Installiere und aktiviere es in Nexus, dann kann dies eingeschaltet werden.",
   "opt.am.channels_label": "Beobachtete Kanäle:",
   "opt.am.min_interval": "Mindestzeit zwischen auto-motes",
   "opt.am.min_interval_tip": "Kleinster Abstand zwischen zwei automatischen Auslösungen, zusätzlich zur globalen \"Mindestzeit zwischen Sendungen\" - auto-motes beachten beide. Verhindert, dass dasselbe Emote in einer regen Sitzung zu oft auslöst. Standard 15 s. Rechtsklick setzt zurück.",
