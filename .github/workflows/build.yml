@@ -179,7 +179,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=PlusDevTools
           cmake --build build-mingw
 
-      - name: Import gate (--mingw: static CRT + no MinGW runtimes)
+      - name: Import gate (--mingw mode, static CRT + no MinGW runtimes)
         run: python3 tools/check_imports.py --mingw build-mingw/emot3_plusdevtools.dll
 
   # Publish-only. Runs on a v* tag, never compiles: it ships the exact
