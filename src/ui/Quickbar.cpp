@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstring>   // std::strcmp (throttle-reason check)
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -185,10 +186,21 @@ void QuickbarRender() {
             reason = "cells.blocked_palette";
     }
 
+    // The send throttle is the ONE reason exempt from Hide: it greys/disables the
+    // cells in place but never pulls the bar. Hiding the whole bar for ~2s right
+    // after your OWN click reads as a glitch (the bar you just used vanishes),
+    // unlike an external state (mounted / typing / moving) where Hide makes sense.
+    // strcmp against the key PickQbBlockReason returns for SendBusy::Throttled, so
+    // the exemption tracks that mapping rather than re-deriving the priority tree.
+    const bool throttleReason =
+        reason && std::strcmp(reason, "cells.blocked_too_fast") == 0;
+
     // One interaction applies to whichever source fired: Hide pulls the whole bar
     // (was game-state only; now any enabled source, since the debounce tamed the
-    // transient cases); Grey dims + blocks the cells in place further down.
-    if (reason && g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide) {
+    // transient cases); Grey dims + blocks the cells in place further down. The
+    // throttle opts out of Hide (above) and always falls through to the grey path.
+    if (reason && !throttleReason &&
+        g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide) {
         g_QbUnusableKey = nullptr;
         return;
     }

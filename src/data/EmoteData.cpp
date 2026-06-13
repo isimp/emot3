@@ -423,6 +423,23 @@ bool LoadEmotesJson(const std::string& path) {
             }
         }
 
+        // Optional auto-mote chat triggers (v1.5). Lowercased + trimmed at
+        // ingress (KeywordMatches expects them pre-lowercased); empties dropped,
+        // dedup first-wins. Distinct from aliases — these are chat-line triggers,
+        // not slash-command variants. Missing key is fine (the common case).
+        {
+            const json& kws = jsonutil::GetArray(item, "auto_keywords");
+            for (const auto& k : kws) {
+                if (!k.is_string()) continue;
+                std::string kw = ToLower(TrimWhitespace(k.get<std::string>()));
+                if (kw.empty()) { changed = true; continue; }
+                if (std::find(e.AutoKeywords.begin(), e.AutoKeywords.end(), kw) == e.AutoKeywords.end())
+                    e.AutoKeywords.push_back(std::move(kw));
+                else
+                    changed = true;
+            }
+        }
+
         bool dup = false;
         for (const auto& p : parsed)
             if (p.Id == e.Id) { dup = true; break; }
@@ -510,6 +527,16 @@ std::string SerializeEmotesJson() {
                 for (size_t k = 0; k < e.Aliases.size(); ++k) {
                     if (k) f << ", ";
                     f << quoted(e.Aliases[k]);
+                }
+                f << "]";
+            }
+            // auto-mote chat triggers — inline, omitted entirely when empty (the
+            // common case), so a catalog without auto-motes stays unchanged.
+            if (!e.AutoKeywords.empty()) {
+                f << ",\n      \"auto_keywords\": [";
+                for (size_t k = 0; k < e.AutoKeywords.size(); ++k) {
+                    if (k) f << ", ";
+                    f << quoted(e.AutoKeywords[k]);
                 }
                 f << "]";
             }

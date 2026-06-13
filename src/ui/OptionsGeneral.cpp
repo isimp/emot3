@@ -1,6 +1,8 @@
 #include "Options.h"
 #include "OptionsCommon.h"
 #include "CharacterState.h"  // RTApiConnected for the precise-detection status line
+#include "ChatWatch.h"        // ChatWatchAvailable (auto-motes dependency gate)
+#include "EmoteData.h"        // g_Emotes / g_EmotesMutex (auto-mote trigger count)
 #include "Globals.h"
 #include "I18n.h"
 #include "Settings.h"
@@ -17,6 +19,7 @@
 #include "imgui/imgui_internal.h"  // PushItemFlag / ImGuiItemFlags_Disabled
 
 #include <algorithm>   // std::max (reset-usage modal button sizing)
+#include <mutex>       // g_EmotesMutex (auto-mote trigger count)
 #include <string>
 #include <vector>
 // ---- Tab: General -----------------------------------------------------
@@ -184,6 +187,28 @@ void RenderGeneralOptionsTab() {
     // Close an open chat / text box (Escape) and send, instead of refusing.
     CheckboxWithSaveAndTooltip("opt.gen.close_chat_on_send", &g_Settings.CloseChatOnSend, /*defaultIsOn=*/false);
 
+    // Global minimum interval between sends (anti-spam). Applies to EVERY surface
+    // — clicks, keybinds, radial, and auto-motes — enforced at the shared send
+    // gate. A manual send inside the window shows the "slow down" cue; an
+    // auto-fire is dropped silently. Persist on release (debounced).
+    {
+        // Shown in SECONDS (stored as ms). 0.75 .. 5.00 s.
+        const float lo = kSendMinIntervalFloorMs / 1000.0f;
+        const float hi = kSendMinIntervalCeilMs  / 1000.0f;
+        float sec = g_Settings.SendMinIntervalMs / 1000.0f;
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(L("opt.gen.send_interval"));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(220.f);
+        if (ImGui::SliderFloat("##send_interval", &sec, lo, hi, "%.2f s")) {
+            if (sec < lo) sec = lo;
+            if (sec > hi) sec = hi;
+            g_Settings.SendMinIntervalMs = (uint32_t)(sec * 1000.0f + 0.5f);  // round to ms
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) RequestSave(SaveKind::Settings);
+        if (ImGui::IsItemHovered()) TooltipText("opt.gen.send_interval_tip");
+    }
+
     // Passive warning when the chat keybind isn't bound. See "Emote
     // send refusal gate" in emot3.md for the design.
     if (APIDefs && !APIDefs->GameBinds.IsBound(EGameBinds_UiChatCommand)) {
@@ -205,6 +230,71 @@ void RenderGeneralOptionsTab() {
     PlusCheckbox("opt.gen.swallow_on_send", &g_PlusSettings.SwallowInputOnSend,
                  /*defaultIsOn=*/false);
 #endif
+
+    // ===== Auto-motes (chat triggers) =====
+    // Master enable + watched channels. The per-emote trigger WORDS live in the
+    // Catalog tab's "Chat triggers" field; this is the on/off + scope. Requires
+    // the optional "Events: Chat" addon (core/ChatWatch) — the enable is greyed
+    // until it's present, and nothing fires without it.
+    OptionsSection(L("opt.am.section"));
+    {
+        const bool available = ChatWatchAvailable();
+        ImGui::TextWrapped("%s", L("opt.am.hlp_top"));
+        if (!available) {
+            // Amber dependency notice (same styling as the competitive banner).
+            // Reads false until the first chat line if it loaded before us, so the
+            // wording stays soft ("not detected").
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+            ImGui::TextWrapped("%s", L("opt.am.needs_events_chat"));
+            ImGui::PopStyleColor();
+        }
+        ImGui::Spacing();
+
+        // Master enable — only togglable when Events: Chat is present (greyed +
+        // explained otherwise). Auto-saves like the other g_Settings checkboxes.
+        DisabledCheckbox("opt.am.enabled", &g_Settings.AutoMotesEnabled,
+                         /*enabled=*/available, /*defaultIsOn=*/false,
+                         /*disabledTipKey=*/"opt.am.enabled_disabled_tip");
+
+        // Watched channels — sub-settings, disabled until the feature is on. Manual
+        // checkboxes wrapped in the disabled idiom (DisabledCheckbox would need
+        // per-channel on/off tooltip keys; a single help label is plenty here).
+        const bool active = g_Settings.AutoMotesEnabled;
+        if (!active) {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+        }
+        ImGui::TextDisabled("%s", L("opt.am.channels_label"));
+        auto channelToggle = [&](const char* key, bool* v) {
+            if (ImGui::Checkbox(L(key), v)) RequestSave(SaveKind::Settings);
+        };
+        channelToggle("opt.am.ch_local",   &g_Settings.AutoMoteWatchLocal);
+        ImGui::SameLine(180.f);
+        channelToggle("opt.am.ch_party",   &g_Settings.AutoMoteWatchParty);
+        ImGui::SameLine(340.f);
+        channelToggle("opt.am.ch_map",     &g_Settings.AutoMoteWatchMap);
+        channelToggle("opt.am.ch_squad",   &g_Settings.AutoMoteWatchSquad);
+        ImGui::SameLine(180.f);
+        channelToggle("opt.am.ch_guild",   &g_Settings.AutoMoteWatchGuild);
+        ImGui::SameLine(340.f);
+        channelToggle("opt.am.ch_whisper", &g_Settings.AutoMoteWatchWhisper);
+        if (!active) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
+
+        // Tie to the Catalog, where the per-emote trigger WORDS are set: show how
+        // many emotes carry triggers, and nudge when the feature's on but nothing
+        // is wired yet. Counting the catalog here is cheap (only while this tab is
+        // open). Shown un-greyed — it's an informational link, not a control.
+        int triggerCount = 0;
+        {
+            std::lock_guard<std::mutex> lk(g_EmotesMutex);
+            for (const auto& e : g_Emotes) if (!e.AutoKeywords.empty()) ++triggerCount;
+        }
+        ImGui::Spacing();
+        if (triggerCount > 0)
+            ImGui::TextDisabled(L("opt.am.trigger_count"), triggerCount);
+        else if (active)
+            ImGui::TextDisabled("%s", L("opt.am.no_triggers"));
+    }
 
     // ===== Icons =====
     OptionsSection(L("opt.sec.icons"));

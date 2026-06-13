@@ -350,8 +350,38 @@ struct Settings {
     // (known_bundled_emotes), like ManuallyUnlocked.
     std::vector<std::string>      KnownBundledEmotes;
 
+    // ---- Auto-motes (Emote::AutoKeywords in data/EmoteData.h; core/ChatWatch) ----
+    // Master switch. When on AND the "Events: Chat" addon is present, the user's
+    // OWN sent chat lines are matched against the auto-mote rules and fire a
+    // catalog emote. Off by default — it reads chat + auto-acts, so it's strictly
+    // opt-in (and always competitive-locked via the send gate).
+    bool                          AutoMotesEnabled     = false;
+    // Watched chat channels (own messages only). Say/Local + Party on by default
+    // (the channels most users chat casually in); Map/Squad/Guild/Whisper off.
+    // The competitive channels (Team PvP/WvW) are never options. See ChatWatch.
+    bool                          AutoMoteWatchLocal   = true;   // Say / Local
+    bool                          AutoMoteWatchParty   = true;
+    bool                          AutoMoteWatchMap     = false;
+    bool                          AutoMoteWatchSquad   = false;
+    bool                          AutoMoteWatchGuild   = false;
+    bool                          AutoMoteWatchWhisper = false;
+
+    // Global minimum interval between any two emote/me-mote sends, across EVERY
+    // surface (click, keybind, radial, auto-mote). Anti-spam throttle enforced at
+    // the shared send gate (core/EmoteAction ShouldSkipEmoteSend chokepoint). A
+    // manual send within the window is refused (with the in-window "slow down"
+    // cue); an auto-fire within it is dropped silently. Clamped to
+    // [kSendMinIntervalFloorMs, kSendMinIntervalCeilMs] on load.
+    uint32_t                      SendMinIntervalMs    = 2000;
+
     std::vector<FavoriteCategory> FavoriteCategories;
 };
+
+// Global send-interval bounds — shared by the settings sanitize clamp, the
+// General > Sending slider, and the gate throttle. constexpr at namespace scope =
+// internal linkage (matches kMaxNameBytes), so each TU sees one value.
+constexpr uint32_t kSendMinIntervalFloorMs = 750;
+constexpr uint32_t kSendMinIntervalCeilMs  = 5000;
 
 extern Settings g_Settings;
 

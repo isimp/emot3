@@ -56,6 +56,7 @@ struct RowBuffer {
     std::string name;
     std::string command;   // editable localized command (was read-only before)
     std::string aliases;   // alternate commands, space-separated edit buffer
+    std::string autoKeywords;  // auto-mote chat triggers, space-separated edit buffer
     bool        initialized = false;
 };
 
@@ -174,6 +175,9 @@ void RenderEmotesTab() {
         ImGui::TextWrapped("%s", L("opt.em.icon_explainer"));
         ImGui::Unindent();
     }
+
+    // (Auto-motes master enable + watched channels live in Options > General now;
+    // this tab only carries the per-emote "Chat triggers" field in each row.)
 
     // ---- "Add to catalog" inline input ----
     //
@@ -387,6 +391,17 @@ void RenderEmotesTab() {
             ++cmdCounts[em.Command];
             ++nameCounts[em.Name];
         }
+
+        // How many emotes use each auto-mote trigger word, for the per-row
+        // "shared with another emote" note. Only ONE emote fires per chat line
+        // (the first in catalog storage order — see core/ChatWatch), so a word on
+        // two emotes silently shadows the later one; this surfaces that. Built once
+        // (read-only; a mid-loop trigger edit is reflected next frame — fine for a
+        // soft note, unlike the cmd/name counts that drive validation).
+        std::unordered_map<std::string, int> kwOwners;
+        for (const auto& em : g_Emotes)
+            for (const auto& kw : em.AutoKeywords)
+                ++kwOwners[kw];
         auto sharesValue = [](const std::unordered_map<std::string, int>& counts,
                               const std::string& value, bool selfCounted) {
             auto it = counts.find(value);
@@ -400,8 +415,8 @@ void RenderEmotesTab() {
         // inputs scale with the panel and can't overflow its right edge.
         float labelColW = 0.f;
         for (const char* k : { "opt.em.lbl_command", "opt.em.lbl_name",
-                               "opt.em.lbl_aliases", "opt.em.lbl_flags",
-                               "opt.em.lbl_icon" })
+                               "opt.em.lbl_aliases", "opt.am.lbl_keywords",
+                               "opt.em.lbl_flags", "opt.em.lbl_icon" })
             labelColW = std::max(labelColW, ImGui::CalcTextSize(L(k)).x);
         labelColW += ImGui::GetStyle().FramePadding.x * 2.f;
 
@@ -417,6 +432,11 @@ void RenderEmotesTab() {
                 for (const auto& a : e.Aliases) {
                     if (!rb.aliases.empty()) rb.aliases += ' ';
                     rb.aliases += a;
+                }
+                rb.autoKeywords.clear();  // join the emote's chat triggers, space-separated
+                for (const auto& k : e.AutoKeywords) {
+                    if (!rb.autoKeywords.empty()) rb.autoKeywords += ' ';
+                    rb.autoKeywords += k;
                 }
                 rb.initialized = true;
             }
@@ -617,6 +637,85 @@ void RenderEmotesTab() {
                             joined += a;
                         }
                         rb.aliases = joined;
+                    }
+                }
+
+                // ---- Chat triggers (auto-motes) ----
+                // Whole-word, case-insensitive words that auto-fire THIS emote when
+                // they appear in one of your OWN sent chat lines. Space/comma-
+                // separated; lowercased + deduped on commit. Empty = never auto-
+                // fires. Distinct from Aliases (search/unlock slash variants). The
+                // master enable + watched channels live in Options > General; this
+                // field is greyed until auto-motes is enabled there.
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(L("opt.am.lbl_keywords"));
+                ImGui::TableSetColumnIndex(1);
+                {
+                    const bool amOn = g_Settings.AutoMotesEnabled;
+                    if (!amOn) {
+                        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+                        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+                    }
+                    char kwBuf[256];
+                    strncpy_s(kwBuf, sizeof(kwBuf), rb.autoKeywords.c_str(), _TRUNCATE);
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    if (ImGui::InputTextWithHint("##autokeywords", L("opt.am.keywords_hint"),
+                                                 kwBuf, sizeof(kwBuf))) {
+                        rb.autoKeywords = kwBuf;
+                    }
+                    bool kwActive = ImGui::IsItemActive();
+                    if (amOn && ImGui::IsItemHovered())  // disabled items don't hover-report
+                        TooltipText("opt.am.keywords_tooltip");
+                    // Commit when not actively editing: lowercase + trim each token,
+                    // drop empties, dedupe (first-wins), canonicalize the buffer. A
+                    // no-op while disabled (the input can't change).
+                    if (!kwActive) {
+                        std::vector<std::string> parsed;
+                        std::string tok;
+                        auto flush = [&]() {
+                            std::string t = TrimWhitespace(tok);
+                            tok.clear();
+                            if (t.empty()) return;
+                            std::transform(t.begin(), t.end(), t.begin(),
+                                           [](unsigned char c){ return (char)std::tolower(c); });
+                            if (std::find(parsed.begin(), parsed.end(), t) == parsed.end())
+                                parsed.push_back(std::move(t));
+                        };
+                        for (char ch : rb.autoKeywords) {
+                            if (ch == ' ' || ch == '\t' || ch == ',') flush();
+                            else tok += ch;
+                        }
+                        flush();
+                        if (parsed != e.AutoKeywords) { e.AutoKeywords = parsed; emoteEdited = true; }
+                        std::string joined;
+                        for (const auto& k : parsed) {
+                            if (!joined.empty()) joined += ' ';
+                            joined += k;
+                        }
+                        rb.autoKeywords = joined;
+                    }
+                    if (!amOn) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
+
+                    // Shared-trigger note: any of this emote's words also set on
+                    // another emote. Only one emote fires per chat line (the first
+                    // in catalog storage order — core/ChatWatch), so a shared word
+                    // silently shadows the later emote. Surfaced as a soft note,
+                    // same idiom as the "shared command" hint above. Shown
+                    // regardless of the toggle — it's a data correctness hint.
+                    std::string shared;
+                    for (const auto& kw : e.AutoKeywords) {
+                        auto it = kwOwners.find(kw);
+                        if (it != kwOwners.end() && it->second > 1) {
+                            if (!shared.empty()) shared += ", ";
+                            shared += kw;
+                        }
+                    }
+                    if (!shared.empty()) {
+                        ImGui::TextDisabled(L("opt.am.shared_trigger"), shared.c_str());
+                        if (ImGui::IsItemHovered())
+                            TooltipText("opt.am.shared_trigger_tooltip");
                     }
                 }
 
