@@ -371,7 +371,7 @@ void RenderEmotesTab() {
         // user is already used to.
         const ImVec4 kCmdColor(0.92f, 0.78f, 0.32f, 1.f);
 
-        // Per-frame collision counts over the stored commands/names. The
+        // Collision counts over the stored commands/names (cached - see below). The
         // per-row "another emote shares this command/name" checks used to call
         // CommandCollidesWith / NameCollidesWith, each an O(N) scan of
         // g_Emotes - O(N^2) once many rows are expanded. Counting once is O(N)
@@ -385,12 +385,24 @@ void RenderEmotesTab() {
         // commit sites update these counts (--old, ++new) before mutating the
         // emote, so a later row this frame sees the change just as the scan
         // would have.
-        std::unordered_map<std::string, int> cmdCounts, nameCounts;
-        cmdCounts.reserve(g_Emotes.size());
-        nameCounts.reserve(g_Emotes.size());
-        for (const auto& em : g_Emotes) {
-            ++cmdCounts[em.Command];
-            ++nameCounts[em.Name];
+        // Cached: rebuilt only when the catalog version changes, NOT per frame.
+        // Rebuilding three string-keyed hash maps every frame was O(N) heap churn
+        // even with every row collapsed - a periodic allocator spike. A mid-loop
+        // commit bumps the version (MarkEmotesDirty) so the fresh rebuild lands next
+        // frame; the commit sites still live-adjust the counts below for the rest of
+        // THIS frame, exactly as the per-frame rebuild used to be observed.
+        static std::unordered_map<std::string, int> cmdCounts, nameCounts, kwOwners;
+        static uint64_t s_countsVer = (uint64_t)-1;
+        const bool rebuildCounts = (s_countsVer != curVer);
+        if (rebuildCounts) {
+            s_countsVer = curVer;
+            cmdCounts.clear(); nameCounts.clear(); kwOwners.clear();
+            cmdCounts.reserve(g_Emotes.size());
+            nameCounts.reserve(g_Emotes.size());
+            for (const auto& em : g_Emotes) {
+                ++cmdCounts[em.Command];
+                ++nameCounts[em.Name];
+            }
         }
 
         // How many emotes use each auto-mote trigger word, for the per-row
@@ -399,10 +411,10 @@ void RenderEmotesTab() {
         // two emotes silently shadows the later one; this surfaces that. Built once
         // (read-only; a mid-loop trigger edit is reflected next frame — fine for a
         // soft note, unlike the cmd/name counts that drive validation).
-        std::unordered_map<std::string, int> kwOwners;
-        for (const auto& em : g_Emotes)
-            for (const auto& kw : em.AutoKeywords)
-                ++kwOwners[kw];
+        if (rebuildCounts)
+            for (const auto& em : g_Emotes)
+                for (const auto& kw : em.AutoKeywords)
+                    ++kwOwners[kw];
         auto sharesValue = [](const std::unordered_map<std::string, int>& counts,
                               const std::string& value, bool selfCounted) {
             auto it = counts.find(value);
@@ -899,30 +911,38 @@ void RenderEmotesTab() {
                                      // stays if a staged radial wheel still refs it)
     }
 
-    // Prune buffers whose emote no longer exists. Bounded scan; map is small.
-    // Keyed by Id, and covers every emote (core included) so an in-progress
-    // edit isn't pruned out from under the user.
+    // Prune UI state (edit buffers / icon status / expand flags) for emotes that no
+    // longer exist. Keyed by Id, and covers every emote (core included) so an
+    // in-progress edit isn't pruned out from under the user. Gated on the catalog
+    // version: ids only appear/vanish on add/delete/reload, each of which bumps it,
+    // so an unchanged catalog skips the whole O(N) live-set build + three map walks
+    // (that ran every frame before - a periodic allocator spike even when idle).
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        std::set<std::string> live;
-        for (const auto& e : g_Emotes) live.insert(e.Id);
-        for (auto it = s_rowBufs.begin(); it != s_rowBufs.end(); ) {
-            if (live.find(it->first) == live.end())
-                it = s_rowBufs.erase(it);
-            else
-                ++it;
-        }
-        for (auto it = s_iconStatus.begin(); it != s_iconStatus.end(); ) {
-            if (live.find(it->first) == live.end())
-                it = s_iconStatus.erase(it);
-            else
-                ++it;
-        }
-        for (auto it = s_rowOpen.begin(); it != s_rowOpen.end(); ) {
-            if (live.find(it->first) == live.end())
-                it = s_rowOpen.erase(it);
-            else
-                ++it;
+        static uint64_t s_prunedVer = (uint64_t)-1;
+        const uint64_t curV = g_EmoteCatalogVersion.load(std::memory_order_relaxed);
+        if (s_prunedVer != curV) {
+            s_prunedVer = curV;
+            std::set<std::string> live;
+            for (const auto& e : g_Emotes) live.insert(e.Id);
+            for (auto it = s_rowBufs.begin(); it != s_rowBufs.end(); ) {
+                if (live.find(it->first) == live.end())
+                    it = s_rowBufs.erase(it);
+                else
+                    ++it;
+            }
+            for (auto it = s_iconStatus.begin(); it != s_iconStatus.end(); ) {
+                if (live.find(it->first) == live.end())
+                    it = s_iconStatus.erase(it);
+                else
+                    ++it;
+            }
+            for (auto it = s_rowOpen.begin(); it != s_rowOpen.end(); ) {
+                if (live.find(it->first) == live.end())
+                    it = s_rowOpen.erase(it);
+                else
+                    ++it;
+            }
         }
     }
 
