@@ -250,6 +250,20 @@ void Sample(std::vector<Snapshot>& out) {
         out.push_back({ "catalog view (cached index)", c, b });
     }
 
+    // Bundled emote i18n table (s_table from emotes_i18n.json): every bundled emote x
+    // every language's command/name/aliases. Loaded once, resident for the addon's life
+    // (seeding, language switch, search, unlock matching). Our heap; was uncounted.
+    {
+        size_t c = 0, b = 0; BundledEmoteTableStats(c, b);
+        out.push_back({ "bundled emote i18n (s_table)", c, b });
+    }
+    // Unlock match index (GetBundledUnlockInfo.normKeyToId): the cross-language
+    // normalized command/alias -> id map the GW2-API unlock sync resolves against.
+    {
+        size_t c = 0, b = 0; BundledUnlockIndexStats(c, b);
+        out.push_back({ "unlock match index", c, b });
+    }
+
     // /me-mote bundled-seed table. Lazily parsed file-static behind
     // MeMotesBundledSeedCount/Bytes accessors so we don't reach into the
     // anonymous-namespace globals (same accessor pattern TextCache +
@@ -375,6 +389,19 @@ void Sample(std::vector<Snapshot>& out) {
                     prof::displayMap().size(),
                     prof::displayMap().size() *
                         (sizeof(std::string) + sizeof(prof::SectionStat) + 32) });
+
+    // MemoryMonitor measuring ITSELF: the rows() map - each RowStat carries two
+    // kHistLen-float history rings (~488 B each) - plus the DLL/WS history rings and any
+    // baseline copy. Sampled from last frame's rows() (one-frame lag, fine for a dev tool).
+    {
+        size_t c = rows().size();
+        size_t b = rows().size() * (sizeof(std::string) + sizeof(RowStat) + 32)
+                 + 2 * sizeof(prof::Ring);
+        if (baseline().active)
+            b += baseline().rows.size() *
+                 (sizeof(std::string) + sizeof(std::pair<size_t, size_t>) + 32);
+        out.push_back({ "memmon (self)", c, b });
+    }
 }
 
 // True when the last `tail` samples in `r` are monotonically non-decreasing

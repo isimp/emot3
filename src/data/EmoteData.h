@@ -166,6 +166,12 @@ struct BundledUnlockInfo {
 };
 const BundledUnlockInfo& GetBundledUnlockInfo();
 
+// Dev-tool (MemoryMonitor) accessors: estimated entry count + heap footprint of the two
+// bundled startup tables (the emote-i18n table behind seeding/search, and the unlock
+// match index). Within ~2x; report 0 until loaded/built. Only called under EMOT3_DEVTOOLS.
+void BundledEmoteTableStats(size_t& count, size_t& bytes);
+void BundledUnlockIndexStats(size_t& count, size_t& bytes);
+
 // Normalize a slash command for the send path: trim, force a leading '/',
 // lowercase. The send path (SendOrFillEmote in EmoteAction.cpp) skips index 0
 // assuming it's the '/', so a command without one loses its first character.
