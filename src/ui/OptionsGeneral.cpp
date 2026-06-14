@@ -27,11 +27,17 @@
 void RenderGeneralOptionsTab() {
     PROFILE_SCOPE("opt.general");  // dev perf overlay
 
-    // Plus-only: a newer release is available. The public build auto-updates via
-    // Nexus; the Plus build is manual, so surface a banner with the releases link +
-    // a "copy link" button (we copy rather than open a browser - keeps the player
-    // in-game). PlusUpdateAvailable() is a false stub in non-Plus builds, so this
-    // whole block compiles away there.
+#ifdef EMOT3_PLUS
+    // ===== Updates (Plus only) =====
+    // The base build auto-updates through Nexus (incl. its per-addon
+    // AllowPrereleases channel); Plus is Provider=None, so it runs its own
+    // notifier (UpdateCheck) and carries its own preview-build opt-in, which
+    // Nexus' toggle can't reach. Grouped at the very top so the "update available"
+    // banner and the opt-in that governs it sit together. Compiles away entirely
+    // in base builds (the whole block is gated, and the calls are stubs there).
+    OptionsSection(L("opt.sec.updates"));
+    // A newer release was found: surface the releases link + a "copy link" button
+    // (we copy rather than open a browser - keeps the player in-game).
     if (PlusUpdateAvailable()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
         ImGui::TextWrapped(L("opt.gen.update_available"), PlusLatestVersion().c_str());
@@ -40,9 +46,14 @@ void RenderGeneralOptionsTab() {
         if (ImGui::Button(L("opt.gen.update_copy")))
             ImGui::SetClipboardText(ReleasesUrl());
         ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
     }
+    // Opt into being notified about preview / beta prereleases too. Toggling
+    // re-arms the check so a pending beta surfaces without a reload.
+    if (PlusCheckbox("opt.gen.notify_prereleases", &g_PlusSettings.NotifyPrereleases,
+                     /*defaultIsOn=*/false)) {
+        InitUpdateCheck();  // re-check against the newly selected channel
+    }
+#endif
 
     // Primary visibility toggle at the top of the tab - same
     // affordance as the Quickbar tab's main toggle, same primary-
@@ -226,20 +237,6 @@ void RenderGeneralOptionsTab() {
     // emotes" presentation below (the swallow handles held keys instead).
     PlusCheckbox("opt.gen.swallow_on_send", &g_PlusSettings.SwallowInputOnSend,
                  /*defaultIsOn=*/false);
-#endif
-
-#ifdef EMOT3_PLUS
-    // ===== Updates (Plus only) =====
-    // The base build's auto-updates (incl. its "AllowPrereleases" channel) come
-    // from Nexus; Plus is Provider=None and runs its own notifier (UpdateCheck),
-    // which Nexus' prerelease toggle doesn't reach. This is Plus' own opt-in to be
-    // notified about preview/beta builds. Toggling re-arms the check so a pending
-    // beta surfaces without a reload.
-    OptionsSection(L("opt.sec.updates"));
-    if (PlusCheckbox("opt.gen.notify_prereleases", &g_PlusSettings.NotifyPrereleases,
-                     /*defaultIsOn=*/false)) {
-        InitUpdateCheck();  // re-check against the newly selected channel
-    }
 #endif
 
     // ===== Icons =====
