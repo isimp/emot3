@@ -103,6 +103,11 @@ struct MmIconStatus {
 };
 std::unordered_map<std::string, MmIconStatus> s_mmIconStatus;
 
+// Set true by FieldRow / the alias field when their input is focused this frame;
+// the row loop reads it (then resets) to tell the RowCuller this row is being
+// edited, so it's never culled mid-type. File scope so FieldRow can reach it.
+bool s_mmRowActive = false;
+
 // Seed the per-row buffer from the live MeMote. Aliases re-joined with single
 // spaces (matches the catalog's display form).
 void Seed(RowBuffer& rb, const MeMote& m) {
@@ -213,6 +218,7 @@ bool FieldRow(const char* labelKey, const char* hintKey, const char* idSuffix,
     if (InputFieldWithHint(inputId.c_str(), hintKey, scratch, sizeof scratch, o,
                            &active, &hovered))
         buf = scratch;
+    if (active) s_mmRowActive = true;   // exempt this row from culling while typing
 
     // Invalid: explanatory tooltip on hover (the red border is drawn by the helper).
     if (invalid && invalidTooltipKey && hovered)
@@ -312,35 +318,65 @@ void RenderMeMotesTab() {
         s_newIdBuf[0] = '\0';         // clear input on commit
     }
 
-    // Snapshot Ids under the mutex so per-row work doesn't hold it across
-    // ImGui draws. Sort by Id for stable display order (matches catalog).
-    std::vector<std::string> ids;
-    {
-        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-        ids.reserve(g_MeMotes.size());
-        for (const auto& m : g_MeMotes) ids.push_back(m.Id);
-    }
-    std::sort(ids.begin(), ids.end());
+    // Filter + sort state (declared before the cached view that consumes them).
+    static char s_filter[64] = {};
+    static int  s_sortMode   = 0;   // 0 Id, 1 Name
 
-    // Prune per-row UI state for /me-motes that no longer exist, mirroring
-    // OptionsEmotes' prune pass. Today the Delete button is the only removal
-    // path and it erases both maps, but this keeps them robust against any
-    // future bulk-removal path AND forces a fresh re-Seed after a reload that
-    // repopulated g_MeMotes from disk (otherwise a surviving, initialized
-    // buffer could commit stale text over the freshly-loaded value).
-    {
-        std::unordered_set<std::string> live(ids.begin(), ids.end());
-        for (auto it = s_rowOpen.begin(); it != s_rowOpen.end(); ) {
-            if (live.count(it->first)) ++it;
-            else                       it = s_rowOpen.erase(it);
+    // Cached display view: a filtered + sorted snapshot of {Id, Name, IconPath},
+    // built in ONE mutex pass and rebuilt only on filter / sort / catalog-version
+    // change. The row loop reads this snapshot - no per-row FindMeMote + lock (the
+    // old O(N^2)). All per-row edit/expand/icon state is Id-keyed, so reordering,
+    // filtering, or culling a row never touches it. Sort keys read COMMITTED values,
+    // so a row never jumps while you type (it re-sorts after a defocus bumps ver).
+    struct MmEntry { std::string id, name, iconPath; };
+    static struct {
+        uint64_t             ver   = (uint64_t)-1;
+        int                  sort  = -1;
+        std::string          filt;
+        size_t               total = 0;
+        std::vector<MmEntry> rows;
+    } s_view;
+    const uint64_t curVer    = g_MeMotesVersion.load(std::memory_order_relaxed);
+    const bool     verChanged = (s_view.ver != curVer);
+    if (verChanged || s_view.sort != s_sortMode || s_view.filt != s_filter) {
+        s_view.ver = curVer; s_view.sort = s_sortMode; s_view.filt = s_filter;
+        const std::string needle = ToLower(s_filter);
+        std::unordered_set<std::string> liveAll;
+        s_view.rows.clear();
+        {
+            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+            s_view.total = g_MeMotes.size();
+            liveAll.reserve(g_MeMotes.size());
+            s_view.rows.reserve(g_MeMotes.size());
+            for (const auto& m : g_MeMotes) {
+                liveAll.insert(m.Id);
+                if (!needle.empty()) {
+                    bool hit = ToLower(m.Id + " " + m.Name).find(needle) != std::string::npos;
+                    if (!hit)
+                        for (const auto& a : m.Aliases)
+                            if (ToLower(a).find(needle) != std::string::npos) { hit = true; break; }
+                    if (!hit) continue;
+                }
+                s_view.rows.push_back({ m.Id, m.Name, m.IconPath });
+            }
         }
-        for (auto it = s_rowBufs.begin(); it != s_rowBufs.end(); ) {
-            if (live.count(it->first)) ++it;
-            else                       it = s_rowBufs.erase(it);
-        }
-        for (auto it = s_mmIconStatus.begin(); it != s_mmIconStatus.end(); ) {
-            if (live.count(it->first)) ++it;
-            else                       it = s_mmIconStatus.erase(it);
+        const int sm = s_sortMode;
+        std::stable_sort(s_view.rows.begin(), s_view.rows.end(),
+            [sm](const MmEntry& a, const MmEntry& b) {
+                if (sm == 1) { std::string na = ToLower(a.name), nb = ToLower(b.name);
+                               if (na != nb) return na < nb; return a.id < b.id; }
+                return a.id < b.id;
+            });
+        // Prune per-row UI state only when the catalog actually changed (delete /
+        // reload), and against ALL ids - never the filtered view.
+        if (verChanged) {
+            auto prune = [&](auto& mp) {
+                for (auto it = mp.begin(); it != mp.end(); ) {
+                    if (liveAll.count(it->first)) ++it;
+                    else                          it = mp.erase(it);
+                }
+            };
+            prune(s_rowOpen); prune(s_rowBufs); prune(s_mmIconStatus);
         }
     }
 
@@ -348,7 +384,7 @@ void RenderMeMotesTab() {
     static int s_setAllOpen = 0;
     {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled(L("opt.mm.count"), (int)ids.size());
+        ImGui::TextDisabled(L("opt.mm.count"), (int)s_view.total);
 
         // Rescan / Expand all / Collapse all, right-aligned together (same as the
         // Emote tab). Rescan re-stats every row so a PNG dropped at icons/<id>.png
@@ -374,6 +410,22 @@ void RenderMeMotesTab() {
         if (ImGui::SmallButton(L("opt.em.collapse_all"))) s_setAllOpen = -1;
     }
 
+    // Filter + sort, pinned above the list (same toolbar as the Emote tab).
+    {
+        const ImGuiStyle& st = ImGui::GetStyle();
+        const float sortW   = 150.f;
+        float       filterW = ImGui::GetContentRegionAvail().x - sortW - st.ItemSpacing.x;
+        if (filterW < 120.f) filterW = 120.f;
+        ImGui::SetNextItemWidth(filterW);
+        ImGui::InputTextWithHint("##mmfilter", L("opt.cat.filter_hint"),
+                                 s_filter, sizeof(s_filter));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(sortW);
+        const char* sortItems[] = { L("opt.cat.sort_id"), L("opt.cat.sort_name") };
+        ImGui::Combo("##mmsort", &s_sortMode, sortItems, 2);
+        if (ImGui::IsItemHovered()) TooltipText("opt.cat.sort_tip");
+    }
+
     // Width of the shared label column — max of every field-label width so
     // inputs across rows align (matches OptionsEmotes' labelColW pre-calc).
     float labelColW = 0.f;
@@ -390,32 +442,31 @@ void RenderMeMotesTab() {
     // ---- Scrollable bordered fixed-height list -----------------------
     ImGui::BeginChild("##memotelist", ImVec2(0, 320.f), true);
 
-    if (ids.empty()) {
-        ImGui::TextDisabled("%s", L("opt.mm.empty"));
+    if (s_view.rows.empty()) {
+        ImGui::TextDisabled("%s", L(s_view.total == 0 ? "opt.mm.empty"
+                                                      : "opt.cat.no_filter_match"));
         ImGui::EndChild();
         s_setAllOpen = 0;
         return;
     }
 
-    for (const std::string& id : ids) {
-        bool exists = false;
-        std::string displayName;
-        std::string iconPathSnapshot;
-        {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            if (const MeMote* m = FindMeMote(id)) {
-                exists = true;
-                displayName       = m->Name.empty() ? id : m->Name;
-                iconPathSnapshot  = m->IconPath;
-            }
-        }
-        if (!exists) continue;
+    static RowCuller s_cull;
+    s_cull.Begin();
+    for (const MmEntry& ent : s_view.rows) {
+        const std::string& id              = ent.id;
+        const std::string& displayName     = ent.name.empty() ? id : ent.name;
+        const std::string& iconPathSnapshot = ent.iconPath;
+
+        // Expand/Collapse all must reach every row, even ones about to be culled.
+        if (s_setAllOpen != 0) s_rowOpen[id] = (s_setAllOpen > 0);
+        // Cull off-screen rows (a spacer keeps the scroll height). The actively-
+        // edited row is never culled - see s_mmRowActive / EndRow below.
+        if (!s_cull.BeginRow(id)) continue;
 
         ImGui::PushID(id.c_str());
+        s_mmRowActive = false;   // FieldRow / the alias field OR into this
 
-        // Apply queued Expand-all / Collapse-all before reading state.
         bool& rowOpen = s_rowOpen[id];
-        if (s_setAllOpen != 0) rowOpen = (s_setAllOpen > 0);
 
         // ---- Row header: ArrowButton + colored Id + Delete -----------
         if (ImGui::ArrowButton("##expand", rowOpen ? ImGuiDir_Down : ImGuiDir_Right))
@@ -445,6 +496,7 @@ void RenderMeMotesTab() {
             ImGui::Separator();
             ImGui::Spacing();
             ImGui::PopID();
+            s_cull.EndRow(id, false);   // collapsed: measure height, not active
             continue;
         }
 
@@ -645,6 +697,7 @@ void RenderMeMotesTab() {
                                        aliasBuf, sizeof(aliasBuf), {}, &aliasActive)) {
                     rb.aliases = aliasBuf;
                 }
+                if (aliasActive) s_mmRowActive = true;
                 if (!aliasActive) {
                     std::vector<std::string> parsed = ParseAliases(rb.aliases);
                     std::lock_guard<std::mutex> lk(g_MeMotesMutex);
@@ -804,6 +857,7 @@ void RenderMeMotesTab() {
         ImGui::Separator();
         ImGui::Spacing();
         ImGui::PopID();
+        s_cull.EndRow(id, s_mmRowActive);   // measure height; flag active edit
     }
     ImGui::EndChild();
     s_setAllOpen = 0;

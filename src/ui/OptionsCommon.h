@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 
 enum class EFavoriteRefType;  // data/Settings.h (RadialMembershipNote param)
 
@@ -70,6 +71,37 @@ struct InputFieldOpts {
 bool InputFieldWithHint(const char* id, const char* hintKey,
                         char* buf, size_t bufSize, const InputFieldOpts& opts,
                         bool* outActive = nullptr, bool* outHovered = nullptr);
+
+// Off-screen row culling for a vertical list of VARIABLE-height rows inside a
+// scrolling child (the catalog / me-mote editors). Every per-row buffer is keyed
+// by stable Id, so skipping a row's RENDER never touches its state - this only
+// avoids the per-frame widget + string work for rows the user can't see. Usage,
+// once per list (the instance is static so heights persist across frames):
+//
+//   static RowCuller cull;  cull.Begin();          // at the top of the child
+//   for (const std::string& id : view) {
+//       if (!cull.BeginRow(id)) continue;          // off-screen -> spacer drawn, skip
+//       ImGui::PushID(id.c_str());
+//       ... render the row (header + optional body + trailing separator) ...
+//       ImGui::PopID();
+//       cull.EndRow(id, rowHadActiveField);        // measure height; flag active edit
+//   }
+//
+// The actively-edited row (rowHadActiveField == true this frame) is exempted from
+// culling next frame, so typing and commit-on-defocus are never interrupted by a
+// wheel-scroll. A row's height is learned on its first real render, then reused as
+// a spacer while it's off-screen so the scrollbar geometry stays correct.
+class RowCuller {
+public:
+    void Begin();                            // capture the visible scroll band
+    bool BeginRow(const std::string& id);    // true: render for real; false: skipped
+    void EndRow(const std::string& id, bool active);
+    void Forget(const std::string& id);      // drop a deleted row's cached height
+private:
+    std::unordered_map<std::string, float> h_;   // measured start-to-start row heights
+    std::string active_, activeNext_;            // active-edit row (this/next frame)
+    float top_ = 0.f, bot_ = 0.f, y0_ = 0.f;
+};
 
 // Muted section header + hairline that groups a tab's controls ("Layout",
 // "Window", "Look", ...) without the weight of a CollapsingHeader.

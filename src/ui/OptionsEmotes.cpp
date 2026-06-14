@@ -377,21 +377,78 @@ void RenderEmotesTab() {
         if (ImGui::SmallButton(L("opt.em.collapse_all"))) s_setAllOpen = -1;
     }
 
+    // Filter + sort, pinned above the scrolling list. Both read COMMITTED values and
+    // only rebuild the (cached) display order on change, so rows never jump while you
+    // type into a field - see the view cache inside the child below.
+    static char s_filter[64] = {};
+    static int  s_sortMode   = 0;   // 0 Id, 1 Name, 2 Command
+    {
+        const ImGuiStyle& st = ImGui::GetStyle();
+        const float sortW   = 150.f;
+        float       filterW = ImGui::GetContentRegionAvail().x - sortW - st.ItemSpacing.x;
+        if (filterW < 120.f) filterW = 120.f;
+        ImGui::SetNextItemWidth(filterW);
+        ImGui::InputTextWithHint("##catfilter", L("opt.cat.filter_hint"),
+                                 s_filter, sizeof(s_filter));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(sortW);
+        const char* sortItems[] = { L("opt.cat.sort_id"), L("opt.cat.sort_name"),
+                                    L("opt.cat.sort_command") };
+        ImGui::Combo("##catsort", &s_sortMode, sortItems, 3);
+        if (ImGui::IsItemHovered()) TooltipText("opt.cat.sort_tip");
+    }
+
     ImGui::BeginChild("##emotelist", ImVec2(0, 320.f), true);
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
 
-        // Sort indices alphabetically by Id so the visible order is
-        // stable regardless of insertion order. g_Emotes itself stays in
-        // its on-disk order — only the display walks via this index list.
-        std::vector<size_t> order;
-        order.reserve(g_Emotes.size());
-        for (size_t i = 0; i < g_Emotes.size(); ++i) {
-            order.push_back(i);  // every emote shows now — IsCore is editable
+        // Display order = a FILTERED + SORTED index list into g_Emotes, cached and
+        // rebuilt ONLY when the filter text, sort mode, or catalog version changes -
+        // never per frame, never on an in-progress field edit. Sort keys read
+        // COMMITTED values (g_Emotes), so a row never jumps while you type; it
+        // re-sorts after you defocus (which bumps the version via MarkEmotesDirty).
+        // Indices stay valid between rebuilds because add/delete bump the version too.
+        static struct {
+            uint64_t            ver  = (uint64_t)-1;
+            int                 sort = -1;
+            std::string         filt;
+            std::vector<size_t> idx;
+        } s_view;
+        const uint64_t curVer = g_EmoteCatalogVersion.load(std::memory_order_relaxed);
+        if (s_view.ver != curVer || s_view.sort != s_sortMode || s_view.filt != s_filter) {
+            s_view.ver = curVer; s_view.sort = s_sortMode; s_view.filt = s_filter;
+            const std::string needle = ToLower(s_filter);
+            s_view.idx.clear();
+            s_view.idx.reserve(g_Emotes.size());
+            for (size_t i = 0; i < g_Emotes.size(); ++i) {
+                if (!needle.empty()) {
+                    const Emote& e = g_Emotes[i];
+                    bool hit = ToLower(e.Id + " " + e.Name + " " + e.Command)
+                                   .find(needle) != std::string::npos;
+                    if (!hit)
+                        for (const auto& a : e.Aliases)
+                            if (ToLower(a).find(needle) != std::string::npos) { hit = true; break; }
+                    if (!hit) continue;
+                }
+                s_view.idx.push_back(i);
+            }
+            const int sm = s_sortMode;
+            std::stable_sort(s_view.idx.begin(), s_view.idx.end(), [sm](size_t a, size_t b) {
+                const Emote& ea = g_Emotes[a]; const Emote& eb = g_Emotes[b];
+                if (sm == 1) { std::string na = ToLower(ea.Name), nb = ToLower(eb.Name);
+                               if (na != nb) return na < nb; return ea.Id < eb.Id; }
+                if (sm == 2) { if (ea.Command != eb.Command) return ea.Command < eb.Command;
+                               return ea.Id < eb.Id; }
+                return ea.Id < eb.Id;
+            });
         }
-        std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
-            return g_Emotes[a].Id < g_Emotes[b].Id;
-        });
+        const std::vector<size_t>& order = s_view.idx;
+
+        // Per-id off-screen row culling: only rows in the visible scroll band do
+        // their per-frame widget/string work. State (edit buffers, expand, icon
+        // status) is Id-keyed and untouched by culling, so nothing is lost.
+        static RowCuller s_cull;
+        s_cull.Begin();
 
         // Gold matches the user-category headers in MainPanel — pulls the
         // Id into the same "this is the identifier" visual language the
@@ -451,6 +508,13 @@ void RenderEmotesTab() {
         for (size_t idx : order) {
             Emote& e = g_Emotes[idx];
             const std::string rowKey = e.Id;
+
+            // Expand/Collapse all must reach EVERY row, even ones about to be culled.
+            if (s_setAllOpen != 0) s_rowOpen[rowKey] = (s_setAllOpen > 0);
+            // Cull off-screen rows: skip all per-row work (a spacer keeps the scroll
+            // height). The actively-edited row is never culled (see EndRow below).
+            if (!s_cull.BeginRow(rowKey)) continue;
+            bool rowActive = false;   // set from the body's field-active flags
 
             RowBuffer& rb = s_rowBufs[rowKey];
             if (!rb.initialized) {
@@ -635,6 +699,7 @@ void RenderEmotesTab() {
                     }
                     if (aliasHovered)
                         TooltipText("opt.em.aliases_tooltip");
+                    if (aliasActive) rowActive = true;
                     // Commit when not actively editing: parse the buffer into a
                     // normalized, deduped list (drop empties + the primary command)
                     // and canonicalize the buffer back to the parsed form.
@@ -694,6 +759,7 @@ void RenderEmotesTab() {
                     }
                     if (amOn && kwHovered)
                         TooltipText("opt.am.keywords_tooltip");
+                    if (kwActive) rowActive = true;
                     // Commit when not actively editing: lowercase + trim each token,
                     // drop empties, dedupe (first-wins), canonicalize the buffer. A
                     // no-op while disabled (the input can't change).
@@ -884,6 +950,10 @@ void RenderEmotesTab() {
                         TooltipText("opt.em.clear_icon_tooltip");
                 }
 
+                // (rowActive was OR'd from each field's active flag where it's in
+                // scope, above — command/name here, aliases/triggers in their blocks.)
+                rowActive = rowActive || cmdActive || nameActive;
+
                 ImGui::EndTable();
             }
 
@@ -896,6 +966,7 @@ void RenderEmotesTab() {
             ImGui::Separator();
             ImGui::Spacing();
             ImGui::PopID();
+            s_cull.EndRow(rowKey, rowActive);   // measure height; flag active edit
         }
     }
     ImGui::EndChild();

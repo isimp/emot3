@@ -153,6 +153,44 @@ bool InputFieldWithHint(const char* id, const char* hintKey,
     return edited;
 }
 
+// ---- RowCuller: off-screen culling for variable-height row lists -------------
+void RowCuller::Begin() {
+    // Visible band in CONTENT space. GetCursorPosY (read per row) already includes
+    // the scroll offset, so it's directly comparable to [scrollY, scrollY+height].
+    // A couple of lines of overscan avoids pop-in at the scroll edges.
+    const float scroll = ImGui::GetScrollY();
+    const float over   = ImGui::GetTextLineHeightWithSpacing() * 2.f;
+    top_ = scroll - over;
+    bot_ = scroll + ImGui::GetWindowHeight() + over;
+    active_ = activeNext_;
+    activeNext_.clear();
+}
+
+bool RowCuller::BeginRow(const std::string& id) {
+    y0_ = ImGui::GetCursorPosY();
+    auto it = h_.find(id);
+    const float rh = (it == h_.end()) ? 0.f : it->second;   // 0 = height not learned yet
+    // Render for real when: it's the row being edited (never interrupt typing),
+    // its height is unknown (learn it this frame), or its band is on-screen.
+    const bool visible = (id == active_) || rh <= 0.f ||
+                         (y0_ + rh >= top_ && y0_ <= bot_);
+    if (visible) return true;
+    // Off-screen: reserve the same start-to-start advance with a single spacer.
+    // The measured height already includes one trailing ItemSpacing.y, and the
+    // Dummy gets its own trailing spacing, so subtract one to match exactly.
+    float dummyH = rh - ImGui::GetStyle().ItemSpacing.y;
+    if (dummyH < 1.f) dummyH = 1.f;
+    ImGui::Dummy(ImVec2(1.f, dummyH));
+    return false;
+}
+
+void RowCuller::EndRow(const std::string& id, bool active) {
+    h_[id] = ImGui::GetCursorPosY() - y0_;   // start-to-start advance for this row
+    if (active) activeNext_ = id;
+}
+
+void RowCuller::Forget(const std::string& id) { h_.erase(id); }
+
 #ifdef EMOT3_PLUS
 // Gold "Plus" tag rendered on the same line, after a +plus control, so it visibly
 // reads as an emot3 (Plus) feature in the Options UI. Same gold as the update banner
