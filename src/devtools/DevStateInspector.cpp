@@ -82,9 +82,11 @@ void Render() {
                 if (i != 0) ImGui::Spacing();
                 ImGui::TextDisabled("%s", CatTitle(curCat));
             }
-            // "title##devstate_<i>" keeps each header's id unique/stable.
+            // "title##devstate_<i>" keeps each header's id unique/stable. Sections
+            // start COLLAPSED (no DefaultOpen): with a dozen sections, all-open made
+            // the window taller than the screen on launch - open the few you want.
             std::string id = std::string(s->title) + "##devstate_" + std::to_string(i++);
-            if (ImGui::CollapsingHeader(id.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::CollapsingHeader(id.c_str()))
                 s->emit();
         }
     }

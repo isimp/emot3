@@ -191,4 +191,18 @@ void ReconcileFavoritesWithCatalog() {
         LOG_INFO("Catalog reconcile: %d stale id(s) logged, none removed", stale);
 }
 
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+// Runtime-inspector section: favorites categories + ref tallies (emote vs /me-mote).
+static DevStateRegistrar s_favSection(DevStateCat::Content, "Favorites", [] {
+    int emoteRefs = 0, meRefs = 0;
+    for (const auto& c : g_Settings.FavoriteCategories)
+        for (const auto& r : c.Refs)
+            (r.Type == EFavoriteRefType::Emote ? emoteRefs : meRefs)++;
+    DevStateRow("categories",      "%d", (int)g_Settings.FavoriteCategories.size());
+    DevStateRow("refs",            "%d  (%d emote, %d /me-mote)", emoteRefs + meRefs, emoteRefs, meRefs);
+    DevStateRow("active category", "%d", g_Settings.QuickbarCategoryIdx);
+});
+#endif  // EMOT3_DEVTOOLS
+
 

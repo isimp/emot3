@@ -398,3 +398,29 @@ void DrainUnlockSync() {
 
 const UnlockSyncStatus& UnlockSyncStatusInfo() { return s_status; }
 bool UnlockSyncBusy() { return s_busy.load(); }
+
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+// Runtime-inspector section: GW2-API unlock-sync status (phase + last result), so a
+// "did my sync actually work?" can be checked without re-running it.
+static DevStateRegistrar s_unlockSection(DevStateCat::Config, "Unlock sync", [] {
+    const UnlockSyncStatus& st = UnlockSyncStatusInfo();
+    const char* phase = "?";
+    switch (st.phase) {
+        case UnlockSyncPhase::Idle:              phase = "idle";     break;
+        case UnlockSyncPhase::Fetching:          phase = "fetching"; break;
+        case UnlockSyncPhase::PendingPermission: phase = "pending H&S permission"; break;
+        case UnlockSyncPhase::Done:              phase = "done";     break;
+        case UnlockSyncPhase::Failed:            phase = "failed";   break;
+    }
+    DevStateRow("phase",      "%s%s", phase, UnlockSyncBusy() ? " (busy)" : "");
+    DevStateRow("key source", "%s", g_Settings.UnlockApiKeySource == 0 ? "Hoard & Seek" : "own key");
+    DevStateRow("auto-sync",  "%s", g_Settings.UnlockAutoSync ? "on" : "off");
+    DevStateRow("api count",  "%d", st.apiCount);
+    DevStateRow("unlocked",   "%d", st.unlocked);
+    DevStateRow("custom (unmatched)", "%d", st.custom);
+    DevStateRow("unknown api ids",    "%d", st.unknownApi);
+    if (st.phase == UnlockSyncPhase::Failed)
+        DevStateRow("error key", "%s", st.errorKey.empty() ? "(none)" : st.errorKey.c_str());
+});
+#endif  // EMOT3_DEVTOOLS
