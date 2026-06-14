@@ -296,9 +296,9 @@ void RenderEmotesTab() {
         float       filterW = ImGui::GetContentRegionAvail().x - clearW - sortW
                               - st.ItemSpacing.x * 2.f;
         if (filterW < 100.f) filterW = 100.f;
-        ImGui::SetNextItemWidth(filterW);
-        ImGui::InputTextWithHint("##catfilter", L("opt.cat.filter_hint"),
-                                 s_filter, sizeof(s_filter));
+        InputFieldOpts fo; fo.width = filterW;
+        InputFieldWithHint("##catfilter", "opt.cat.filter_hint",
+                           s_filter, sizeof(s_filter), fo);
         // Clear (X) - greyed when empty, mirrors the icon-picker search clear.
         ImGui::SameLine(0, st.ItemSpacing.x);
         const bool hasFilter = (s_filter[0] != '\0');

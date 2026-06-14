@@ -360,9 +360,9 @@ void RenderMeMotesTab() {
         float       filterW = ImGui::GetContentRegionAvail().x - clearW - sortW
                               - st.ItemSpacing.x * 2.f;
         if (filterW < 100.f) filterW = 100.f;
-        ImGui::SetNextItemWidth(filterW);
-        ImGui::InputTextWithHint("##mmfilter", L("opt.cat.filter_hint"),
-                                 s_filter, sizeof(s_filter));
+        InputFieldOpts fo; fo.width = filterW;
+        InputFieldWithHint("##mmfilter", "opt.cat.filter_hint",
+                           s_filter, sizeof(s_filter), fo);
         ImGui::SameLine(0, st.ItemSpacing.x);
         const bool hasFilter = (s_filter[0] != '\0');
         if (!hasFilter) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, st.Alpha * 0.30f);
