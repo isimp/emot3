@@ -574,6 +574,7 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarShowMeMotesCategory     = GetBool(qbCats, "me_motes",     s.QuickbarShowMeMotesCategory);
     s.QuickbarShowRecentlyUsedCategory = GetBool(qbCats, "recently_used", s.QuickbarShowRecentlyUsedCategory);
     s.QuickbarShowFrequentCategory     = GetBool(qbCats, "frequent",      s.QuickbarShowFrequentCategory);
+    s.IgnoreMeMotesFromUsage           = GetBool(qbCats, "ignore_memotes", s.IgnoreMeMotesFromUsage);
 
     const json& shortcut = GetObj(general, "nexus_shortcut");
     s.ShowNexusShortcut        = GetBool(shortcut, "show",                      s.ShowNexusShortcut);
@@ -779,7 +780,8 @@ std::string SerializeSettings() {
     f << "      \"unlocked_all\": " << B(s.QuickbarShowUnlockedAllCategory) << ",\n";
     f << "      \"me_motes\": "     << B(s.QuickbarShowMeMotesCategory)     << ",\n";
     f << "      \"recently_used\": " << B(s.QuickbarShowRecentlyUsedCategory) << ",\n";
-    f << "      \"frequent\": "      << B(s.QuickbarShowFrequentCategory)     << "\n";
+    f << "      \"frequent\": "      << B(s.QuickbarShowFrequentCategory)     << ",\n";
+    f << "      \"ignore_memotes\": " << B(s.IgnoreMeMotesFromUsage)          << "\n";
     f << "    },\n";
     f << "    \"nexus_shortcut\": {\n";
     f << "      \"show\": "                      << B(s.ShowNexusShortcut)        << ",\n";

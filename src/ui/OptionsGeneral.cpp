@@ -320,11 +320,76 @@ void RenderGeneralOptionsTab() {
 
     // (The Unlocks section moved to its own "Unlocks" tab — see OptionsUnlocks.cpp.)
 
-    // ===== Auto-motes (chat triggers) =====
-    // Master enable + watched channels + the auto-fire cooldown. The per-emote
-    // trigger WORDS live in the Catalog tab's "Chat triggers" field; this is the
-    // on/off + scope. Needs the optional "Events: Chat" addon (core/ChatWatch) -
-    // the notice below is advisory and the feature no-ops without it.
+    // Auto-motes (chat triggers) live in their own Options tab now - see
+    // RenderAutoMotesTab below.
+
+    // Reset the usage history that feeds the recently/frequently-used Quickbar
+    // categories (the toggles now live on the Quickbar tab). Its own section (like
+    // the Catalog tab's "Clear catalog") so the destructive action reads as
+    // separate. Modeled on Clear catalog (destructive button + centered confirm
+    // modal) but a MILDER red - clearing usage is recoverable (it re-accrues).
+    OptionsSection(L("opt.sec.usage"));
+    {
+        // What the usage log drives: the Recently/Frequently used Quickbar categories
+        // + the Palette's zero-query list. Short intro so the filter + reset read in
+        // context.
+        ImGui::TextWrapped("%s", L("opt.gen.usage_intro"));
+        ImGui::Spacing();
+
+        // Filter: exclude /me-motes from the Recently/Frequently used lists. Read-time
+        // filter (usage::RecentlyUsed/Frequent skip them) - immediate + reversible; the
+        // log still records them, so toggling back re-includes them.
+        CheckboxWithSaveAndTooltip("opt.gen.ignore_memotes_usage",
+                                   &g_Settings.IgnoreMeMotesFromUsage, /*defaultIsOn=*/false);
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.42f, 0.22f, 0.22f, 0.40f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.58f, 0.28f, 0.28f, 0.70f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.68f, 0.32f, 0.32f, 0.90f));
+        if (ImGui::Button(L("opt.gen.reset_usage")))
+            ImGui::OpenPopup("###resetusage");
+        ImGui::PopStyleColor(3);
+        if (ImGui::IsItemHovered()) TooltipText("opt.gen.reset_usage.tip");
+
+        std::string resetTitle = std::string(L("opt.gen.reset_usage.title")) + "###resetusage";
+        ImVec2 ds = ImGui::GetIO().DisplaySize;
+        ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f),
+                                ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        if (ImGui::BeginPopupModal(resetTitle.c_str(), nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
+            ImGui::TextWrapped("%s", L("opt.gen.reset_usage.confirm"));
+            ImGui::PopTextWrapPos();
+            ImGui::TextDisabled("%s", L("opt.gen.reset_usage.note"));
+            ImGui::Spacing();
+            float btnW = std::max(ImGui::CalcTextSize(L("opt.gen.reset_usage.yes")).x,
+                                  ImGui::CalcTextSize(L("common.cancel")).x)
+                       + ImGui::GetStyle().FramePadding.x * 2.f + 8.f;
+            if (ImGui::Button(L("opt.gen.reset_usage.yes"), ImVec2(btnW, 0))) {
+                usage::Reset();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(L("common.cancel"), ImVec2(btnW, 0)))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+    }
+
+    // Favorite categories are created and managed entirely in the Library now
+    // (add via its "+ Category" bar; collapse / drag-reorder / rename / delete
+    // from each category header). That removed this tab's duplicate editor - see
+    // RenderCategoryHeader in Cells.cpp.
+}
+
+// ---- Tab: Auto-motes --------------------------------------------------
+// Chat-keyword -> auto-fire a catalog emote. Was a General section; promoted to its
+// own tab in v1.5. Master enable + watched channels + map scope + the auto-fire
+// cooldown. The per-emote trigger WORDS live in the Catalog tab's "Chat triggers"
+// field. Needs the optional "Events: Chat" addon (core/ChatWatch) - the notice is
+// advisory and the feature no-ops without it. Declared in OptionsCommon.h.
+void RenderAutoMotesTab() {
+    PROFILE_SCOPE("opt.automotes");  // dev perf overlay
     OptionsSection(L("opt.am.section"));
     {
         const bool available = ChatWatchAvailable();
@@ -443,49 +508,4 @@ void RenderGeneralOptionsTab() {
         else if (active)
             ImGui::TextDisabled("%s", L("opt.am.no_triggers"));
     }
-
-    // Reset the usage history that feeds the recently/frequently-used Quickbar
-    // categories (the toggles now live on the Quickbar tab). Its own section (like
-    // the Catalog tab's "Clear catalog") so the destructive action reads as
-    // separate. Modeled on Clear catalog (destructive button + centered confirm
-    // modal) but a MILDER red - clearing usage is recoverable (it re-accrues).
-    OptionsSection(L("opt.sec.usage"));
-    {
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.42f, 0.22f, 0.22f, 0.40f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.58f, 0.28f, 0.28f, 0.70f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.68f, 0.32f, 0.32f, 0.90f));
-        if (ImGui::Button(L("opt.gen.reset_usage")))
-            ImGui::OpenPopup("###resetusage");
-        ImGui::PopStyleColor(3);
-        if (ImGui::IsItemHovered()) TooltipText("opt.gen.reset_usage.tip");
-
-        std::string resetTitle = std::string(L("opt.gen.reset_usage.title")) + "###resetusage";
-        ImVec2 ds = ImGui::GetIO().DisplaySize;
-        ImGui::SetNextWindowPos(ImVec2(ds.x * 0.5f, ds.y * 0.5f),
-                                ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-        if (ImGui::BeginPopupModal(resetTitle.c_str(), nullptr,
-                                   ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
-            ImGui::TextWrapped("%s", L("opt.gen.reset_usage.confirm"));
-            ImGui::PopTextWrapPos();
-            ImGui::TextDisabled("%s", L("opt.gen.reset_usage.note"));
-            ImGui::Spacing();
-            float btnW = std::max(ImGui::CalcTextSize(L("opt.gen.reset_usage.yes")).x,
-                                  ImGui::CalcTextSize(L("common.cancel")).x)
-                       + ImGui::GetStyle().FramePadding.x * 2.f + 8.f;
-            if (ImGui::Button(L("opt.gen.reset_usage.yes"), ImVec2(btnW, 0))) {
-                usage::Reset();
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button(L("common.cancel"), ImVec2(btnW, 0)))
-                ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-    }
-
-    // Favorite categories are created and managed entirely in the Library now
-    // (add via its "+ Category" bar; collapse / drag-reorder / rename / delete
-    // from each category header). That removed this tab's duplicate editor - see
-    // RenderCategoryHeader in Cells.cpp.
 }

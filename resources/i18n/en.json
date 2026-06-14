@@ -219,6 +219,7 @@
   "opt.tab.me_motes": "/me-motes",
   "opt.tab.unlocks": "Unlocks",
   "opt.tab.radial": "RadialMenus",
+  "opt.tab.automotes": "Auto-motes",
 
   "opt.radial.intro": "Export a favorites category as a wheel for the separate RadialMenus addon. emot3 stages the files under radials\\packs and radials\\icons - copy the contents of both into RadialMenus, click \"Reload radials\", then bind a key to the wheel. emot3 registers per-item keybinds automatically; only the wheel key needs binding.",
   "opt.radial.sec_status": "RadialMenus",
@@ -608,6 +609,10 @@
   "opt.gen.qb_cat_frequent": "Show Frequently used category in the Quickbar",
   "opt.gen.qb_cat_frequent.on": "a built-in category shows the emotes and /me-motes you use most often.",
   "opt.gen.qb_cat_frequent.off": "that category isn't listed.",
+  "opt.gen.usage_intro": "Usage history powers the Recently used / Frequently used Quickbar categories and the palette's default list.",
+  "opt.gen.ignore_memotes_usage": "Ignore /me-motes in usage",
+  "opt.gen.ignore_memotes_usage.on": "/me-motes never appear in Recently / Frequently used (the log still records them).",
+  "opt.gen.ignore_memotes_usage.off": "/me-motes count toward usage like emotes.",
   "opt.gen.reset_usage": "Reset usage",
   "opt.gen.reset_usage.tip": "Clear the Recently used and Frequently used history. It rebuilds as you use emotes.",
   "opt.gen.reset_usage.confirm": "Clear Recently / Frequently used history?",

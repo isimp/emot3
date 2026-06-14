@@ -260,6 +260,12 @@ struct Settings {
     // by frequency over the bounded log. Opt-in like the other built-ins.
     bool                          QuickbarShowRecentlyUsedCategory = false;
     bool                          QuickbarShowFrequentCategory     = false;
+    // Exclude /me-motes from the usage log's Recently/Frequently used lists (some
+    // users want those to surface only real emotes). Filters at READ time
+    // (usage::RecentlyUsed/Frequent skip /me-mote refs) so toggling is immediate +
+    // reversible - the log still records them. Affects the Quickbar usage categories
+    // AND the Palette's zero-query list. Off by default.
+    bool                          IgnoreMeMotesFromUsage = false;
     // When the mouse wheel cycles the active category (see EWheelCycle).
     // Defaults to OverBar - cycling when hovering the category bar is what
     // most users intuitively expect, while the icon list still scrolls.

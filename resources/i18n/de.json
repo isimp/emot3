@@ -216,6 +216,7 @@
   "opt.tab.me_motes": "/me-motes",
   "opt.tab.unlocks": "Freischaltungen",
   "opt.tab.radial": "RadialMenus",
+  "opt.tab.automotes": "Auto-motes",
 
   "opt.radial.intro": "Exportiere eine Favoritenkategorie als Rad für das separate RadialMenus-Addon. emot3 legt die Dateien unter radials\\packs und radials\\icons ab - kopiere den Inhalt beider Ordner nach RadialMenus, klicke auf \"Radials neu laden\" und weise dem Rad eine Taste zu. emot3 registriert Tastenbelegungen für einzelne Einträge automatisch; nur das Rad selbst braucht eine Taste.",
   "opt.radial.sec_status": "RadialMenus",
@@ -607,6 +608,10 @@
   "opt.gen.qb_cat_frequent": "Kategorie \"Häufig verwendet\" in der Quickbar anzeigen",
   "opt.gen.qb_cat_frequent.on": "eine eingebaute Kategorie zeigt die Emotes und /me-motes, die du am häufigsten verwendest.",
   "opt.gen.qb_cat_frequent.off": "diese Kategorie wird nicht aufgeführt.",
+  "opt.gen.usage_intro": "Der Nutzungsverlauf speist die Quickbar-Kategorien \"Zuletzt / Häufig verwendet\" und die Standardliste der Palette.",
+  "opt.gen.ignore_memotes_usage": "/me-motes im Nutzungsverlauf ignorieren",
+  "opt.gen.ignore_memotes_usage.on": "/me-motes erscheinen nie unter \"Zuletzt / Häufig verwendet\" (der Verlauf zeichnet sie weiter auf).",
+  "opt.gen.ignore_memotes_usage.off": "/me-motes zählen wie Emotes zum Nutzungsverlauf.",
   "opt.gen.reset_usage": "Nutzung zurücksetzen",
   "opt.gen.reset_usage.tip": "Löscht den Verlauf von \"Zuletzt verwendet\" und \"Häufig verwendet\". Er wird beim Nutzen von Emotes neu aufgebaut.",
   "opt.gen.reset_usage.confirm": "Verlauf von \"Zuletzt / Häufig verwendet\" löschen?",

@@ -30,8 +30,8 @@ std::atomic<bool>       g_dirty{false};  // a change happened this session (unwr
 
 // Memo caches for the two derived views, keyed on the version epoch (+ the cap,
 // defensively). Render-thread only.
-std::vector<FavoriteRef> g_recentMemo; uint64_t g_recentVer = (uint64_t)-1; size_t g_recentMax = (size_t)-1;
-std::vector<FavoriteRef> g_freqMemo;   uint64_t g_freqVer   = (uint64_t)-1; size_t g_freqMax   = (size_t)-1;
+std::vector<FavoriteRef> g_recentMemo; uint64_t g_recentVer = (uint64_t)-1; size_t g_recentMax = (size_t)-1; bool g_recentIgnoreMM = false;
+std::vector<FavoriteRef> g_freqMemo;   uint64_t g_freqVer   = (uint64_t)-1; size_t g_freqMax   = (size_t)-1; bool g_freqIgnoreMM   = false;
 
 // A log change: bump the version epoch (invalidates the derive memos) AND flag the
 // log dirty so the unload Flush() persists it. No per-change disk I/O — usage is
@@ -131,7 +131,8 @@ void Record(EFavoriteRefType type, const std::string& id) {
 
 const std::vector<FavoriteRef>& RecentlyUsed(size_t max) {
     uint64_t v = g_version.load(std::memory_order_relaxed);
-    if (g_recentVer == v && g_recentMax == max) return g_recentMemo;
+    const bool ignoreMM = g_Settings.IgnoreMeMotesFromUsage;
+    if (g_recentVer == v && g_recentMax == max && g_recentIgnoreMM == ignoreMM) return g_recentMemo;
 
     g_recentMemo.clear();
     std::unordered_set<std::string> seen;
@@ -139,17 +140,20 @@ const std::vector<FavoriteRef>& RecentlyUsed(size_t max) {
         std::lock_guard<std::mutex> lk(g_mutex);
         for (const auto& ref : g_log) {  // front->back == newest->oldest
             if (g_recentMemo.size() >= max) break;
+            if (ignoreMM && ref.Type == EFavoriteRefType::MeMote) continue;
             if (seen.insert(FavoriteRefKey(ref)).second) g_recentMemo.push_back(ref);
         }
     }
     g_recentVer = v;
     g_recentMax = max;
+    g_recentIgnoreMM = ignoreMM;
     return g_recentMemo;
 }
 
 const std::vector<FavoriteRef>& Frequent(size_t max) {
     uint64_t v = g_version.load(std::memory_order_relaxed);
-    if (g_freqVer == v && g_freqMax == max) return g_freqMemo;
+    const bool ignoreMM = g_Settings.IgnoreMeMotesFromUsage;
+    if (g_freqVer == v && g_freqMax == max && g_freqIgnoreMM == ignoreMM) return g_freqMemo;
 
     struct Agg { FavoriteRef ref; int count; size_t firstIdx; };
     std::unordered_map<std::string, Agg> agg;
@@ -157,6 +161,7 @@ const std::vector<FavoriteRef>& Frequent(size_t max) {
         std::lock_guard<std::mutex> lk(g_mutex);
         size_t idx = 0;
         for (const auto& ref : g_log) {
+            if (ignoreMM && ref.Type == EFavoriteRefType::MeMote) { ++idx; continue; }
             auto it = agg.find(FavoriteRefKey(ref));
             if (it == agg.end()) agg.emplace(FavoriteRefKey(ref), Agg{ref, 1, idx});
             else                 ++it->second.count;
@@ -177,6 +182,7 @@ const std::vector<FavoriteRef>& Frequent(size_t max) {
     for (auto& a : v2) g_freqMemo.push_back(a.ref);
     g_freqVer = v;
     g_freqMax = max;
+    g_freqIgnoreMM = ignoreMM;
     return g_freqMemo;
 }
 
