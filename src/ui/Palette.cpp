@@ -260,7 +260,8 @@ void BuildQueryRows(const std::string& needle, std::vector<PalRow>& rows,
             std::lock_guard<std::mutex> lk(g_EmotesMutex);
             for (size_t i = 0; i < catRefs.size(); ++i) {
                 if (catRefs[i].ref.Type != EFavoriteRefType::Emote) continue;
-                const Emote* e = FindEmote(catRefs[i].ref.Id);
+                auto bit = cv.idx.byId.find(catRefs[i].ref.Id);
+                const Emote* e = (bit == cv.idx.byId.end()) ? nullptr : bit->second;
                 if (!e || !cv.idx.unlocked(*e)) continue;
                 slots[i].e = *e;
                 ok[i] = 1;
