@@ -129,6 +129,7 @@ add_library(emot3 SHARED
   src/data/RadialExports.cpp
   ${EMOT3_GEN_CPP}
   src/resources/Resources.cpp
+  src/ui/CatalogView.cpp
   src/ui/Cells.cpp
   src/ui/IconBrowse.cpp
   src/ui/IconPicker.cpp

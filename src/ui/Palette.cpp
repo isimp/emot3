@@ -4,6 +4,7 @@
 #include "I18n.h"
 #include "Settings.h"
 #include "EmoteData.h"
+#include "CatalogView.h"   // GetCatalogView (shared cached index)
 #include "MeMotes.h"
 #include "SearchMatch.h"   // MatchEmoteSearch / MatchMeMoteSearch (shared with the Library)
 #include "StringUtil.h"    // ToLower / TrimWhitespace
@@ -186,12 +187,11 @@ void BuildQueryRows(const std::string& needle, std::vector<PalRow>& rows,
         std::vector<PalRow>& dst = r.prefix ? pre : rest;
         if ((int)dst.size() < MaxRows()) dst.push_back(std::move(r));
     };
+    const CatalogView& cv = GetCatalogView();   // shared cached index (no per-frame rebuild)
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        CatalogIndex idx;
-        BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
         for (const auto& e : g_Emotes) {
-            if (!idx.unlocked(e)) continue;
+            if (!cv.idx.unlocked(e)) continue;
             SearchHit h = MatchEmoteSearch(e, needle);
             if (!h.hit) continue;
             ++totalMatches;
@@ -258,12 +258,10 @@ void BuildQueryRows(const std::string& needle, std::vector<PalRow>& rows,
         std::vector<char>   ok(catRefs.size(), 0);
         {
             std::lock_guard<std::mutex> lk(g_EmotesMutex);
-            CatalogIndex idx;
-            BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
             for (size_t i = 0; i < catRefs.size(); ++i) {
                 if (catRefs[i].ref.Type != EFavoriteRefType::Emote) continue;
                 const Emote* e = FindEmote(catRefs[i].ref.Id);
-                if (!e || !idx.unlocked(*e)) continue;
+                if (!e || !cv.idx.unlocked(*e)) continue;
                 slots[i].e = *e;
                 ok[i] = 1;
             }

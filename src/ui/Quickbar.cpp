@@ -5,6 +5,7 @@
 #include "I18n.h"
 #include "Settings.h"
 #include "EmoteData.h"
+#include "CatalogView.h"   // GetCatalogView (shared cached index + /me-mote map)
 #include "MeMotes.h"          // /me-motes Quickbar category + favorites mixing
 #include "Usage.h"            // Recently / Frequently used synthetic categories
 #include "CharacterState.h" // CurrentEmoteBlock / InCombatNow / g_QbBlockReason / g_QbUnusableKey
@@ -768,32 +769,19 @@ void QuickbarRender() {
     // Build cell list for the active category (no filter/search in the QB).
     const QbCat& activeCat = cats[active];
     std::vector<CellInfo> items;
+    // Shared cached index + /me-mote map (rebuilt only on catalog / favorites /
+    // unlock change, not per frame). Aliased so the build code below reads exactly
+    // as it did with the old per-frame locals. Fetched OUTSIDE the lock below since
+    // GetCatalogView() takes the catalog mutexes itself during its (rare) rebuild.
+    const CatalogView&  cv          = GetCatalogView();
+    const CatalogIndex& idx         = cv.idx;
+    const auto&         meMotesById = cv.meMotesById;
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
         PROFILE_SCOPE("qb.build");  // dev perf overlay
-        // Index the catalog once (O(N)) so resolving a favorites category's
-        // ids is O(1) each instead of FindEmote's linear scan - the cost the
-        // user hit with a category holding many favorites. unlocked() is
-        // precomputed per cell so RenderEmoteCell doesn't re-derive it. Same
-        // per-frame, no-caching approach the main panel uses (shared helper).
-        CatalogIndex idx;
-        BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
-
-        // /me-motes snapshot for favorites mixing + the dedicated category.
-        // Built under g_MeMotesMutex once so the cell loop can dereference
-        // freely without nesting locks. Only the Favorite and dedicated
-        // /me-motes categories consume it; the built-in Emote categories
-        // (Core/Unlocked/Mad King) never read it, and the QB only shows one
-        // category per frame — so skip the lock + populate for those.
-        std::unordered_map<std::string, const MeMote*> meMotesById;
-        if (activeCat.kind == QbCatKind::MeMotes ||
-            activeCat.kind == QbCatKind::Favorite ||
-            activeCat.kind == QbCatKind::RecentlyUsed ||
-            activeCat.kind == QbCatKind::Frequent) {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            meMotesById.reserve(g_MeMotes.size());
-            for (const auto& mm : g_MeMotes) meMotesById[mm.Id] = &mm;
-        }
+        // idx + meMotesById come from the shared cached view above. /me-mote
+        // pointers are dereferenced under g_EmotesMutex (no g_MeMotesMutex nesting),
+        // valid because any /me-mote change bumps g_MeMotesVersion -> view rebuild.
 
         // Resolve a usage/favorite ref to a read-only (favIdx -1) cell, routing
         // by Type to the right catalog. Shared by the Recently/Frequently used
