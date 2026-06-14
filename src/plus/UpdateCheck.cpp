@@ -6,6 +6,7 @@
 
 #include "Globals.h"     // APIDefs, g_Unloading, InflightWorkerScope (+ Windows.h, Nexus.h)
 #include "Logging.h"
+#include "PlusSettings.h"  // g_PlusSettings.NotifyPrereleases (preview-build opt-in)
 
 #include <nlohmann/json.hpp>
 
@@ -22,8 +23,13 @@ extern AddonDefinition AddonDef;
 
 namespace {
 
-constexpr const char* kReleasesUrl =
+// /releases/latest lands on the newest STABLE release (with its zip); the plain
+// /releases page lists prereleases too. ReleasesUrl() picks per the opt-in so a
+// preview tester is sent where the beta actually is.
+constexpr const char* kReleasesLatestUrl =
     "https://github.com/isimp/emot3/releases/latest";
+constexpr const char* kReleasesListUrl =
+    "https://github.com/isimp/emot3/releases";
 
 // State shared between the check worker and the render-thread drain. All access
 // guarded by s_mx. Reset by InitUpdateCheck so a Nexus reload re-checks.
@@ -34,6 +40,13 @@ bool        s_available = false;  // a newer release was found
 std::string s_latest;             // newer version string (no leading 'v')
 bool        s_notified  = false;  // QuickAccess badge already sent (render thread only)
 unsigned long long s_firstTick = 0;
+
+#ifdef EMOT3_DEVTOOLS
+// Dev-tool channel override for the NEXT manual run: -1 = use the persisted
+// NotifyPrereleases setting, 0 = force stable (/releases/latest), 1 = force
+// prereleases (/releases). Consumed (reset to -1) when the worker launches.
+int s_devForceChannel = -1;
+#endif
 
 constexpr unsigned long long kDelayMs = 4000;  // let things settle after load
 
@@ -126,20 +139,41 @@ void DrainUpdateCheck() {
     unsigned long long now = GetTickCount64();
     if (s_firstTick == 0) s_firstTick = now;
 
-    // Launch the check exactly once, a few seconds after the first tick.
+    // Launch the check exactly once, a few seconds after the first tick. Capture
+    // the preview-build opt-in on the render thread (g_PlusSettings is toggled
+    // here) and hand it to the worker by value.
     if (!s_started && now - s_firstTick >= kDelayMs) {
         s_started = true;
-        std::thread([]() {
+        bool wantPre = g_PlusSettings.NotifyPrereleases;
+#ifdef EMOT3_DEVTOOLS
+        if (s_devForceChannel >= 0) { wantPre = (s_devForceChannel == 1); s_devForceChannel = -1; }
+#endif
+        std::thread([wantPre]() {
             InflightWorkerScope scope;  // bump/drain g_InflightWorkers (Globals.h)
             if (g_Unloading.load()) return;
-            HttpResult res = GithubGet(L"/repos/isimp/emot3/releases/latest");
+            // Stable: /releases/latest is one object and never a prerelease.
+            // Preview: /releases is an array, newest-first, and (for an
+            // unauthenticated caller) excludes drafts - so the first published
+            // entry is the newest release including prereleases.
+            HttpResult res = GithubGet(wantPre
+                ? L"/repos/isimp/emot3/releases?per_page=10"
+                : L"/repos/isimp/emot3/releases/latest");
             if (g_Unloading.load()) return;
 
             bool newer = false; std::string latest;
             if (res.ok && res.status == 200) {
                 try {
                     nlohmann::json j = nlohmann::json::parse(res.body);
-                    std::string tag = j.value("tag_name", std::string());
+                    std::string tag;
+                    if (wantPre && j.is_array()) {
+                        for (const auto& el : j) {
+                            if (el.value("draft", false)) continue;  // defensive
+                            tag = el.value("tag_name", std::string());
+                            if (!tag.empty()) break;  // newest published wins
+                        }
+                    } else {
+                        tag = j.value("tag_name", std::string());
+                    }
                     if (!tag.empty() && TagIsNewer(tag)) {
                         newer = true; latest = StripLeadingV(tag);
                     }
@@ -176,7 +210,9 @@ std::string PlusLatestVersion() {
     return s_latest;
 }
 
-const char* ReleasesUrl() { return kReleasesUrl; }
+const char* ReleasesUrl() {
+    return g_PlusSettings.NotifyPrereleases ? kReleasesListUrl : kReleasesLatestUrl;
+}
 
 #ifdef EMOT3_DEVTOOLS
 // ---- Dev-tool hooks (the "[debug] Update check" tool) -----------------
@@ -192,6 +228,15 @@ void RunUpdateCheckNow() {
     // Non-zero + far in the past so DrainUpdateCheck's delay gate is already
     // satisfied -> it launches on the very next tick (no 4s wait).
     s_firstTick = 1;
+}
+
+// Force the NEXT manual check onto a specific channel regardless of the persisted
+// NotifyPrereleases setting, then run it now. Lets a dev exercise the prerelease
+// (/releases) path end-to-end - hit GitHub, parse the array, rank a real
+// prerelease tag - without flipping the user-facing toggle.
+void RunUpdateCheckNowChannel(bool prereleases) {
+    s_devForceChannel = prereleases ? 1 : 0;
+    RunUpdateCheckNow();
 }
 
 void ForceUpdateAvailable(const std::string& ver) {

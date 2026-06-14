@@ -35,6 +35,8 @@ void LoadPlusSettings(const std::string& path) {
         GetBool(j, "qb_click_through_wheel", g_PlusSettings.QbClickThroughWheel);
     g_PlusSettings.SwallowInputOnSend =
         GetBool(j, "swallow_input_on_send", g_PlusSettings.SwallowInputOnSend);
+    g_PlusSettings.NotifyPrereleases =
+        GetBool(j, "notify_prereleases", g_PlusSettings.NotifyPrereleases);
 }
 
 void SavePlusSettings() {
@@ -44,6 +46,7 @@ void SavePlusSettings() {
     nlohmann::json j;
     j["qb_click_through_wheel"] = g_PlusSettings.QbClickThroughWheel;
     j["swallow_input_on_send"]  = g_PlusSettings.SwallowInputOnSend;
+    j["notify_prereleases"]     = g_PlusSettings.NotifyPrereleases;
     AtomicWriteFile(s_path,
                     j.dump(2, ' ', false, nlohmann::json::error_handler_t::replace) + "\n");
 }
