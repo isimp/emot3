@@ -489,7 +489,14 @@ void RenderQuickbarOptionsTab() {
             RequestSave(SaveKind::Settings);
         }
         if (!blocking) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
-        if (blocking && ImGui::IsItemHovered()) TooltipText("opt.qb.unusable_display.tip");
+        if (blocking && ImGui::IsItemHovered()) {
+            static const TooltipOption kUnusableOpts[] = {
+                { "opt.qb.unusable_grey",   "opt.qb.unusable_grey.desc",   true  },
+                { "opt.qb.unusable_hide",   "opt.qb.unusable_hide.desc",   false },
+                { "opt.qb.unusable_normal", "opt.qb.unusable_normal.desc", false },
+            };
+            TooltipOptions("opt.qb.unusable_intro", kUnusableOpts, IM_ARRAYSIZE(kUnusableOpts));
+        }
         if (!blocking) ImGui::TextDisabled("%s", L("opt.qb.unusable_needs_block"));
     }
 
