@@ -232,6 +232,14 @@ void QuickbarRender() {
         g_QbUnusableKey = nullptr;
         return;
     }
+    // "Show normally": an unusable / transient block doesn't change THIS bar's
+    // appearance at all - the buttons stay lit and a click still refuses with a
+    // reason at the send gate (CharacterState/EmoteAction, independent of this
+    // setting). Drop the reason so it neither hides (above) nor greys (below).
+    // Combat dimming is a SEPARATE setting (QuickbarCombatBehavior) and still
+    // applies via the combat-grey path below.
+    if (reason && g_Settings.QuickbarUnusableDisplay == EUnusableBehavior::Normal)
+        reason = nullptr;
     // Combat-grey is the lowest-priority source: a real can't-emote reason
     // (mounted etc.) owns the cell's explainer when both apply. (Combat-hide
     // already returned above.)
