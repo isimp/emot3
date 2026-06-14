@@ -40,25 +40,46 @@
 #include <vector>
 // Does the user's icons/ folder (addons/emot3/icons) hold at least one file?
 // Gates the "Rescan icons" button - there's nothing to re-pick-up otherwise.
-// Cheap directory probe, throttled to ~once/sec (re-checked so a freshly dropped
-// first icon enables the button within a second, without per-frame disk I/O).
+// Throttled to ~once/sec AND mtime-gated: each tick we only stat the directory's
+// last-write-time (cheap) and re-enumerate its entries (the costlier part) only when
+// that time actually changed. A dir's write-time bumps on entry ADD / REMOVE / RENAME
+// - precisely the events that flip "holds >=1 file" (in-place content edits touch the
+// file's time, not the dir's, and correctly don't change the answer). So a freshly
+// dropped first icon still enables the button within a second, but a steady folder
+// costs just one stat instead of a full enumeration every poll.
 static bool FolderHasIcons() {
-    static unsigned long long lastMs = 0;
-    static bool cached = false;
+    static unsigned long long lastMs    = 0;
+    static unsigned long long lastWrite = 0;      // dir FILETIME at last enumeration
+    static bool               cached    = false;
+    static bool               primed    = false;  // have we enumerated at least once?
+
     const unsigned long long now = GetTickCount64();
-    if (now - lastMs >= 1000 || lastMs == 0) {
-        lastMs = now;
-        cached = false;
-        if (!g_IconsDir.empty()) {
-            WIN32_FIND_DATAA fd;
-            HANDLE h = FindFirstFileA((g_IconsDir + "\\*").c_str(), &fd);
-            if (h != INVALID_HANDLE_VALUE) {
-                do {
-                    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) { cached = true; break; }
-                } while (FindNextFileA(h, &fd));
-                FindClose(h);
-            }
-        }
+    if (lastMs != 0 && now - lastMs < 1000) return cached;  // throttle the disk touch
+    lastMs = now;
+
+    if (g_IconsDir.empty()) { cached = false; primed = true; lastWrite = 0; return cached; }
+
+    // Cheap stat: read just the directory's last-write-time.
+    WIN32_FILE_ATTRIBUTE_DATA fad{};
+    if (!GetFileAttributesExA(g_IconsDir.c_str(), GetFileExInfoStandard, &fad)) {
+        cached = false; primed = true; lastWrite = 0; return cached;  // folder missing
+    }
+    const unsigned long long mtime =
+        ((unsigned long long)fad.ftLastWriteTime.dwHighDateTime << 32) |
+         (unsigned long long)fad.ftLastWriteTime.dwLowDateTime;
+    if (primed && mtime == lastWrite) return cached;  // membership unchanged - reuse
+    lastWrite = mtime;
+    primed    = true;
+
+    // Membership changed (or first sighting): the one enumeration we actually need.
+    cached = false;
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((g_IconsDir + "\\*").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) { cached = true; break; }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
     }
     return cached;
 }
