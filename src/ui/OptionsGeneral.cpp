@@ -457,7 +457,7 @@ void RenderGeneralOptionsTab() {
         if (ImGui::Button(L("opt.gen.reset_usage")))
             ImGui::OpenPopup("###resetusage");
         ImGui::PopStyleColor(3);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.gen.reset_usage.tip"));
+        if (ImGui::IsItemHovered()) TooltipText("opt.gen.reset_usage.tip");
 
         std::string resetTitle = std::string(L("opt.gen.reset_usage.title")) + "###resetusage";
         ImVec2 ds = ImGui::GetIO().DisplaySize;

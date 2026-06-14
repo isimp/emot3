@@ -688,7 +688,7 @@ void QuickbarRender() {
                                        ImGui::GetItemRectMax());
             // Full active name on hover when the preview was truncated.
             if (previewClip && ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", cats[active].name.c_str());
+                TooltipTextRaw(cats[active].name.c_str());
         } else {
             // Tab-style buttons — active one highlighted blue. Wrap onto a
             // new line when the next button wouldn't fit horizontally.
@@ -744,7 +744,7 @@ void QuickbarRender() {
                 bool showTip = clipped && ImGui::IsItemHovered();
                 ImGui::PopID();
                 if (isActive) ImGui::PopStyleColor(3);
-                if (showTip) ImGui::SetTooltip("%s", cats[i].name.c_str());
+                if (showTip) TooltipTextRaw(cats[i].name.c_str());
             }
         }
         // Capture the bottom of the bar — use the cursor's Y position

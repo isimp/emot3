@@ -59,6 +59,11 @@ std::string UiLanguageDisplayName(const std::string& code);
 // Single wrapped paragraph - for prose tooltips.
 void TooltipText(const char* key);
 
+// Same as TooltipText but for an already-resolved / composed string (a filename,
+// a printf-formatted message, a runtime value) rather than an i18n key. Wraps the
+// same way so these never run off-screen. Call from inside `if (IsItemHovered())`.
+void TooltipTextRaw(const char* text);
+
 // Two state lines: "On[ (default)]: <onText>" / "Off[ (default)]: <offText>".
 // The "On"/"Off"/"(default)" words come from the shared tt.on/tt.off/tt.default
 // fragments (localized once), so a per-setting value is just the state's

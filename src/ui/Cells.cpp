@@ -487,11 +487,10 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
     bool suppressTip = isQuickbar && !g_Settings.ShowQuickbarTooltips;
     if (!suppressTip &&
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        if (!ci.searchNote.empty())
-            ImGui::SetTooltip("%s\n%s\n%s", m.Name.c_str(),
-                              ci.searchNote.c_str(), L("cells.rightclick"));
-        else
-            ImGui::SetTooltip("%s\n%s", m.Name.c_str(), L("cells.rightclick"));
+        std::string t = m.Name;
+        if (!ci.searchNote.empty()) { t += '\n'; t += ci.searchNote; }
+        t += '\n'; t += L("cells.rightclick");
+        TooltipTextRaw(t.c_str());
     }
 
     if (dimmed) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
@@ -855,7 +854,7 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
             tip += '\n'; tip += L("cells.auto_triggers"); tip += ' '; tip += words;
         }
         tip += '\n'; tip += L("cells.rightclick");
-        ImGui::SetTooltip("%s", tip.c_str());
+        TooltipTextRaw(tip.c_str());
     }
     // Re-apply the dim alpha for the label drawn below the button (Full mode)
     // and balance the PopStyleVar at the end of the function.
@@ -1410,8 +1409,12 @@ bool RenderCategoryHeader(int categoryIdx, const char* name, bool searchActive) 
         bool active = ImGui::IsItemActive();
         if (invalid) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
         if (invalid && ImGui::IsItemHovered()) {
-            if (dup) ImGui::SetTooltip(L("mp.cat_exists"), trimmed.c_str());
-            else     TooltipText("common.name_empty");
+            if (dup) {
+                char m[160]; std::snprintf(m, sizeof m, L("mp.cat_exists"), trimmed.c_str());
+                TooltipTextRaw(m);
+            } else {
+                TooltipText("common.name_empty");
+            }
         }
         auto commit = [&]() {
             std::string oldName = cats[categoryIdx].Name;

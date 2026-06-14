@@ -170,7 +170,7 @@ void AutoFillPages() {
 
 // Tooltip for the item just submitted (keyed i18n).
 void ItemTip(const char* tipKey) {
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L(tipKey));
+    if (ImGui::IsItemHovered()) TooltipText(tipKey);
 }
 
 // Float slider that resets to `def` on right-click (the established right-click-reset
@@ -179,7 +179,7 @@ void SliderWithReset(const char* label, float* v, float lo, float hi, float def,
                      const char* tipKey) {
     ImGui::SetNextItemWidth(180.0f);
     ImGui::SliderFloat(label, v, lo, hi, "%.2f");
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L(tipKey));
+    if (ImGui::IsItemHovered()) TooltipText(tipKey);
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) *v = def;
 }
 
@@ -334,7 +334,7 @@ void DrawThumb(const WizItem& w, float sz) {
         ImGui::Image((ImTextureID)tex->Resource, ImVec2(sz, sz));
     else {
         ImGui::Dummy(ImVec2(sz, sz));
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.no_icon"));
+        if (ImGui::IsItemHovered()) TooltipText("opt.radial.no_icon");
     }
 }
 
@@ -499,7 +499,7 @@ void RenderWizard() {
             if (w.isNew) {
                 ImGui::SameLine();
                 ImGui::TextColored(kGreen, "(%s)", L("opt.radial.item_new"));
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.item_new_tip"));
+                if (ImGui::IsItemHovered()) TooltipText("opt.radial.item_new_tip");
             }
             if (w.autoTarget) {
                 ImGui::SameLine();
@@ -739,11 +739,20 @@ void RenderRadialTab() {
     PROFILE_SCOPE("opt.radial");  // tab body (per-group rows + status); wizard adds its own
     TickStatus();
 
-    // 1. Intro (base build omits the +plus deploy mention)
+    // 1. Intro + a gold flavor callout. The RadialMenus flow differs a lot between
+    //    builds (base exports files you copy in; Plus syncs in one click), so name
+    //    which build this is up front rather than leaving the user to infer it from
+    //    which buttons exist. TextColored doesn't wrap on its own - push a wrap pos.
 #ifdef EMOT3_PLUS
     ImGui::TextWrapped("%s", L("opt.radial.intro_plus"));
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextColored(kAmber, "%s", L("opt.radial.flavor_plus"));
+    ImGui::PopTextWrapPos();
 #else
     ImGui::TextWrapped("%s", L("opt.radial.intro"));
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextColored(kAmber, "%s", L("opt.radial.flavor_base"));
+    ImGui::PopTextWrapPos();
 #endif
 
     // 2. Status
@@ -871,12 +880,12 @@ void RenderRadialTab() {
                     ImGui::TextColored(kRed, "%s", L("opt.radial.st_source_missing"));
                 } else if (drift) {
                     ImGui::TextColored(kAmber, "%s", L("opt.radial.st_changed"));
-                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.st_changed_tip"));
+                    if (ImGui::IsItemHovered()) TooltipText("opt.radial.st_changed_tip");
                 } else if (!s_rmDetected) {
                     ImGui::TextColored(kAmber, "%s", L("opt.radial.st_not_detected"));
                 } else {
                     ImGui::TextColored(kGreen, "%s", L("opt.radial.st_in_sync"));
-                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.st_in_sync_tip"));
+                    if (ImGui::IsItemHovered()) TooltipText("opt.radial.st_in_sync_tip");
                 }
 
 #ifdef EMOT3_PLUS
@@ -913,7 +922,8 @@ void RenderRadialTab() {
                         RefreshStatus();
                         NoteSyncResult(group, wrote);
                     }
-                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.radial.sync_tip"));
+                    if (ImGui::IsItemHovered()) TooltipText("opt.radial.sync_tip");
+                    PlusBadge();   // mark the one-click sync as a Plus-only control
                     ImGui::SameLine();
                 }
 #endif

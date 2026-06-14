@@ -55,8 +55,11 @@ void RenderPaletteOptionsTab() {
     ImGui::BeginGroup();
 
     // Discoverability: the palette's everyday entry points are its Nexus
-    // keybind (ships unassigned) and the quick-access icon.
+    // keybind (ships unassigned) and the quick-access icon. Wrap so the hint can't
+    // run past the Options window's right edge (TextDisabled doesn't wrap itself).
+    ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("%s", L("opt.pal.bind_hint"));
+    ImGui::PopTextWrapPos();
     ImGui::Spacing();
 
     // ---- Layout: row cap, size, position, grow direction ----
