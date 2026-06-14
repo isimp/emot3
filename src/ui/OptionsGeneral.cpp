@@ -394,6 +394,28 @@ void RenderGeneralOptionsTab() {
 
         if (!active) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
 
+        // Won't-fire warnings: the feature is ON but a sub-setting makes it inert -
+        // no watched channel, or no map type. Amber + un-greyed, like the
+        // unbound-chat / Events:Chat notices, so an "enabled but nothing happens"
+        // config is visible rather than silently dead.
+        if (active) {
+            const bool anyChannel =
+                g_Settings.AutoMoteWatchLocal || g_Settings.AutoMoteWatchParty ||
+                g_Settings.AutoMoteWatchMap   || g_Settings.AutoMoteWatchSquad ||
+                g_Settings.AutoMoteWatchGuild || g_Settings.AutoMoteWatchWhisper;
+            const bool anyMap =
+                g_Settings.AutoMoteInOpenWorld || g_Settings.AutoMoteInInstances;
+            const char* warn = !anyMap     ? "opt.am.warn_no_maps"
+                             : !anyChannel ? "opt.am.warn_no_channels"
+                             : nullptr;
+            if (warn) {
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+                ImGui::TextWrapped("%s", L(warn));
+                ImGui::PopStyleColor();
+            }
+        }
+
         // Tie to the Catalog, where the per-emote trigger WORDS are set: show how
         // many emotes carry triggers, and nudge when the feature's on but nothing
         // is wired yet. Counting the catalog here is cheap (only while this tab is
