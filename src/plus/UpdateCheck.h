@@ -59,6 +59,7 @@ const char* ReleasesUrl();
 // the +plus dev builds = PlusDevTools/Debug). Let the tool exercise the real
 // pipeline.
 void RunUpdateCheckNow();                          // launch the worker now (bypass delay/once)
+void RunUpdateCheckNowChannel(bool prereleases);   // run now, forcing stable/prerelease channel
 void ForceUpdateAvailable(const std::string& ver); // set available + version, no network
 void ResetUpdateCheck();                           // clear all state (= InitUpdateCheck)
 #endif

@@ -41,6 +41,13 @@ std::string s_latest;             // newer version string (no leading 'v')
 bool        s_notified  = false;  // QuickAccess badge already sent (render thread only)
 unsigned long long s_firstTick = 0;
 
+#ifdef EMOT3_DEVTOOLS
+// Dev-tool channel override for the NEXT manual run: -1 = use the persisted
+// NotifyPrereleases setting, 0 = force stable (/releases/latest), 1 = force
+// prereleases (/releases). Consumed (reset to -1) when the worker launches.
+int s_devForceChannel = -1;
+#endif
+
 constexpr unsigned long long kDelayMs = 4000;  // let things settle after load
 
 // ---- HTTP (mirrors core/UnlockScan.cpp HttpsGet) ----------------------
@@ -137,7 +144,10 @@ void DrainUpdateCheck() {
     // here) and hand it to the worker by value.
     if (!s_started && now - s_firstTick >= kDelayMs) {
         s_started = true;
-        const bool wantPre = g_PlusSettings.NotifyPrereleases;
+        bool wantPre = g_PlusSettings.NotifyPrereleases;
+#ifdef EMOT3_DEVTOOLS
+        if (s_devForceChannel >= 0) { wantPre = (s_devForceChannel == 1); s_devForceChannel = -1; }
+#endif
         std::thread([wantPre]() {
             InflightWorkerScope scope;  // bump/drain g_InflightWorkers (Globals.h)
             if (g_Unloading.load()) return;
@@ -218,6 +228,15 @@ void RunUpdateCheckNow() {
     // Non-zero + far in the past so DrainUpdateCheck's delay gate is already
     // satisfied -> it launches on the very next tick (no 4s wait).
     s_firstTick = 1;
+}
+
+// Force the NEXT manual check onto a specific channel regardless of the persisted
+// NotifyPrereleases setting, then run it now. Lets a dev exercise the prerelease
+// (/releases) path end-to-end - hit GitHub, parse the array, rank a real
+// prerelease tag - without flipping the user-facing toggle.
+void RunUpdateCheckNowChannel(bool prereleases) {
+    s_devForceChannel = prereleases ? 1 : 0;
+    RunUpdateCheckNow();
 }
 
 void ForceUpdateAvailable(const std::string& ver) {
