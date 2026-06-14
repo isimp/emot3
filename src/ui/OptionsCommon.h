@@ -125,4 +125,4 @@ void RenderQuickbarOptionsTab();
 void RenderPaletteOptionsTab();
 void RenderEmotesTab();
 void RenderUnlocksTab();
-void RenderAutoMotesTab();   // auto-motes tab (defined in OptionsGeneral.cpp)
+void RenderAutoMotesTab();   // auto-motes tab (defined in OptionsAutoMotes.cpp)

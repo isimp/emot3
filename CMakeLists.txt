@@ -141,6 +141,7 @@ add_library(emot3 SHARED
   src/ui/NexusShortcut.cpp
   src/ui/Palette.cpp
   src/ui/Options.cpp
+  src/ui/OptionsAutoMotes.cpp
   src/ui/OptionsCommon.cpp
   src/ui/OptionsGeneral.cpp
   src/ui/OptionsPalette.cpp

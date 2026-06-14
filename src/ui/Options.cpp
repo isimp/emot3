@@ -100,7 +100,7 @@ void AddonOptions() {
             ImGui::EndTabItem();
         }
         // Auto-motes — chat-keyword auto-fire (was a General section). See
-        // RenderAutoMotesTab in ui/OptionsGeneral.cpp.
+        // RenderAutoMotesTab in ui/OptionsAutoMotes.cpp.
         if (ImGui::BeginTabItem(tAutoMote.c_str())) {
             RenderAutoMotesTab();
             ImGui::EndTabItem();
