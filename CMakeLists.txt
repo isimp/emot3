@@ -125,6 +125,9 @@ add_library(emot3 SHARED
   src/data/MeMotes.cpp
   src/data/QuickbarPresets.cpp
   src/data/Settings.cpp
+  src/data/migrations/Migrations.cpp
+  src/data/migrations/M001_NormalizeLegacyKeys.cpp
+  src/data/migrations/M002_UnusableSplit.cpp
   src/data/Usage.cpp
   src/data/RadialExports.cpp
   ${EMOT3_GEN_CPP}
@@ -141,6 +144,7 @@ add_library(emot3 SHARED
   src/ui/NexusShortcut.cpp
   src/ui/Palette.cpp
   src/ui/Options.cpp
+  src/ui/OptionsAutoMotes.cpp
   src/ui/OptionsCommon.cpp
   src/ui/OptionsGeneral.cpp
   src/ui/OptionsPalette.cpp

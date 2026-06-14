@@ -16,15 +16,20 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <tlhelp32.h>   // CreateToolhelp32Snapshot / Module32* — Events:Chat module
+                        // probe (kernel32; psapi is devtools-only, ChatWatch ships)
 
 using json = nlohmann::json;
 
 namespace {
 
-// "Events: Chat" presence. Heuristic, since (unlike RTAPI) the addon exposes no
-// DataLink to probe — only an event. Set by its load event (and by the first
-// chat line we see, covering the loaded-before-us case Nexus won't replay),
-// cleared by its unload event. Atomic: written from the event threads, read by
+// "Events: Chat" presence. The addon exposes no DataLink to probe (unlike RTAPI),
+// so we triangulate three ways: (1) an authoritative module-signature probe at
+// our load (InitChatWatch -> ProbeChatAddonLoaded), which is the ONLY thing that
+// catches "Events: Chat loaded before us" — the case Nexus' EV_ADDON_LOADED won't
+// replay, and the same case that made an emot3 reload look broken; (2) its
+// load/unload events, keeping us live afterwards; (3) the first chat line we see,
+// a last-resort backstop. Atomic: written from the load + event threads, read by
 // the render thread (Options banner).
 std::atomic<bool> s_available{ false };
 
@@ -273,6 +278,50 @@ void OnChat(void* aEventArgs) {
     LOG_DEBUG("auto-mote: queued fire (channel=%d)", ex.channelType);
 }
 
+// Does this loaded module export the Nexus addon entry point AND report the
+// Events:Chat signature? Every Nexus addon exports `GetAddonDef` returning an
+// AddonDefinition* whose Signature identifies it (same value Nexus hands us in
+// EV_ADDON_LOADED). GetAddonDef is a third-party export, so the call + deref sit
+// behind SEH on MSVC (the shipped + Wine binary): a malformed addon faults into
+// "not it" rather than crashing GW2. POD-only (HMODULE / pointer), so the __try
+// caller is C2712-clean. MinGW (portability gate, never shipped) calls through.
+bool ModuleIsChatAddon(HMODULE mod) {
+    typedef AddonDefinition* (*GetAddonDef_t)();
+    GetAddonDef_t getDef = (GetAddonDef_t)GetProcAddress(mod, "GetAddonDef");
+    if (!getDef) return false;
+#if defined(_MSC_VER)
+    __try {
+        AddonDefinition* def = getDef();
+        return def && def->Signature == EMOT3_GW2CHAT_SIGNATURE;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+#else
+    AddonDefinition* def = getDef();
+    return def && def->Signature == EMOT3_GW2CHAT_SIGNATURE;
+#endif
+}
+
+// One-time active probe for "Events: Chat is already loaded". Walks the GW2
+// process' loaded modules (Toolhelp; kernel32, no psapi link) and matches any
+// addon carrying the Events:Chat signature. This is what makes detection correct
+// at our load — including across an emot3 disable/re-enable, where the addon was
+// up the whole time and Nexus won't re-raise EV_ADDON_LOADED. Cheap + one-shot.
+bool ProbeChatAddonLoaded() {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 0);
+    if (snap == INVALID_HANDLE_VALUE) return false;
+    MODULEENTRY32 me;
+    me.dwSize = sizeof(me);
+    bool found = false;
+    if (Module32First(snap, &me)) {
+        do {
+            if (ModuleIsChatAddon(me.hModule)) { found = true; break; }
+        } while (Module32Next(snap, &me));
+    }
+    CloseHandle(snap);
+    return found;
+}
+
 // EV_ADDON_LOADED / EV_ADDON_UNLOADED both carry int* = the (un)loading addon's
 // signature. We only care about Events:Chat's; ignore everyone else's.
 void OnAddonLoaded(void* aEventArgs) {
@@ -295,6 +344,16 @@ void InitChatWatch() {
     APIDefs->Events.Subscribe("EV_ADDON_LOADED",   OnAddonLoaded);
     APIDefs->Events.Subscribe("EV_ADDON_UNLOADED", OnAddonUnloaded);
     LOG_INFO("Auto-motes chat watch subscribed (Events: Chat optional dependency)");
+
+    // Seed availability authoritatively from a module probe. Order matters: we
+    // subscribe FIRST so a load racing this window still reaches OnAddonLoaded,
+    // then the probe catches anything already up (the loaded-before-us case Nexus
+    // won't replay — and the re-enable-after-disable case). Store the result
+    // UNCONDITIONALLY so a stale `true` (DLL stays resident across reload) is
+    // cleared if Events:Chat was removed while we were disabled.
+    const bool present = ProbeChatAddonLoaded();
+    s_available.store(present, std::memory_order_relaxed);
+    LOG_INFO("Events: Chat load-time probe: %s", present ? "detected" : "not found");
 }
 
 void ShutdownChatWatch() {

@@ -1,5 +1,6 @@
 #include "Settings.h"
 #include "JsonUtil.h"
+#include "migrations/Migrations.h"  // RunSettingsMigrations + kCurrentSchemaVersion
 #include "StringUtil.h"  // TrimWhitespace, reused by the sanitize pass
 #include "AtomicFile.h"  // AtomicWriteFile (crash-safe save - no live-file truncation)
 #include "I18n.h"        // AvailableUiLanguages, for UiLanguage validation
@@ -26,10 +27,10 @@ static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key f
     DevStateRow("show window",        "%s", s.ShowWindow ? "on" : "off");
     DevStateRow("show quickbar",      "%s", s.ShowQuickbar ? "on" : "off");
     DevStateRow("send on click",      "%s", s.SendOnClick ? "on" : "off");
-    DevStateRow("grey unusable",      "%s", s.QuickbarGreyUnusable ? "on" : "off");
-    DevStateRow("airborne detection", "%s", s.QuickbarAirborneDetection ? "on" : "off");
-    DevStateRow("precise detection",  "%s", s.QuickbarPreciseStateDetection ? "on" : "off");
-    DevStateRow("unusable behavior",  "%d", (int)s.QuickbarUnusableBehavior);
+    DevStateRow("block unusable",     "%s", s.BlockUnusableEmotes ? "on" : "off");
+    DevStateRow("block airborne",     "%s", s.BlockWhileAirborne ? "on" : "off");
+    DevStateRow("precise detection",  "%s", s.PreciseStateDetection ? "on" : "off");
+    DevStateRow("unusable display",   "%d", (int)s.QuickbarUnusableDisplay);
     DevStateRow("qb category idx",    "%d", s.QuickbarCategoryIdx);
     DevStateRow("unlock auto-sync",   "%s", s.UnlockAutoSync ? "on" : "off");
     DevStateRow("unlock key source",  "%d", s.UnlockApiKeySource);
@@ -49,7 +50,7 @@ static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key f
 // Schema:
 //
 //   {
-//     "version": 1,
+//     "version": 3,
 //     "main": {
 //       "show": true,
 //       "show_core": true,
@@ -82,6 +83,7 @@ static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key f
 //       "look": {
 //         "high_contrast": false,
 //         "scroll_indicator": 1,        // 0 off, 1 edge hints, 2 scrollbar
+//         "unusable_display": 0,        // 0 grey, 1 hide, 2 normal (per-preset)
 //         "show_tooltips": true
 //       },
 //       "interaction": {
@@ -96,7 +98,9 @@ static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key f
 //       "send_targetable_on_target": false,
 //       "use_ai_icon_fallback": false,
 //       "show_target_dot": true,
-//       "quickbar_grey_unusable": true,
+//       "block_unusable": true,            // global send-gate master
+//       "block_while_airborne": true,      // detection sub-toggle
+//       "precise_state_detection": true,   // detection sub-toggle (RTAPI)
 //       "notify_new_bundled_emotes": true,
 //       "quickbar_categories": {
 //         "favorites": true, "core": false, "mad_king": false,
@@ -104,7 +108,7 @@ static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key f
 //       },
 //       "nexus_shortcut": {
 //         "show": true,
-//         "left_click_opens_quickbar": false
+//         "left_click_opens": 0          // 0 library, 1 quickbar, 2 palette
 //       }
 //     },
 //     "language": { "ui": "auto" },
@@ -116,7 +120,8 @@ static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key f
 //     "unlocks": ["bow", "cheer"],
 //     "known_bundled_emotes": ["bow", "cheer"],
 //     "favorites": [
-//       { "name": "Combat", "emotes": ["bow", "cheer"], "collapsed": false }
+//       { "name": "Combat", "collapsed": false,
+//         "refs": [ { "type": 0, "id": "bow" }, { "type": 0, "id": "cheer" } ] }
 //     ]
 //   }
 //
@@ -133,8 +138,12 @@ static DevStateRegistrar s_settingsSection(DevStateCat::Config, "Settings (key f
 //     re-shuffling would invalidate existing settings.json files for
 //     no real benefit.
 //
-//   - No migration from older schemas. Userbase is small enough that
-//     a one-time reset is cheaper than carrying a legacy reader.
+//   - Versioned migrations: "version" drives a one-time DOM upgrade on load
+//     (data/migrations/, run by RunSettingsMigrations before the parse). The
+//     parser only ever reads the CURRENT schema; legacy forms (snap_scroll
+//     bool, left_click_opens_quickbar, favorites "emotes") are normalized by
+//     M001, and the unusable-block split by M002. Bump kCurrentSchemaVersion
+//     and add an MNNN_*.cpp to extend the chain.
 //
 //   - On load failure (file missing, malformed JSON, missing keys),
 //     we leave g_Settings at its struct defaults - the in-memory
@@ -266,11 +275,11 @@ bool SanitizeSettings(Settings& s) {
         }
     }
     {
-        EUnusableBehavior v = NormalizeUnusableBehavior((int)s.QuickbarUnusableBehavior);
-        if (v != s.QuickbarUnusableBehavior) {
-            LOG_WARNING("settings: quickbar.unusable_behavior %d invalid -> %d",
-                        (int)s.QuickbarUnusableBehavior, (int)v);
-            s.QuickbarUnusableBehavior = v; changed = true;
+        EUnusableBehavior v = NormalizeUnusableBehavior((int)s.QuickbarUnusableDisplay);
+        if (v != s.QuickbarUnusableDisplay) {
+            LOG_WARNING("settings: quickbar.look.unusable_display %d invalid -> %d",
+                        (int)s.QuickbarUnusableDisplay, (int)v);
+            s.QuickbarUnusableDisplay = v; changed = true;
         }
     }
     {
@@ -420,7 +429,7 @@ EWheelCycle NormalizeWheelCycle(int raw) {
 }
 
 EUnusableBehavior NormalizeUnusableBehavior(int raw) {
-    return (raw >= 0 && raw <= 1) ? (EUnusableBehavior)raw : EUnusableBehavior::Grey;
+    return (raw >= 0 && raw <= 2) ? (EUnusableBehavior)raw : EUnusableBehavior::Grey;
 }
 
 EQbCombat NormalizeQbCombat(int raw) {
@@ -465,6 +474,12 @@ bool LoadSettings(const std::string& path) {
                     path.c_str());
         return false;
     }
+
+    // Bring an older on-disk schema up to date BEFORE the field parse, so the
+    // parser below only ever sees the current key layout. Returns true if any
+    // migration ran; we OR it into the result so the caller re-saves and the
+    // file is persisted in the new shape (and re-stamped with the new version).
+    const bool migrated = emot3::migrations::RunSettingsMigrations(j);
 
     Settings& s = g_Settings;
     using namespace jsonutil;
@@ -515,10 +530,11 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarUseDropdown      = GetBool (qbLayout, "use_dropdown",      s.QuickbarUseDropdown);
     s.QuickbarHorizontalScroll = GetBool (qbLayout, "horizontal_scroll", s.QuickbarHorizontalScroll);
     s.QuickbarSnapWindow       = GetBool (qbLayout, "snap_window",       s.QuickbarSnapWindow);
-    // snap_scroll migrated from bool (true/false) to int enum (0=Off/1=Cells/2=Pages).
-    // GetIntOrBool accepts either form; SanitizeSettings runs NormalizeScrollSnap to clamp.
-    s.QuickbarSnapScroll       = (EQbScrollSnap)GetIntOrBool(qbLayout, "snap_scroll",
-                                                              (int)s.QuickbarSnapScroll);
+    // snap_scroll is an int enum (0=Off/1=Cells/2=Pages). The legacy bool form is
+    // normalized to int by migration M001 before this parse; SanitizeSettings runs
+    // NormalizeScrollSnap to clamp.
+    s.QuickbarSnapScroll       = (EQbScrollSnap)GetInt(qbLayout, "snap_scroll",
+                                                       (int)s.QuickbarSnapScroll);
     s.QuickbarScrollWrap       = GetBool (qbLayout, "scroll_wrap",       s.QuickbarScrollWrap);
 
     const json& qbWindow = GetObj(qb, "window");
@@ -534,6 +550,11 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarScrollIndicator = (EQbScrollIndicator)GetInt(qbLook, "scroll_indicator",
                                                            (int)s.QuickbarScrollIndicator);
     s.ShowQuickbarTooltips  = GetBool(qbLook, "show_tooltips",  s.ShowQuickbarTooltips);
+    // Per-preset unusable display (Grey/Hide/Normal). Active copy here; presets
+    // carry their own. Raw int; SanitizeSettings runs NormalizeUnusableBehavior.
+    // Migrated out of general.quickbar_unusable_behavior by M002.
+    s.QuickbarUnusableDisplay = (EUnusableBehavior)GetInt(qbLook, "unusable_display",
+                                                          (int)s.QuickbarUnusableDisplay);
 
     const json& qbInter = GetObj(qb, "interaction");
     // Raw int; SanitizeSettings runs NormalizeWheelCycle to clamp it.
@@ -556,13 +577,13 @@ bool LoadSettings(const std::string& path) {
     s.UseAIIconFallback = GetBool(general, "use_ai_icon_fallback", s.UseAIIconFallback);
     s.ShowTargetDot     = GetBool(general, "show_target_dot",       s.ShowTargetDot);
     s.ShowMeMoteIndicator = GetBool(general, "show_me_mote_indicator", s.ShowMeMoteIndicator);
-    s.QuickbarGreyUnusable = GetBool(general, "quickbar_grey_unusable", s.QuickbarGreyUnusable);
-    s.QuickbarPreciseStateDetection = GetBool(general, "quickbar_precise_state",
-                                              s.QuickbarPreciseStateDetection);
-    s.QuickbarAirborneDetection = GetBool(general, "quickbar_airborne", s.QuickbarAirborneDetection);
-    // Raw int; SanitizeSettings runs NormalizeUnusableBehavior to clamp it.
-    s.QuickbarUnusableBehavior = (EUnusableBehavior)GetInt(general, "quickbar_unusable_behavior",
-                                                           (int)s.QuickbarUnusableBehavior);
+    // Global unusable-block master + detection sub-toggles (the display choice
+    // moved to quickbar.look.unusable_display). Migrated from the old
+    // quickbar_grey_unusable / quickbar_airborne / quickbar_precise_state keys
+    // by M002.
+    s.BlockUnusableEmotes   = GetBool(general, "block_unusable",          s.BlockUnusableEmotes);
+    s.BlockWhileAirborne    = GetBool(general, "block_while_airborne",    s.BlockWhileAirborne);
+    s.PreciseStateDetection = GetBool(general, "precise_state_detection", s.PreciseStateDetection);
     s.NotifyNewBundledEmotes   = GetBool(general, "notify_new_bundled_emotes",  s.NotifyNewBundledEmotes);
 
     const json& qbCats = GetObj(general, "quickbar_categories");
@@ -574,17 +595,14 @@ bool LoadSettings(const std::string& path) {
     s.QuickbarShowMeMotesCategory     = GetBool(qbCats, "me_motes",     s.QuickbarShowMeMotesCategory);
     s.QuickbarShowRecentlyUsedCategory = GetBool(qbCats, "recently_used", s.QuickbarShowRecentlyUsedCategory);
     s.QuickbarShowFrequentCategory     = GetBool(qbCats, "frequent",      s.QuickbarShowFrequentCategory);
+    s.IgnoreMeMotesFromUsage           = GetBool(qbCats, "ignore_memotes", s.IgnoreMeMotesFromUsage);
 
     const json& shortcut = GetObj(general, "nexus_shortcut");
     s.ShowNexusShortcut        = GetBool(shortcut, "show",                      s.ShowNexusShortcut);
-    // Legacy bool "left_click_opens_quickbar" (pre-palette) maps onto the
-    // 3-way action first; the current int key overrides when present.
-    {
-        const bool legacyQb = GetBool(shortcut, "left_click_opens_quickbar", false);
-        s.ShortcutClickAction = (EShortcutClick)GetInt(
-            shortcut, "left_click_opens",
-            legacyQb ? (int)EShortcutClick::Quickbar : (int)s.ShortcutClickAction);
-    }
+    // 3-way left-click action. The legacy bool "left_click_opens_quickbar" is
+    // folded into this int key by migration M001 before this parse.
+    s.ShortcutClickAction = (EShortcutClick)GetInt(shortcut, "left_click_opens",
+                                                   (int)s.ShortcutClickAction);
 
     const json& language = GetObj(j, "language");
     s.UiLanguage = GetString(language, "ui", s.UiLanguage);
@@ -625,15 +643,15 @@ bool LoadSettings(const std::string& path) {
                 cat.Name      = GetString(catJ, "name", std::string());
                 cat.Collapsed = GetBool(catJ, "collapsed", false);
 
-                // Refs schema: new "refs" is an object array with {type, id}
-                // per entry. Legacy "emotes" is a string array of Emote-typed
-                // Ids. Accept both — refs wins if both are present. The
-                // "type" field accepts a numeric (0=Emote, 1=MeMote, matches
-                // the enum) OR a string ("emote", "me_mote") for hand-edit
-                // readability. Unknown types are dropped (SanitizeSettings
-                // logs the dropped count).
+                // Refs schema: "refs" is an object array with {type, id} per
+                // entry. The "type" field accepts a numeric (0=Emote, 1=MeMote,
+                // matches the enum) OR a string ("emote", "me_mote") for
+                // hand-edit readability. Unknown types are dropped
+                // (SanitizeSettings logs the dropped count). The legacy "emotes"
+                // string array is converted to "refs" by migration M001 before
+                // this parse.
                 const json& refsJ = GetArray(catJ, "refs");
-                if (!refsJ.empty()) {
+                {
                     cat.Refs.reserve(refsJ.size());
                     for (const auto& itJ : refsJ) {
                         if (!itJ.is_object()) continue;
@@ -654,19 +672,13 @@ bool LoadSettings(const std::string& path) {
                         if (r.Id.empty()) continue;  // dropped by sanitize-equiv
                         cat.Refs.push_back(std::move(r));
                     }
-                } else {
-                    // Legacy "emotes" string array → all Emote-typed.
-                    for (const auto& id : readStringArray(GetArray(catJ, "emotes"))) {
-                        if (id.empty()) continue;
-                        cat.Refs.push_back(FavoriteRef{ EFavoriteRefType::Emote, id });
-                    }
                 }
                 s.FavoriteCategories.push_back(std::move(cat));
             }
         }
     }
 
-    return SanitizeSettings(s);
+    return SanitizeSettings(s) || migrated;
 }
 
 std::string SerializeSettings() {
@@ -687,7 +699,7 @@ std::string SerializeSettings() {
     auto B = [](bool v) { return v ? "true" : "false"; };
 
     f << "{\n";
-    f << "  \"version\": 1,\n";
+    f << "  \"version\": " << emot3::migrations::kCurrentSchemaVersion << ",\n";
 
     // --- main ----------------------------------------------------------
     f << "  \"main\": {\n";
@@ -745,6 +757,7 @@ std::string SerializeSettings() {
     f << "    \"look\": {\n";
     f << "      \"high_contrast\": "  << B(s.QuickbarHighContrast)  << ",\n";
     f << "      \"scroll_indicator\": " << (int)s.QuickbarScrollIndicator << ",\n";
+    f << "      \"unusable_display\": " << (int)s.QuickbarUnusableDisplay << ",\n";
     f << "      \"show_tooltips\": "  << B(s.ShowQuickbarTooltips)    << "\n";
     f << "    },\n";
 
@@ -766,10 +779,9 @@ std::string SerializeSettings() {
     f << "    \"use_ai_icon_fallback\": "  << B(s.UseAIIconFallback) << ",\n";
     f << "    \"show_target_dot\": "        << B(s.ShowTargetDot)     << ",\n";
     f << "    \"show_me_mote_indicator\": " << B(s.ShowMeMoteIndicator) << ",\n";
-    f << "    \"quickbar_grey_unusable\": " << B(s.QuickbarGreyUnusable) << ",\n";
-    f << "    \"quickbar_airborne\": "      << B(s.QuickbarAirborneDetection) << ",\n";
-    f << "    \"quickbar_precise_state\": " << B(s.QuickbarPreciseStateDetection) << ",\n";
-    f << "    \"quickbar_unusable_behavior\": " << (int)s.QuickbarUnusableBehavior << ",\n";
+    f << "    \"block_unusable\": "          << B(s.BlockUnusableEmotes)   << ",\n";
+    f << "    \"block_while_airborne\": "    << B(s.BlockWhileAirborne)    << ",\n";
+    f << "    \"precise_state_detection\": " << B(s.PreciseStateDetection) << ",\n";
     f << "    \"notify_new_bundled_emotes\": "  << B(s.NotifyNewBundledEmotes)   << ",\n";
     f << "    \"quickbar_categories\": {\n";
     f << "      \"favorites\": "    << B(s.QuickbarShowFavoriteCategories)  << ",\n";
@@ -779,7 +791,8 @@ std::string SerializeSettings() {
     f << "      \"unlocked_all\": " << B(s.QuickbarShowUnlockedAllCategory) << ",\n";
     f << "      \"me_motes\": "     << B(s.QuickbarShowMeMotesCategory)     << ",\n";
     f << "      \"recently_used\": " << B(s.QuickbarShowRecentlyUsedCategory) << ",\n";
-    f << "      \"frequent\": "      << B(s.QuickbarShowFrequentCategory)     << "\n";
+    f << "      \"frequent\": "      << B(s.QuickbarShowFrequentCategory)     << ",\n";
+    f << "      \"ignore_memotes\": " << B(s.IgnoreMeMotesFromUsage)          << "\n";
     f << "    },\n";
     f << "    \"nexus_shortcut\": {\n";
     f << "      \"show\": "                      << B(s.ShowNexusShortcut)        << ",\n";

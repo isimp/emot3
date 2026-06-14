@@ -59,14 +59,14 @@ std::atomic<int> s_heldPrintable{ 0 };
 bool ShouldSkipEmoteSend(const char** outKey, bool checkHeldKeys, bool ignoreTextbox = false) {
     // 0. Competitive modes (PvP / WvW): a hard compliance lockout. emot3 injects input
     //    to send emotes, so that stays fully disabled in competitive with NO user
-    //    override - this sits ABOVE CurrentEmoteBlock()/QuickbarGreyUnusable. GW2's own
+    //    override - this sits ABOVE CurrentEmoteBlock()/BlockUnusableEmotes. GW2's own
     //    MumbleLink IsCompetitive bit; covers every surface (clicks, keybinds, radial).
     if (InCompetitiveMode()) { *outKey = "cells.blocked_competitive"; return true; }
 
     // 1. Can't-emote game state: GW2 plays no emote while mounted/downed/swimming/
     //    underwater/gliding/flying, so the send is a silent no-op - refuse with a
     //    toast naming the reason. CurrentEmoteBlock() is the single gate shared with
-    //    the Quickbar (core/CharacterState), gated on QuickbarGreyUnusable, covering
+    //    the Quickbar (core/CharacterState), gated on BlockUnusableEmotes, covering
     //    mounted via MumbleLink and the rest via the optional RealTime API. Extends
     //    the block to *every* send surface - the main panel + the right-click
     //    Send/@/* variants, not just the Quickbar cells. AIRBORNE is held back to

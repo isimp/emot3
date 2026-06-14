@@ -23,10 +23,12 @@ enum class EViewMode    { Full = 0, Icon = 1, TextOnly = 2, Compact = 3 };
 //   Anywhere — wheel cycles anywhere in the Quickbar, overriding icon scroll.
 enum class EWheelCycle  { Off = 0, OverBar = 1, Anywhere = 2 };
 
-// How the Quickbar presents a "can't emote right now" block (mounted, and -
-// with the RealTime API - swimming / downed / etc.). Grey keeps the buttons
-// visible but dimmed + unclickable; Hide removes the whole bar until usable.
-enum class EUnusableBehavior { Grey = 0, Hide = 1 };
+// How a Quickbar presents a "can't emote right now" block (mounted, and - with
+// the RealTime API - swimming / downed / etc.), once blocking is enabled
+// globally (BlockUnusableEmotes). Grey keeps the buttons visible but dimmed +
+// unclickable; Hide removes the whole bar until usable; Normal shows them as
+// usual (a click still refuses with a toast). Per-Quickbar-preset.
+enum class EUnusableBehavior { Grey = 0, Hide = 1, Normal = 2 };
 
 // What the Quickbar does while the player is in combat. Off ignores combat;
 // Grey dims + blocks the buttons in place (Quickbar-only - emotes still work
@@ -260,6 +262,12 @@ struct Settings {
     // by frequency over the bounded log. Opt-in like the other built-ins.
     bool                          QuickbarShowRecentlyUsedCategory = false;
     bool                          QuickbarShowFrequentCategory     = false;
+    // Exclude /me-motes from the usage log's Recently/Frequently used lists (some
+    // users want those to surface only real emotes). Filters at READ time
+    // (usage::RecentlyUsed/Frequent skip /me-mote refs) so toggling is immediate +
+    // reversible - the log still records them. Affects the Quickbar usage categories
+    // AND the Palette's zero-query list. Off by default.
+    bool                          IgnoreMeMotesFromUsage = false;
     // When the mouse wheel cycles the active category (see EWheelCycle).
     // Defaults to OverBar - cycling when hovering the category bar is what
     // most users intuitively expect, while the icon list still scrolls.
@@ -290,27 +298,32 @@ struct Settings {
     // visually distinguishable from regular Emotes in mixed favourites /
     // Quickbar categories.
     bool                          ShowMeMoteIndicator  = true;
-    // Block emotes that can't currently be used: refuse the send (toast) + grey
-    // or hide the Quickbar. On by default. Always covers mounted (MumbleLink); the
-    // transient refusals (typing, moving) ride it too. Airborne and the RTAPI states
-    // are separate sub-toggles below. See core/CharacterState.
-    bool                          QuickbarGreyUnusable = true;
-    // Grey/refuse while AIRBORNE (jumps + falls) - MumbleLink-derived, needs no addon.
-    // Its own sub-toggle (gated by QuickbarGreyUnusable); on by default.
-    bool                          QuickbarAirborneDetection = true;
+    // GLOBAL master: block emotes that can't currently be used - refuse the send
+    // (toast) on EVERY surface (panel, right-click, keybind, radial) AND feed the
+    // Quickbar's unusable display. On by default. Always covers mounted
+    // (MumbleLink); the transient refusals (typing, moving) ride it too. Airborne
+    // and the RTAPI states are separate detection sub-toggles below. The grey/hide
+    // PRESENTATION choice is per-Quickbar-preset (QuickbarUnusableDisplay). Lives
+    // in General > Sending. See core/CharacterState + core/EmoteAction.
+    bool                          BlockUnusableEmotes = true;
+    // Block while AIRBORNE (jumps + falls) - MumbleLink-derived, needs no addon.
+    // Detection sub-toggle (gated by BlockUnusableEmotes); on by default. Also
+    // mirrored into the radial export (core/RadialExport).
+    bool                          BlockWhileAirborne = true;
     // Extend the block to the RTAPI-only states (downed / swimming / underwater /
     // gliding / flying) - requires the optional GW2 RealTime API addon (a no-op
-    // without it). Gated by QuickbarGreyUnusable. On by default; only does anything
+    // without it). Gated by BlockUnusableEmotes. On by default; only does anything
     // once RTAPI loads.
-    bool                          QuickbarPreciseStateDetection = true;
-    // How a blocked state presents on the Quickbar: grey the buttons (default)
-    // or hide the whole bar until the player can emote again. When active
-    // (QuickbarGreyUnusable), this covers the transient send refusals too - a GW2
-    // text box focused, or moving / a printable key held - matching the send gate,
-    // with no separate opt-in (they're cheap + robust). The +plus "send while
-    // moving" setting drops the movement case; "close chat on send" drops the
-    // textbox case. See Quickbar.cpp.
-    EUnusableBehavior             QuickbarUnusableBehavior = EUnusableBehavior::Grey;
+    bool                          PreciseStateDetection = true;
+    // PER-PRESET: how a blocked state presents on THIS Quickbar - grey the buttons
+    // (default), hide the whole bar, or show them normally (Normal; a click still
+    // refuses with a toast). Only meaningful while BlockUnusableEmotes is on. When
+    // greying/hiding, it also covers the transient send refusals (a GW2 text box
+    // focused, or moving / a printable key held) - matching the send gate, no
+    // separate opt-in. The +plus "send while moving" setting drops the movement
+    // case; "close chat on send" drops the textbox case. Travels with Quickbar
+    // presets; lives in the Quickbar tab. See Quickbar.cpp.
+    EUnusableBehavior             QuickbarUnusableDisplay = EUnusableBehavior::Grey;
     // Nexus quick-access shortcut (the little icon row at the top of the
     // screen). On by default — it's the main entry point for the addon.
     bool                          ShowNexusShortcut    = true;
