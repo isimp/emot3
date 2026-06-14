@@ -376,7 +376,6 @@
   "opt.mm.restore_bundled_tooltip": "Adds bundled sample /me-motes not already in your catalog. Never duplicates or overwrites edits.",
   "opt.mm.body_truncate_warn": "will be cut off in chat (limit ~199 chars)",
 
-  "opt.am.section": "Auto-motes",
   "opt.am.hlp_top": "Auto-fires an emote when your own chat message contains one of its trigger words (e.g. type \"lol\" > /laugh). Set trigger words per emote in the Catalog tab's \"Chat triggers\" field. Off by default; never fires in PvP/WvW.",
   "opt.am.needs_events_chat": "Requires the \"Events: Chat\" addon (jsantorek/GW2-Chat) to read chat - not detected. Install and enable it in Nexus; nothing fires until it's present.",
   "opt.am.enabled": "Enable auto-motes",
@@ -422,7 +421,6 @@
   "opt.sec.updates": "Updates",
   "opt.sec.qb_categories": "Quickbar categories",
   "opt.sec.usage": "Usage history",
-  "opt.sec.unlocks": "Unlocks",
   "opt.sec.add_emote": "Add to catalog",
   "opt.sec.add_me_mote": "Add to /me-motes",
 

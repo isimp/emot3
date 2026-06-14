@@ -373,7 +373,6 @@
   "opt.mm.restore_bundled_tooltip": "Fügt mitgelieferte Beispiel-/me-motes hinzu, die noch nicht im Katalog sind. Dupliziert nichts und überschreibt keine Änderungen.",
   "opt.mm.body_truncate_warn": "wird im Chat abgeschnitten (Limit ~199 Zeichen)",
 
-  "opt.am.section": "Auto-motes",
   "opt.am.hlp_top": "Löst automatisch ein Emote aus, wenn deine eigene Chat-Nachricht eines der Auslösewörter enthält (z. B. \"lol\" tippen > /laugh). Die Wörter legst du pro Emote im Katalog-Tab unter \"Chat-Auslöser\" fest. Standardmäßig deaktiviert; löst nie in PvP/WvW aus.",
   "opt.am.needs_events_chat": "Benötigt das Addon \"Events: Chat\" (jsantorek/GW2-Chat) zum Lesen des Chats - nicht erkannt. Installiere und aktiviere es in Nexus; nichts löst aus, bis es vorhanden ist.",
   "opt.am.enabled": "Auto-motes aktivieren",
@@ -419,7 +418,6 @@
   "opt.sec.updates": "Updates",
   "opt.sec.qb_categories": "Quickbar-Kategorien",
   "opt.sec.usage": "Nutzungsverlauf",
-  "opt.sec.unlocks": "Freischaltungen",
   "opt.sec.bundled": "Mitgelieferte Emotes",
   "opt.sec.clear": "Katalog leeren",
   "opt.sec.add_emote": "Zum Katalog hinzufügen",

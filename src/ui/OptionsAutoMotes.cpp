@@ -20,7 +20,6 @@
 // advisory and the feature no-ops without it. Declared in OptionsCommon.h.
 void RenderAutoMotesTab() {
     PROFILE_SCOPE("opt.automotes");  // dev perf overlay
-    OptionsSection(L("opt.am.section"));
     {
         const bool available = ChatWatchAvailable();
         ImGui::TextWrapped("%s", L("opt.am.hlp_top"));

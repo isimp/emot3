@@ -131,7 +131,6 @@ void DrawApiSync() {
 void RenderUnlocksTab() {
     PROFILE_SCOPE("opt.unlocks");  // dev perf overlay
 
-    OptionsSection(L("opt.sec.unlocks"));
     // Plain intro: how unlock state is managed (manual + optional API sync).
     ImGui::TextWrapped("%s", L("opt.unl.intro"));
     ImGui::Spacing();
