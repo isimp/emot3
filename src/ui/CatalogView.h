@@ -23,6 +23,7 @@
 //     LIVE in each surface's (now cheap) build and need no invalidation.
 // =====================================================================
 
+#include <cstddef>       // size_t
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -44,3 +45,8 @@ struct CatalogView {
 // frames; call this each frame. Consumed lock-free on the render thread (the only
 // writer to the catalogs / favorites / unlock set is also the render thread).
 const CatalogView& GetCatalogView();
+
+// Dev-tool (MemoryMonitor) accessor: the cached view's total entry count + an estimated
+// heap footprint (nodes + bucket arrays + out-of-SSO key strings; within ~2x). Render-
+// thread only. Defined unconditionally; only called under EMOT3_DEVTOOLS.
+void CatalogViewStats(size_t& count, size_t& bytes);

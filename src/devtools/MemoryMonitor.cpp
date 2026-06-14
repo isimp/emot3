@@ -41,6 +41,7 @@
 #include "Globals.h"
 #include "EmoteData.h"
 #include "MeMotes.h"
+#include "CatalogView.h"   // CatalogViewStats (cached-index footprint row)
 #include "Settings.h"
 #include "TextCache.h"
 #include "Usage.h"      // usage log row (Recently/Frequently used)
@@ -153,18 +154,26 @@ namespace mem_est {
     }
 }  // namespace mem_est
 
+// Which heap a row's bytes live in. DllHeap = our operator new (counted in the DLL
+// heap total, so those rows + "unaccounted" reconcile to it). External = a pool we
+// don't own - Nexus's texture heap, .rdata statics - shown for context but NEVER
+// summed into the DLL heap total (that was the apples+oranges in the old TOTAL).
+enum class MemKind { DllHeap, External };
+
 // One row's per-frame value, named by a stable string literal so we can use
 // it as a map key without allocating.
 struct Snapshot {
     const char* name;
     size_t      count;
     size_t      bytes;
+    MemKind     kind = MemKind::DllHeap;
 };
 
 // Promoted, displayed per-row stats with rolling history.
 struct RowStat {
     size_t       count = 0;
     size_t       bytes = 0;
+    MemKind      kind  = MemKind::DllHeap;
     prof::Ring   countHist;
     prof::Ring   bytesHist;  // stored as KB so the float Ring covers the
                              // range we care about without precision loss
@@ -232,6 +241,15 @@ void Sample(std::vector<Snapshot>& out) {
         out.push_back({ "catalog (g_MeMotes)", g_MeMotes.size(), bytes });
     }
 
+    // Shared cached catalog index (ui/CatalogView): byId + meMotesById + the favorited
+    // sets, rebuilt only on catalog/favorites/unlock change. OUR heap - hash nodes +
+    // bucket arrays + COPIED string keys (distinct from the catalog strings above), so
+    // it's its own row. Previously uncounted -> it inflated "unaccounted" until now.
+    {
+        size_t c = 0, b = 0; CatalogViewStats(c, b);
+        out.push_back({ "catalog view (cached index)", c, b });
+    }
+
     // /me-mote bundled-seed table. Lazily parsed file-static behind
     // MeMotesBundledSeedCount/Bytes accessors so we don't reach into the
     // anonymous-namespace globals (same accessor pattern TextCache +
@@ -254,7 +272,7 @@ void Sample(std::vector<Snapshot>& out) {
                 bytes += std::strlen(kMeMoteAIIcons[i].command) + 1;
         }
         out.push_back({ "/me-mote bundled AI icons (manifest)",
-                        (size_t)kMeMoteAIIconsCount, bytes });
+                        (size_t)kMeMoteAIIconsCount, bytes, MemKind::External });
     }
 
     // Icon textures: ONE deduped content pool shared by cells AND the picker
@@ -263,7 +281,8 @@ void Sample(std::vector<Snapshot>& out) {
     // total so it's visible against the process working set.
     {
         IconPoolUsage u; IconPoolStats(u);
-        out.push_back({ "icon textures (content pool, est)", u.totalCount, u.totalBytes });
+        out.push_back({ "icon textures (content pool, est)", u.totalCount, u.totalBytes,
+                        MemKind::External });
     }
 
     // Icon-cache BOOKKEEPING: the id->key memos + the permanent attempted-keys
@@ -390,6 +409,7 @@ void NewFrameIfNeeded() {
         RowStat& r = rs[s.name];
         r.count = s.count;
         r.bytes = s.bytes;
+        r.kind  = s.kind;
         r.countHist.push((float)s.count);
         r.bytesHist.push((float)s.bytes / 1024.0f);  // KB
     }
@@ -488,9 +508,12 @@ void RenderMemoryMonitor() {
         const bool baseAct = memmon::baseline().active;
         struct MRow { const std::string* name; size_t count; size_t bytes;
                       int64_t delta; double peakKB; bool growing; };
-        std::vector<MRow> mrows;
-        mrows.reserve(memmon::rows().size());
-        size_t sumCount = 0, sumBytes = 0; int64_t sumDelta = 0;
+
+        // Partition by heap kind: DLL-heap rows reconcile to the DLL heap total above;
+        // External rows (Nexus texture heap / .rdata statics) are shown apart and never
+        // summed into it - that mix was the old TOTAL's apples+oranges.
+        std::vector<MRow> dllRows, extRows;
+        size_t dllCount = 0, dllBytesSum = 0;
         for (const auto& kv : memmon::rows()) {
             const memmon::RowStat& s = kv.second;
             int64_t deltaBytes = 0; bool growing = false;
@@ -501,9 +524,9 @@ void RenderMemoryMonitor() {
                     if (deltaBytes > 0) growing = memmon::IsMonotonicGrowth(s.bytesHist, 30);
                 }
             }
-            mrows.push_back({ &kv.first, s.count, s.bytes, deltaBytes,
-                              s.bytesHist.peak(), growing });
-            sumCount += s.count; sumBytes += s.bytes; sumDelta += deltaBytes;
+            MRow row{ &kv.first, s.count, s.bytes, deltaBytes, s.bytesHist.peak(), growing };
+            if (s.kind == memmon::MemKind::External) extRows.push_back(row);
+            else { dllRows.push_back(row); dllCount += s.count; dllBytesSum += s.bytes; }
         }
 
         const int cols = baseAct ? 5 : 4;
@@ -511,7 +534,9 @@ void RenderMemoryMonitor() {
             ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingFixedFit |
             ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
             ImGuiTableFlags_NoSavedSettings;
-        if (ImGui::BeginTable("##memmon_subsystems", cols, kMemFlags)) {
+
+        // Shared column setup / per-spec sort / row draw, so both sections look alike.
+        auto setupCols = [&] {
             ImGui::TableSetupColumn("subsystem", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("count",     ImGuiTableColumnFlags_PreferSortDescending);
             ImGui::TableSetupColumn("bytes (KB)",
@@ -519,51 +544,73 @@ void RenderMemoryMonitor() {
             if (baseAct) ImGui::TableSetupColumn("Δ KB", ImGuiTableColumnFlags_PreferSortDescending);
             ImGui::TableSetupColumn("peak KB",   ImGuiTableColumnFlags_PreferSortDescending);
             ImGui::TableHeadersRow();
+        };
+        auto sortBySpec = [&](std::vector<MRow>& rs) {
+            ImGuiTableSortSpecs* sp = ImGui::TableGetSortSpecs();
+            if (!sp || sp->SpecsCount == 0) return;
+            const ImGuiTableColumnSortSpecs& c = sp->Specs[0];
+            bool asc = c.SortDirection == ImGuiSortDirection_Ascending;
+            int  ci  = c.ColumnIndex;
+            std::sort(rs.begin(), rs.end(), [&](const MRow& a, const MRow& b) {
+                if (ci == 0) { int r = a.name->compare(*b.name); return asc ? r < 0 : r > 0; }
+                double x, y;
+                if      (ci == 1)            { x = (double)a.count; y = (double)b.count; }
+                else if (ci == 2)            { x = (double)a.bytes; y = (double)b.bytes; }
+                else if (baseAct && ci == 3) { x = (double)a.delta; y = (double)b.delta; }
+                else                         { x = a.peakKB;        y = b.peakKB; }
+                return asc ? (x < y) : (x > y);
+            });
+        };
+        auto drawDataRow = [&](const MRow& r) {
+            ImGui::TableNextRow();
+            if (r.growing) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.55f, 1.0f));
+            ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(r.name->c_str());
+            ImGui::TableSetColumnIndex(1); devui::NumCell("%zu", r.count);
+            ImGui::TableSetColumnIndex(2); devui::NumCell("%.1f", r.bytes / 1024.0);
+            int col = 3;
+            if (baseAct) { ImGui::TableSetColumnIndex(col++);
+                           devui::NumCell("%+lld", (long long)(r.delta / 1024)); }
+            ImGui::TableSetColumnIndex(col); devui::NumCell("%.1f", r.peakKB);
+            if (r.growing) ImGui::PopStyleColor();
+        };
 
-            if (ImGuiTableSortSpecs* sp = ImGui::TableGetSortSpecs()) {
-                if (sp->SpecsCount > 0) {
-                    const ImGuiTableColumnSortSpecs& c = sp->Specs[0];
-                    bool asc = c.SortDirection == ImGuiSortDirection_Ascending;
-                    int  ci  = c.ColumnIndex;
-                    std::sort(mrows.begin(), mrows.end(),
-                              [&](const MRow& a, const MRow& b) {
-                        if (ci == 0) { int r = a.name->compare(*b.name);
-                                       return asc ? r < 0 : r > 0; }
-                        double x, y;
-                        if      (ci == 1)            { x = (double)a.count; y = (double)b.count; }
-                        else if (ci == 2)            { x = (double)a.bytes; y = (double)b.bytes; }
-                        else if (baseAct && ci == 3) { x = (double)a.delta; y = (double)b.delta; }
-                        else                         { x = a.peakKB;        y = b.peakKB; }
-                        return asc ? (x < y) : (x > y);
-                    });
-                }
-            }
+        // ---- DLL heap section: tracked rows + unaccounted = the DLL heap total ----
+        ImGui::TextDisabled("DLL heap breakdown (rows + unaccounted = the total above):");
+        if (ImGui::BeginTable("##memmon_dll", cols, kMemFlags)) {
+            setupCols();
+            sortBySpec(dllRows);
+            for (const MRow& r : dllRows) drawDataRow(r);
 
-            for (const MRow& r : mrows) {
-                ImGui::TableNextRow();
-                if (r.growing) ImGui::PushStyleColor(ImGuiCol_Text,
-                                                     ImVec4(1.0f, 0.55f, 0.55f, 1.0f));
-                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(r.name->c_str());
-                ImGui::TableSetColumnIndex(1); devui::NumCell("%zu", r.count);
-                ImGui::TableSetColumnIndex(2); devui::NumCell("%.1f", r.bytes / 1024.0);
-                int col = 3;
-                if (baseAct) { ImGui::TableSetColumnIndex(col++);
-                               devui::NumCell("%+lld", (long long)(r.delta / 1024)); }
-                ImGui::TableSetColumnIndex(col); devui::NumCell("%.1f", r.peakKB);
-                if (r.growing) ImGui::PopStyleColor();
-            }
+            // Unaccounted = the precise DLL heap counter minus everything we categorized
+            // (CRT scratch, json temps, the monitor's own maps, any container without a
+            // row). Signed: a negative value means our ~2x row estimates overshot.
+            int64_t unacc = (int64_t)dllBytes - (int64_t)dllBytesSum;
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("unaccounted (CRT / untracked)");
+            ImGui::TableSetColumnIndex(2); devui::NumCell("%+.1f", unacc / 1024.0);
 
-            // Pinned total row (after the sorted rows, set apart by a tinted bg).
+            // Pinned root: the true DLL heap total (= the rows + unaccounted, exactly).
             ImGui::TableNextRow();
             ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
                                    ImGui::GetColorU32(ImVec4(0.26f, 0.26f, 0.32f, 0.55f)));
-            ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("TOTAL");
-            ImGui::TableSetColumnIndex(1); devui::NumCell("%zu", sumCount);
-            ImGui::TableSetColumnIndex(2); devui::NumCell("%.1f", sumBytes / 1024.0);
-            if (baseAct) { ImGui::TableSetColumnIndex(3);
-                           devui::NumCell("%+lld", (long long)(sumDelta / 1024)); }
-            // peak column left blank (summing windowed peaks isn't meaningful).
+            ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("TOTAL (DLL heap)");
+            ImGui::TableSetColumnIndex(1); devui::NumCell("%zu", dllCount);
+            ImGui::TableSetColumnIndex(2); devui::NumCell("%.1f", dllBytes / 1024.0);
+            if (baseAct) { ImGui::TableSetColumnIndex(3); devui::NumCell("%+lld",
+                (long long)(((int64_t)dllBytes - (int64_t)memmon::baseline().dllBytes) / 1024)); }
             ImGui::EndTable();
+        }
+
+        // ---- External section: pools we don't own (NOT part of the DLL heap) ----
+        if (!extRows.empty()) {
+            ImGui::Spacing();
+            ImGui::TextDisabled("external pools (Nexus / .rdata - not our heap):");
+            if (ImGui::BeginTable("##memmon_ext", cols, kMemFlags)) {
+                setupCols();
+                sortBySpec(extRows);
+                for (const MRow& r : extRows) drawDataRow(r);
+                ImGui::EndTable();
+            }
         }
         ImGui::Separator();
 
