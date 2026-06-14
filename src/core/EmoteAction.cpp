@@ -611,6 +611,7 @@ void MarkEmoteUnlocked(const std::string& id) {
     g_Settings.ManuallyUnlocked.push_back(id);
     LOG_DEBUG("Marked %s as unlocked", id.c_str());
     RequestSave(SaveKind::Settings);
+    MarkUiViewDirty();  // unlockedIds set changed -> cached catalog view rebuilds
 }
 
 void MarkEmoteLocked(const std::string& id) {
@@ -633,6 +634,7 @@ void MarkEmoteLocked(const std::string& id) {
         LOG_DEBUG("Marked %s as locked (evicted from %d favorite slot(s))",
                   id.c_str(), evicted);
         RequestSave(SaveKind::Settings);
+        MarkUiViewDirty();  // unlockedIds shrank + favorites evicted -> rebuild view
     }
 }
 

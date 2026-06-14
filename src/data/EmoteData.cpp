@@ -59,6 +59,11 @@ bool                     s_tableLoaded = false;
 std::vector<LocaleEntry> s_table;
 std::vector<std::string> s_tableLangs;
 
+// The unlock-match index, built once from s_table. File-scope (not a function-local
+// static) so the dev-tool stats accessor can read it without forcing a build.
+BundledUnlockInfo s_unlockInfo;
+bool              s_unlockBuilt = false;
+
 // Title-case a command stem for use as a derived display name when a
 // language carries a command but no curated name: "/danse" -> "Danse".
 // Only touches the first character; multi-word concatenated commands
@@ -309,29 +314,64 @@ std::string NormalizeUnlockKey(std::string s) {
 }
 
 const BundledUnlockInfo& GetBundledUnlockInfo() {
-    static BundledUnlockInfo info;
-    static bool built = false;
-    if (built) return info;
+    if (s_unlockBuilt) return s_unlockInfo;
     EnsureTableLoaded();  // populates s_table from the bundled emotes_i18n.json
     for (const auto& entry : s_table) {
         if (entry.isCore) continue;  // only unlockables have an account-API state
-        info.unlockableIds.insert(entry.id);
+        s_unlockInfo.unlockableIds.insert(entry.id);
         // The id itself is a key so a PascalCase account-API id ("Rock") resolves.
-        info.normKeyToId[NormalizeUnlockKey(entry.id)] = entry.id;
+        s_unlockInfo.normKeyToId[NormalizeUnlockKey(entry.id)] = entry.id;
         for (const auto& kv : entry.byLang) {
             const LangEntry& le = kv.second;
             std::string k = NormalizeUnlockKey(le.command);
-            if (!k.empty()) info.normKeyToId[k] = entry.id;
+            if (!k.empty()) s_unlockInfo.normKeyToId[k] = entry.id;
             for (const auto& a : le.aliases) {
                 std::string ka = NormalizeUnlockKey(a);
-                if (!ka.empty()) info.normKeyToId[ka] = entry.id;
+                if (!ka.empty()) s_unlockInfo.normKeyToId[ka] = entry.id;
             }
         }
     }
-    built = true;
+    s_unlockBuilt = true;
     LOG_INFO("Unlock index: %d unlockable id(s), %d match key(s)",
-             (int)info.unlockableIds.size(), (int)info.normKeyToId.size());
-    return info;
+             (int)s_unlockInfo.unlockableIds.size(), (int)s_unlockInfo.normKeyToId.size());
+    return s_unlockInfo;
+}
+
+// Dev-tool (MemoryMonitor) accessors: estimated heap footprint of the two bundled
+// startup tables (within ~2x). Report 0 until loaded/built - the monitor must not
+// allocate just by observing, so NEITHER forces a load. Defined unconditionally; only
+// called under EMOT3_DEVTOOLS (the linker drops them from shipped builds).
+static size_t emote_str_heap(const std::string& s) { return s.capacity() > 15 ? s.capacity() + 1 : 0; }
+
+void BundledEmoteTableStats(size_t& count, size_t& bytes) {
+    count = s_table.size();
+    bytes = s_table.capacity() * sizeof(LocaleEntry);
+    for (const auto& e : s_table) {
+        bytes += emote_str_heap(e.id);
+        for (const auto& kv : e.byLang) {
+            // one std::map (RB-tree) node = key string + LangEntry value + ~32 B overhead
+            bytes += sizeof(std::string) + sizeof(LangEntry) + 32;
+            bytes += emote_str_heap(kv.first)
+                   + emote_str_heap(kv.second.command) + emote_str_heap(kv.second.name);
+            bytes += kv.second.aliases.capacity() * sizeof(std::string);
+            for (const auto& a : kv.second.aliases) bytes += emote_str_heap(a);
+        }
+    }
+}
+
+void BundledUnlockIndexStats(size_t& count, size_t& bytes) {
+    count = 0; bytes = 0;
+    if (!s_unlockBuilt) return;
+    count = s_unlockInfo.unlockableIds.size() + s_unlockInfo.normKeyToId.size();
+    // unordered_set<string>: node = string + next-ptr + cached hash.
+    bytes += s_unlockInfo.unlockableIds.size() * (sizeof(std::string) + 2 * sizeof(void*))
+           + s_unlockInfo.unlockableIds.bucket_count() * sizeof(void*);
+    for (const auto& k : s_unlockInfo.unlockableIds) bytes += emote_str_heap(k);
+    // unordered_map<string,string>: node = key + value + next-ptr + cached hash.
+    bytes += s_unlockInfo.normKeyToId.size() * (2 * sizeof(std::string) + 2 * sizeof(void*))
+           + s_unlockInfo.normKeyToId.bucket_count() * sizeof(void*);
+    for (const auto& kv : s_unlockInfo.normKeyToId)
+        bytes += emote_str_heap(kv.first) + emote_str_heap(kv.second);
 }
 
 bool LoadEmotesJson(const std::string& path) {

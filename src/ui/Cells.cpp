@@ -174,46 +174,22 @@ void ApplyEmoteDrop(const EmoteDragPayload& src, int dstCat, int gap) {
     // favorites moves keep the moved ref's existing type intact (the type
     // doesn't change on reorder).
     if (src.categoryIdx < 0) {
-        // Built-in catalog source: insert the ref, nothing to erase. Locked
-        // emotes can't be favorited (already blocked at the source, guarded
-        // again here; /me-motes always carry isLocked=false so they pass).
-        // Skip if already present in this category.
+        // Built-in catalog source: a NEW favorite. Locked emotes can't be
+        // favorited (blocked at the source, guarded again here; /me-motes carry
+        // isLocked=false). InsertRefAt dedups within dstCat, saves, and bumps the
+        // cached catalog view (the favorited-id union grew).
         if (src.isLocked) return;
-        auto& d = g_Settings.FavoriteCategories[dstCat].Refs;
-        FavoriteRef ref{ src.type, std::string(src.id) };
-        if (std::find_if(d.begin(), d.end(), [&](const FavoriteRef& r) {
-                return r.Type == ref.Type && r.Id == ref.Id;
-            }) != d.end()) return;
-        int ins = std::max(0, std::min(gap, (int)d.size()));
-        d.insert(d.begin() + ins, std::move(ref));
+        InsertRefAt(dstCat, gap, src.type, std::string(src.id));
     } else {
         int srcCat = src.categoryIdx, srcIdx = src.emoteIdx;
         // Locked emotes can reorder within their category but not move across.
         bool blocked = src.isLocked && srcCat != dstCat;
         if (blocked || srcCat < 0 || srcCat >= N) return;
-
-        if (srcCat == dstCat) {
-            auto& v = g_Settings.FavoriteCategories[srcCat].Refs;
-            if (srcIdx < 0 || srcIdx >= (int)v.size()) return;
-            FavoriteRef moved = v[srcIdx];
-            v.erase(v.begin() + srcIdx);
-            // The erase shifts every slot after srcIdx down by one, so a gap
-            // past the removed item lands one slot earlier than its index.
-            int ins = (gap > srcIdx) ? gap - 1 : gap;
-            ins = std::max(0, std::min(ins, (int)v.size()));
-            v.insert(v.begin() + ins, std::move(moved));
-        } else {
-            auto& s = g_Settings.FavoriteCategories[srcCat].Refs;
-            auto& d = g_Settings.FavoriteCategories[dstCat].Refs;
-            if (srcIdx < 0 || srcIdx >= (int)s.size()) return;
-            FavoriteRef moved = s[srcIdx];
-            s.erase(s.begin() + srcIdx);
-            // d is a different vector than s, so the erase doesn't shift gap.
-            int ins = std::max(0, std::min(gap, (int)d.size()));
-            d.insert(d.begin() + ins, std::move(moved));
-        }
+        // A move keeps the id favorited (union unchanged): the helpers save but do
+        // NOT bump the view; the per-category ORDER is read live by the build.
+        if (srcCat == dstCat) MoveRefWithinCategory(srcCat, srcIdx, gap);
+        else                  MoveRefAcrossCategories(srcCat, srcIdx, dstCat, gap);
     }
-    RequestSave(SaveKind::Settings);
 }
 
 // Accept a hovering FAV_DRAG emote drop into category `dstCat` at a fixed `gap`,

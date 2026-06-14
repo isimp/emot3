@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "EmoteData.h"     // CatalogIndex / BuildCatalogIndex (live count)
+#include "CatalogView.h"   // GetCatalogView (shared cached index)
 #include "UnlockScan.h"    // StartUnlockSync / status
 #include "Profiling.h"     // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 
@@ -23,14 +24,13 @@ void SaveNow() { RequestSave(SaveKind::Settings); }
 // unlocked). Same shared index helper the render builds use.
 void DrawLiveCount() {
     int unlockedCount = 0, lockedCount = 0;
+    const CatalogView& cv = GetCatalogView();   // shared cached index (no per-frame rebuild)
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        CatalogIndex idx;
-        BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
         for (const auto& e : g_Emotes) {
             if (e.IsCore) continue;
-            if (idx.unlocked(e)) ++unlockedCount;
-            else                 ++lockedCount;
+            if (cv.idx.unlocked(e)) ++unlockedCount;
+            else                    ++lockedCount;
         }
     }
     ImGui::TextDisabled(L("opt.gen.unlocks_count"), unlockedCount, lockedCount);

@@ -21,6 +21,14 @@ void AddRefToCategory      (int catIdx, EFavoriteRefType type, const std::string
                             bool isLockedSource = false);
 void RemoveRefFromCategories(EFavoriteRefType type, const std::string& id);
 
+// Positional ref helpers backing the Library drag-drop (data mutation kept here in
+// Favorites.cpp so the view bump + the save stay centralized). InsertRefAt adds a
+// NEW favorite at a drop position (bumps the UI view); the two Move* helpers
+// relocate an existing ref (save only - the favorited-id union is unchanged).
+void InsertRefAt(int catIdx, int pos, EFavoriteRefType type, const std::string& id);
+void MoveRefWithinCategory(int catIdx, int fromIdx, int toPos);
+void MoveRefAcrossCategories(int srcCat, int srcIdx, int dstCat, int toPos);
+
 // Emote convenience wrappers — preserve the historical call surface so
 // existing Emote-only call sites stay unchanged. Each routes to the
 // type-tagged form above with EFavoriteRefType::Emote.
