@@ -257,66 +257,8 @@ void RenderMeMotesTab() {
     }
     ImGui::Spacing();
 
-    // ---- "Add to /me-motes" section: inline Id input + Add button -----
-    // Mirrors OptionsEmotes' "Add to catalog" Add input exactly: an
-    // OptionsSection heading, an InputTextWithHint width 180 px, then the
-    // Add button on SameLine. Validation states (empty / collision) paint
-    // the invalid input style + red border + tooltip; Add is disabled
-    // until valid.
-    OptionsSection(L("opt.sec.add_me_mote"));
-
-    static char s_newIdBuf[64] = {};
-    std::string rawNew   = s_newIdBuf;
-    std::string normNew  = NormalizeMeMoteId(rawNew);
-    bool newHasInput = !TrimWhitespace(rawNew).empty();
-
-    bool newIdDup = false;
-    if (newHasInput && !normNew.empty()) {
-        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-        newIdDup = (FindMeMote(normNew) != nullptr);
-    }
-    bool newInvalid = newHasInput && (normNew.empty() || newIdDup);
-
-    bool newMmHovered = false;
-    {
-        InputFieldOpts o; o.invalid = newInvalid; o.width = 180.f;
-        InputFieldWithHint("##new_me_mote_id", "opt.mm.new_id_hint",
-                           s_newIdBuf, sizeof(s_newIdBuf), o, nullptr, &newMmHovered);
-    }
-    if (newInvalid && newMmHovered) {
-        if (normNew.empty()) {
-            TooltipText("opt.mm.id_min");
-        } else {
-            char m[160]; std::snprintf(m, sizeof m, L("opt.mm.id_exists"), normNew.c_str());
-            TooltipTextRaw(m);
-        }
-    }
-
-    ImGui::SameLine();
-    bool addEnabled = newHasInput && !newInvalid;
-    if (!addEnabled) {
-        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
-                            ImGui::GetStyle().Alpha * 0.45f);
-    }
-    bool addPressed = ImGui::Button(L("opt.mm.add_button"));
-    if (!addEnabled) {
-        ImGui::PopStyleVar();
-        ImGui::PopItemFlag();
-    }
-    if (addPressed && addEnabled) {
-        std::string newId = normNew;
-        {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            MeMote m;
-            m.Id = newId;
-            g_MeMotes.push_back(std::move(m));
-        }
-        s_rowOpen[newId] = true;     // open the new row for immediate editing
-        LOG_DEBUG("/me-mote added (id=%s)", newId.c_str());
-        Persist();                    // outside the lock
-        s_newIdBuf[0] = '\0';         // clear input on commit
-    }
+    // ("Add to /me-motes" renders BELOW the list now - see the add section after
+    //  EndChild, so the list isn't pushed down by the add input.)
 
     // Filter + sort state (declared before the cached view that consumes them).
     static char s_filter[64] = {};
@@ -414,11 +356,19 @@ void RenderMeMotesTab() {
     {
         const ImGuiStyle& st = ImGui::GetStyle();
         const float sortW   = 150.f;
-        float       filterW = ImGui::GetContentRegionAvail().x - sortW - st.ItemSpacing.x;
-        if (filterW < 120.f) filterW = 120.f;
+        const float clearW  = ImGui::GetFrameHeight();
+        float       filterW = ImGui::GetContentRegionAvail().x - clearW - sortW
+                              - st.ItemSpacing.x * 2.f;
+        if (filterW < 100.f) filterW = 100.f;
         ImGui::SetNextItemWidth(filterW);
         ImGui::InputTextWithHint("##mmfilter", L("opt.cat.filter_hint"),
                                  s_filter, sizeof(s_filter));
+        ImGui::SameLine(0, st.ItemSpacing.x);
+        const bool hasFilter = (s_filter[0] != '\0');
+        if (!hasFilter) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, st.Alpha * 0.30f);
+        if (ImGui::Button("X##mmclr", ImVec2(clearW, 0.f)) && hasFilter) s_filter[0] = '\0';
+        if (!hasFilter) ImGui::PopStyleVar();
+        if (hasFilter && ImGui::IsItemHovered()) TooltipText("opt.pick.clear_search");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(sortW);
         const char* sortItems[] = { L("opt.cat.sort_id"), L("opt.cat.sort_name") };
@@ -871,6 +821,62 @@ void RenderMeMotesTab() {
         s_rowBufs.erase(deleteId);
         SyncEmoteBinds();            // drop the entry's Nexus InputBinds (all bound
                                      // variants; stays if a staged radial wheel refs it)
+    }
+
+    // ---- "Add to /me-motes" inline input (BELOW the list, to declutter it) ----
+    // Mirrors the Emote tab's "Add to catalog": an Id input + Add button, with
+    // empty/collision validation painting the invalid style; Add disabled until valid.
+    OptionsSection(L("opt.sec.add_me_mote"));
+    {
+        static char s_newIdBuf[64] = {};
+        std::string normNew     = NormalizeMeMoteId(std::string(s_newIdBuf));
+        bool        newHasInput = !TrimWhitespace(std::string(s_newIdBuf)).empty();
+
+        bool newIdDup = false;
+        if (newHasInput && !normNew.empty()) {
+            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+            newIdDup = (FindMeMote(normNew) != nullptr);
+        }
+        bool newInvalid = newHasInput && (normNew.empty() || newIdDup);
+
+        bool newMmHovered = false;
+        {
+            InputFieldOpts o; o.invalid = newInvalid; o.width = 180.f;
+            InputFieldWithHint("##new_me_mote_id", "opt.mm.new_id_hint",
+                               s_newIdBuf, sizeof(s_newIdBuf), o, nullptr, &newMmHovered);
+        }
+        if (newInvalid && newMmHovered) {
+            if (normNew.empty()) {
+                TooltipText("opt.mm.id_min");
+            } else {
+                char m[160]; std::snprintf(m, sizeof m, L("opt.mm.id_exists"), normNew.c_str());
+                TooltipTextRaw(m);
+            }
+        }
+
+        ImGui::SameLine();
+        bool addEnabled = newHasInput && !newInvalid;
+        if (!addEnabled) {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.45f);
+        }
+        bool addPressed = ImGui::Button(L("opt.mm.add_button"));
+        if (!addEnabled) {
+            ImGui::PopStyleVar();
+            ImGui::PopItemFlag();
+        }
+        if (addPressed && addEnabled) {
+            const std::string newId = normNew;
+            {
+                std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                MeMote m; m.Id = newId;
+                g_MeMotes.push_back(std::move(m));
+            }
+            s_rowOpen[newId] = true;     // open the new row for immediate editing
+            LOG_DEBUG("/me-mote added (id=%s)", newId.c_str());
+            Persist();                    // outside the lock
+            s_newIdBuf[0] = '\0';         // clear input on commit
+        }
     }
 
     // ===== Bundled samples (uncommon: reseed) =====

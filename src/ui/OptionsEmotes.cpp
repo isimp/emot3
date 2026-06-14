@@ -204,101 +204,8 @@ void RenderEmotesTab() {
     // (Auto-motes master enable + watched channels live in Options > General now;
     // this tab only carries the per-emote "Chat triggers" field in each row.)
 
-    // ---- "Add to catalog" inline input ----
-    //
-    // The everyday action (add one emote), above the list. Mirrors the
-    // "+ Category" UX in MainPanel: a slash-prefixed command with live
-    // validation. The stable Id is derived from the command stem
-    // (lowercased, no slash) and is the uniqueness constraint - the red
-    // border / hard block fires on an Id collision. A command that
-    // duplicates another emote's is allowed (Id is the key), surfaced
-    // only as a soft note.
-    OptionsSection(L("opt.sec.add_emote"));
-    static char newCmdBuf[64] = {};
-
-    // Normalize via the shared helper (trim, force leading slash, lowercase) so
-    // every command ingress - here, the per-row edit below, and emotes.json
-    // load - is identical; derive the stable id from the normalized stem.
-    std::string rawNew = newCmdBuf;
-    std::string trimmedNew = TrimWhitespace(rawNew);
-    std::string normalizedNew = NormalizeEmoteCommand(trimmedNew);
-    std::string newId = normalizedNew.size() > 1 ? normalizedNew.substr(1)
-                                                 : std::string();
-
-    bool newHasInput = !trimmedNew.empty();
-    bool newIdDup = false, newCmdDup = false;
-    {
-        std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        if (newHasInput && !newId.empty()) {
-            newIdDup  = IdCollidesWith(newId, nullptr);
-            newCmdDup = CommandCollidesWith(normalizedNew, nullptr);
-        }
-    }
-    // Hard-invalid (blocks add): empty stem or Id collision.
-    bool newInvalid = newHasInput && (newId.empty() || newIdDup);
-
-    bool newHovered = false;
-    {
-        InputFieldOpts o; o.invalid = newInvalid; o.width = 180.f;
-        InputFieldWithHint("##newcmd", "opt.em.cmd_hint",
-                           newCmdBuf, sizeof(newCmdBuf), o, nullptr, &newHovered);
-    }
-    if (newInvalid && newHovered) {
-        if (newId.empty()) {
-            TooltipText("opt.em.cmd_min");
-        } else {
-            char m[160]; std::snprintf(m, sizeof m, L("opt.em.id_exists"), newId.c_str());
-            TooltipTextRaw(m);
-        }
-    }
-
-    ImGui::SameLine();
-    bool addEnabled = newHasInput && !newInvalid;
-    if (!addEnabled) {
-        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
-                             ImGui::GetStyle().Alpha * 0.45f);
-    }
-    bool addPressed = ImGui::Button(L("opt.em.add_button"));
-    if (!addEnabled) {
-        ImGui::PopStyleVar();
-        ImGui::PopItemFlag();
-    }
-    // Soft, non-blocking note: another emote already sends this command.
-    if (addEnabled && newCmdDup) {
-        ImGui::TextDisabled(L("opt.em.shared_note"), normalizedNew.c_str());
-    }
-    if (addPressed && addEnabled) {
-        // Default display name is the stem title-cased; de-duped against
-        // existing names with a " 2"/" 3" suffix so a new row never ships
-        // with a duplicate display name.
-        std::string baseName = TitleCaseStem(normalizedNew);
-        std::string finalName = baseName;
-        {
-            std::lock_guard<std::mutex> lk(g_EmotesMutex);
-            for (int n = 2; n < 1000; ++n) {
-                bool dup = false;
-                for (const auto& other : g_Emotes) {
-                    if (other.Name == finalName) { dup = true; break; }
-                }
-                if (!dup) break;
-                finalName = baseName + " " + std::to_string(n);
-            }
-            Emote e;
-            e.Id           = newId;
-            e.Command      = normalizedNew;
-            e.Name         = finalName;
-            e.IsCore       = false;
-            e.IsTargetable = false;
-            e.IsMadKing    = false;  // user emotes aren't part of the bundled set
-            g_Emotes.push_back(std::move(e));
-        }
-        LOG_INFO("Added emote id=%s command=%s (\"%s\")",
-                 newId.c_str(), normalizedNew.c_str(), finalName.c_str());
-        RequestSave(SaveKind::Emotes);
-        MarkEmotesDirty();
-        newCmdBuf[0] = '\0';  // Clear input on commit.
-    }
+    // ("Add to catalog" renders BELOW the list now - see the add section after
+    //  EndChild, so the everyday list isn't pushed down by the add input.)
 
     // Persistent per-row edit buffers keyed by Id (stable). New rows
     // initialize lazily.
@@ -385,11 +292,20 @@ void RenderEmotesTab() {
     {
         const ImGuiStyle& st = ImGui::GetStyle();
         const float sortW   = 150.f;
-        float       filterW = ImGui::GetContentRegionAvail().x - sortW - st.ItemSpacing.x;
-        if (filterW < 120.f) filterW = 120.f;
+        const float clearW  = ImGui::GetFrameHeight();   // square X, full height
+        float       filterW = ImGui::GetContentRegionAvail().x - clearW - sortW
+                              - st.ItemSpacing.x * 2.f;
+        if (filterW < 100.f) filterW = 100.f;
         ImGui::SetNextItemWidth(filterW);
         ImGui::InputTextWithHint("##catfilter", L("opt.cat.filter_hint"),
                                  s_filter, sizeof(s_filter));
+        // Clear (X) - greyed when empty, mirrors the icon-picker search clear.
+        ImGui::SameLine(0, st.ItemSpacing.x);
+        const bool hasFilter = (s_filter[0] != '\0');
+        if (!hasFilter) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, st.Alpha * 0.30f);
+        if (ImGui::Button("X##catclr", ImVec2(clearW, 0.f)) && hasFilter) s_filter[0] = '\0';
+        if (!hasFilter) ImGui::PopStyleVar();
+        if (hasFilter && ImGui::IsItemHovered()) TooltipText("opt.pick.clear_search");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(sortW);
         const char* sortItems[] = { L("opt.cat.sort_id"), L("opt.cat.sort_name"),
@@ -1015,6 +931,92 @@ void RenderEmotesTab() {
         MarkEmotesDirty();
     }
     if (keybindEdited) SyncEmoteBinds();  // register/deregister the toggled bind
+
+    // ---- "Add to catalog" inline input (BELOW the list, to declutter it) ----
+    //
+    // The everyday action (add one emote). Mirrors the "+ Category" UX in
+    // MainPanel: a slash-prefixed command with live validation. The stable Id is
+    // derived from the command stem (lowercased, no slash) and is the uniqueness
+    // constraint - the red border / hard block fires on an Id collision. A command
+    // that duplicates another emote's is allowed (Id is the key), soft note only.
+    OptionsSection(L("opt.sec.add_emote"));
+    {
+        static char newCmdBuf[64] = {};
+
+        // Normalize via the shared helper (trim, force leading slash, lowercase),
+        // then derive the stable id from the normalized stem.
+        std::string trimmedNew    = TrimWhitespace(std::string(newCmdBuf));
+        std::string normalizedNew = NormalizeEmoteCommand(trimmedNew);
+        std::string newId         = normalizedNew.size() > 1 ? normalizedNew.substr(1)
+                                                             : std::string();
+        bool newHasInput = !trimmedNew.empty();
+        bool newIdDup = false, newCmdDup = false;
+        {
+            std::lock_guard<std::mutex> lk(g_EmotesMutex);
+            if (newHasInput && !newId.empty()) {
+                newIdDup  = IdCollidesWith(newId, nullptr);
+                newCmdDup = CommandCollidesWith(normalizedNew, nullptr);
+            }
+        }
+        bool newInvalid = newHasInput && (newId.empty() || newIdDup);
+
+        bool newHovered = false;
+        {
+            InputFieldOpts o; o.invalid = newInvalid; o.width = 180.f;
+            InputFieldWithHint("##newcmd", "opt.em.cmd_hint",
+                               newCmdBuf, sizeof(newCmdBuf), o, nullptr, &newHovered);
+        }
+        if (newInvalid && newHovered) {
+            if (newId.empty()) {
+                TooltipText("opt.em.cmd_min");
+            } else {
+                char m[160]; std::snprintf(m, sizeof m, L("opt.em.id_exists"), newId.c_str());
+                TooltipTextRaw(m);
+            }
+        }
+
+        ImGui::SameLine();
+        bool addEnabled = newHasInput && !newInvalid;
+        if (!addEnabled) {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.45f);
+        }
+        bool addPressed = ImGui::Button(L("opt.em.add_button"));
+        if (!addEnabled) {
+            ImGui::PopStyleVar();
+            ImGui::PopItemFlag();
+        }
+        if (addEnabled && newCmdDup) {
+            ImGui::TextDisabled(L("opt.em.shared_note"), normalizedNew.c_str());
+        }
+        if (addPressed && addEnabled) {
+            std::string baseName = TitleCaseStem(normalizedNew);
+            std::string finalName = baseName;
+            {
+                std::lock_guard<std::mutex> lk(g_EmotesMutex);
+                for (int n = 2; n < 1000; ++n) {
+                    bool dup = false;
+                    for (const auto& other : g_Emotes)
+                        if (other.Name == finalName) { dup = true; break; }
+                    if (!dup) break;
+                    finalName = baseName + " " + std::to_string(n);
+                }
+                Emote e;
+                e.Id           = newId;
+                e.Command      = normalizedNew;
+                e.Name         = finalName;
+                e.IsCore       = false;
+                e.IsTargetable = false;
+                e.IsMadKing    = false;
+                g_Emotes.push_back(std::move(e));
+            }
+            LOG_INFO("Added emote id=%s command=%s (\"%s\")",
+                     newId.c_str(), normalizedNew.c_str(), finalName.c_str());
+            RequestSave(SaveKind::Emotes);
+            MarkEmotesDirty();
+            newCmdBuf[0] = '\0';
+        }
+    }
 
     // ===== Bundled emotes (uncommon: reseed) =====
     // Bottom of the tab, next to Clear catalog: both are catalog-wide
