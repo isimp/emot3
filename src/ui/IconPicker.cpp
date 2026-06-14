@@ -6,6 +6,7 @@
 #include "Resources.h"    // bundled icon tables + TryLoadBundledIconBytes
 #include "Settings.h"     // g_Settings.UseAIIconFallback
 #include "I18n.h"         // L()
+#include "OptionsCommon.h"  // InputFieldWithHint (shared text-field standard)
 #include "Layout.h"       // RightAlignCursor (shared)
 #include "Logging.h"      // LOG_WARNING (folder cap)
 #include "StringUtil.h"   // ToLower (shared helper)
@@ -347,9 +348,11 @@ void RenderIconPicker() {
         const float gap     = st.ItemSpacing.x;
         float searchW = ImGui::GetContentRegionAvail().x - clearW - sliderW - gap * 2.f;
         if (searchW < 120.f) searchW = 120.f;            // floor on a narrow modal
-        ImGui::SetNextItemWidth(searchW);
-        ImGui::InputTextWithHint("##pick_search", L("opt.pick.search_hint"),
-                                 s_search, sizeof(s_search));
+        {
+            InputFieldOpts o; o.width = searchW;
+            InputFieldWithHint("##pick_search", "opt.pick.search_hint",
+                               s_search, sizeof(s_search), o);
+        }
         // Clear (X) - greyed when empty, mirrors the main-panel search clear.
         ImGui::SameLine(0, gap);
         const bool hasSearch = (s_search[0] != '\0');

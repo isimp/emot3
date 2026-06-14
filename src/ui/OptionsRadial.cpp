@@ -445,10 +445,10 @@ void RenderWizard() {
     // Wheel name (validated non-empty)
     ImGui::TextUnformatted(L("opt.radial.name_label"));
     bool nameEmpty = (s_wizName[0] == '\0');
-    if (nameEmpty) PushInvalidInputStyle();
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputText("##radialname", s_wizName, sizeof(s_wizName));
-    if (nameEmpty) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
+    {
+        InputFieldOpts o; o.invalid = nameEmpty;   // width 0 = fill
+        InputFieldWithHint("##radialname", nullptr, s_wizName, sizeof(s_wizName), o);
+    }
 
     // Items (bordered scroll child). When split, each included row gets a page combo.
     ImGui::Spacing();
@@ -834,12 +834,14 @@ void RenderRadialTab() {
                     // Inline rename (no popup) - mirrors the Library's category rename.
                     if (s_renameFocus) { ImGui::SetKeyboardFocusHere(); s_renameFocus = false; }
                     bool empty = (s_renameBuf[0] == '\0');
-                    ImGui::SetNextItemWidth(180.0f);
-                    if (empty) PushInvalidInputStyle();
-                    bool enter = ImGui::InputText("##wrn", s_renameBuf, sizeof(s_renameBuf),
-                                                  ImGuiInputTextFlags_EnterReturnsTrue);
-                    bool active = ImGui::IsItemActive();
-                    if (empty) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
+                    bool enter = false, active = false;
+                    {
+                        InputFieldOpts o; o.width = 180.f; o.invalid = empty;
+                        o.flags = ImGuiInputTextFlags_EnterReturnsTrue;
+                        enter  = InputFieldWithHint("##wrn", nullptr, s_renameBuf,
+                                                    sizeof(s_renameBuf), o);
+                        active = ImGui::IsItemActive();
+                    }
                     // Rename only rewrites the staged pack; the deployed copy (if any)
                     // becomes "out of date" and the user pushes it with the Sync button
                     // (so a RadialMenus write stays an explicit, confirmed action).
