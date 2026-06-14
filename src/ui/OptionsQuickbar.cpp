@@ -465,8 +465,6 @@ void RenderQuickbarOptionsTab() {
     // ===== Look =====
     OptionsSection(L("opt.sec.look"));
 
-    CheckboxWithSaveAndTooltip("opt.qb.high_contrast", &g_Settings.QuickbarHighContrast, /*defaultIsOn=*/false);
-
     // How THIS Quickbar presents an emote that can't be used right now: grey the
     // buttons (default), hide the whole bar, or show them normally (a click still
     // refuses with a toast). Per-preset - travels with Quickbar presets. Only acts
@@ -494,6 +492,8 @@ void RenderQuickbarOptionsTab() {
         if (blocking && ImGui::IsItemHovered()) TooltipText("opt.qb.unusable_display.tip");
         if (!blocking) ImGui::TextDisabled("%s", L("opt.qb.unusable_needs_block"));
     }
+
+    CheckboxWithSaveAndTooltip("opt.qb.high_contrast", &g_Settings.QuickbarHighContrast, /*defaultIsOn=*/false);
 
     CheckboxWithSaveAndTooltip("opt.qb.show_tooltips", &g_Settings.ShowQuickbarTooltips, /*defaultIsOn=*/true);
 
