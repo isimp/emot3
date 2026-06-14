@@ -236,6 +236,34 @@ void RenderGeneralOptionsTab() {
                  /*defaultIsOn=*/false);
 #endif
 
+    // Block emotes that can't be used right now (mounted, airborne, and - with the
+    // RealTime API - swimming / downed / gliding / ...): refuses the send with a
+    // toast on EVERY surface (panel, right-click, keybind, radial). GLOBAL master.
+    // How the Quickbar PRESENTS a blocked emote (grey / hide / show normally) is a
+    // per-preset setting on the Quickbar tab. Two detection sub-toggles below
+    // extend what counts as "can't be used".
+    CheckboxWithSaveAndTooltip("opt.gen.block_unusable", &g_Settings.BlockUnusableEmotes, /*defaultIsOn=*/true);
+    if (g_Settings.BlockUnusableEmotes) {
+        ImGui::Indent();
+
+        // Airborne (jumps + falls) - its own toggle, MumbleLink-derived (no addon).
+        CheckboxWithSaveAndTooltip("opt.gen.airborne", &g_Settings.BlockWhileAirborne, /*defaultIsOn=*/true);
+
+        CheckboxWithSaveAndTooltip("opt.gen.precise_state", &g_Settings.PreciseStateDetection, /*defaultIsOn=*/true);
+        // Live status: precise detection is a no-op without the RealTime API addon.
+        if (RTApiConnected())
+            ImGui::TextColored(ImVec4(0.45f, 0.80f, 0.45f, 1.f), "%s", L("opt.gen.rtapi_connected"));
+        else
+            ImGui::TextDisabled("%s", L("opt.gen.rtapi_missing"));
+#ifdef EMOT3_DEVTOOLS
+        // Dev-tool raw probe so a "not found" report can be diagnosed in place.
+        // A diagnostic, so it's on the dev-tools axis (EMOT3_DEVTOOLS): present
+        // in Dev/Debug, absent from the public emot3.dll AND emot3_plus.dll.
+        ImGui::TextDisabled("%s", RTApiDebugInfo());
+#endif
+        ImGui::Unindent();
+    }
+
     // ===== Icons =====
     OptionsSection(L("opt.sec.icons"));
 
@@ -255,64 +283,6 @@ void RenderGeneralOptionsTab() {
     // target-dot toggle since they're conceptual siblings (and share the
     // top-right corner — never co-occur, /me-motes are never targetable).
     CheckboxWithSaveAndTooltip("opt.gen.show_me_mote_indicator", &g_Settings.ShowMeMoteIndicator, /*defaultIsOn=*/true);
-
-    // How unusable emotes present on the Quickbar - one dropdown over the two
-    // settings: Grey out / Hide / Do nothing. "Do nothing" is the off state
-    // (QuickbarGreyUnusable=false), which also stops the send gate refusing
-    // game-state blocks, matching the former master toggle. Display order
-    // grey/hide/off; synth index maps to (QuickbarGreyUnusable, behaviour).
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(L("opt.gen.unusable_behavior"));
-    ImGui::SameLine();
-    int uidx = !g_Settings.QuickbarGreyUnusable ? 2
-             : (g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide ? 1 : 0);
-    const char* uItems[] = { L("opt.gen.unusable_grey"), L("opt.gen.unusable_hide"),
-                             L("opt.gen.unusable_off") };
-    ImGui::SetNextItemWidth(160.f);
-    if (ImGui::Combo("##unusable", &uidx, uItems, IM_ARRAYSIZE(uItems))) {
-        g_Settings.QuickbarGreyUnusable = (uidx != 2);
-        if (uidx == 0)      g_Settings.QuickbarUnusableBehavior = EUnusableBehavior::Grey;
-        else if (uidx == 1) g_Settings.QuickbarUnusableBehavior = EUnusableBehavior::Hide;
-        LOG_TRACE("setting general.unusable: grey=%d behavior=%d",
-                  g_Settings.QuickbarGreyUnusable, (int)g_Settings.QuickbarUnusableBehavior);
-        RequestSave(SaveKind::Settings);
-    }
-    if (ImGui::IsItemHovered()) {
-        static const TooltipOption kUnusableOpts[] = {
-            { "opt.gen.unusable_grey", "opt.gen.unusable_grey.desc", true  },
-            { "opt.gen.unusable_hide", "opt.gen.unusable_hide.desc", false },
-            { "opt.gen.unusable_off",  "opt.gen.unusable_off.desc",  false },
-        };
-        TooltipOptions("opt.gen.unusable_intro", kUnusableOpts, IM_ARRAYSIZE(kUnusableOpts));
-    }
-
-    // Detection + the extra sources only matter while the interaction isn't "off";
-    // indent them under it so the grouping reads at a glance.
-    if (g_Settings.QuickbarGreyUnusable) {
-        ImGui::Indent();
-
-        // Airborne (jumps + falls) - its own toggle, MumbleLink-derived (no addon).
-        CheckboxWithSaveAndTooltip("opt.gen.airborne", &g_Settings.QuickbarAirborneDetection, /*defaultIsOn=*/true);
-
-        CheckboxWithSaveAndTooltip("opt.gen.precise_state", &g_Settings.QuickbarPreciseStateDetection, /*defaultIsOn=*/true);
-        // Live status: precise detection is a no-op without the RealTime API addon.
-        if (RTApiConnected())
-            ImGui::TextColored(ImVec4(0.45f, 0.80f, 0.45f, 1.f), "%s", L("opt.gen.rtapi_connected"));
-        else
-            ImGui::TextDisabled("%s", L("opt.gen.rtapi_missing"));
-#ifdef EMOT3_DEVTOOLS
-        // Dev-tool raw probe so a "not found" report can be diagnosed in place.
-        // A diagnostic, so it's on the dev-tools axis (EMOT3_DEVTOOLS): present
-        // in Dev/Debug, absent from the public emot3.dll AND emot3_plus.dll.
-        ImGui::TextDisabled("%s", RTApiDebugInfo());
-#endif
-        // The transient refusals (text box focused, moving / key held) now ride
-        // this same grey/hide automatically - no separate opt-in (see Quickbar.cpp
-        // qb.busy). "Send while moving" (+plus) and "close chat on send" carve out
-        // the movement / textbox cases respectively.
-
-        ImGui::Unindent();
-    }
 
     // (The Unlocks section moved to its own "Unlocks" tab — see OptionsUnlocks.cpp.)
 

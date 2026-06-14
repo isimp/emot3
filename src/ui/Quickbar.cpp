@@ -122,8 +122,8 @@ void QuickbarRender() {
 
     // Competitive modes (PvP / WvW): hard-hide the bar, unconditionally (no setting).
     // emot3 injects input to send emotes; in competitive that stays fully disabled (the
-    // send gate refuses every surface too). Sits ABOVE the QuickbarGreyUnusable /
-    // QuickbarUnusableBehavior machinery so the grey/hide preference can't weaken it.
+    // send gate refuses every surface too). Sits ABOVE the BlockUnusableEmotes /
+    // QuickbarUnusableDisplay machinery so the grey/hide preference can't weaken it.
     // GW2's own MumbleLink IsCompetitive bit.
     if (InCompetitiveMode()) return;
 
@@ -144,12 +144,12 @@ void QuickbarRender() {
     g_QbBlockReason = CurrentEmoteBlock();
 
     // Unified "why this Quickbar emote can't be used this frame" reason, with ONE
-    // interaction (QuickbarUnusableBehavior) applied. Whenever greying/hiding is
-    // active (QuickbarGreyUnusable), it covers BOTH the game-state block (mounted /
+    // presentation (QuickbarUnusableDisplay: grey / hide / normal) applied. Whenever
+    // blocking is active (BlockUnusableEmotes), it covers BOTH the game-state block (mounted /
     // RTAPI states / airborne) AND the transient send refusals - a GW2 text box
     // focused, or moving / a printable key held. The transient cases used to be
     // separate opt-ins, but they're robust + cheap now, so they just ride the master
-    // setting. Same detector as the send gate (CurrentSendBusy) so greying and
+    // setting. Same detector as the send gate (CurrentSendBusy) so blocking and
     // refusal can't drift; mapped to the present-tense cells.blocked_* wording. Two
     // settings carve out their own case: "send while moving" (+plus swallow) drops
     // the movement source (a held key no longer refuses), and "close chat on send"
@@ -168,9 +168,9 @@ void QuickbarRender() {
         // velocity flag - no per-frame key polling. Evaluated even while a game-state
         // block (mounted) masks the reason, so the movement debounce tracks the REAL
         // hold duration and survives the block (no unmount-while-moving flicker).
-        const bool greying       = g_Settings.QuickbarGreyUnusable;
-        const bool checkMovement = greying && !EmoteSendSwallowActive();  // swallow handles held keys
-        const SendBusy busy = greying
+        const bool blocking       = g_Settings.BlockUnusableEmotes;
+        const bool checkMovement = blocking && !EmoteSendSwallowActive();  // swallow handles held keys
+        const SendBusy busy = blocking
             ? CurrentSendBusy(checkMovement, /*ignoreTextbox=*/g_Settings.CloseChatOnSend)
             : SendBusy::None;
         if (busy == SendBusy::KeysHeld) {
@@ -185,23 +185,23 @@ void QuickbarRender() {
         // airborne) lives in PickQbBlockReason (core/EmoteAction).
         const bool heldLongEnough = (busy == SendBusy::KeysHeld && s_heldSince >= 0.0 &&
                                      now - s_heldSince >= kHeldGreyDelay);
-        reason = PickQbBlockReason(g_QbBlockReason, greying, busy, heldLongEnough);
+        reason = PickQbBlockReason(g_QbBlockReason, blocking, busy, heldLongEnough);
 
         // The quick-send palette is itself a send surface: while it's open the
         // bar steps back, riding the same master setting + interaction (grey /
         // hide / untouched) as every other unusable source. Lowest priority -
         // a real reason (mounted, typing, moving) still owns the explainer.
-        if (!reason && greying && IsPaletteOpen())
+        if (!reason && blocking && IsPaletteOpen())
             reason = "cells.blocked_palette";
 
-        // Send throttle - an INDEPENDENT low-priority greying source, NOT a
+        // Send throttle - an INDEPENDENT low-priority blocking source, NOT a
         // CurrentSendBusy value. It must not ride the busy single-value priority:
         // a movement key TAPPED during the cooldown makes busy==KeysHeld, which
         // (until the 0.25s debounce elapses) yields no reason - and if the throttle
-        // were a busy value it'd be masked away, briefly un-greying the bar and
+        // were a busy value it'd be masked away, briefly un-blocking the bar and
         // looking like the cooldown cleared. As a separate fallback it just fills
         // the gap: still throttled + nothing else greyed => stay greyed.
-        if (!reason && greying && SendThrottleRemainingMs() > 0)
+        if (!reason && blocking && SendThrottleRemainingMs() > 0)
             reason = "cells.blocked_too_fast";
     }
 
@@ -228,7 +228,7 @@ void QuickbarRender() {
     // transient cases); Grey dims + blocks the cells in place further down. The
     // self-send reasons opt out of Hide (above) and fall through to the grey path.
     if (reason && !exemptFromHide &&
-        g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide) {
+        g_Settings.QuickbarUnusableDisplay == EUnusableBehavior::Hide) {
         g_QbUnusableKey = nullptr;
         return;
     }

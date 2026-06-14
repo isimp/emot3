@@ -72,6 +72,7 @@ json PresetToJson(const QuickbarPreset& p) {
     s["scroll_wrap"]                    = p.ScrollWrap;
     s["close_on_esc"]                   = p.CloseOnEsc;
     s["combat_behavior"]                = (int)p.CombatBehavior;
+    s["unusable_display"]               = (int)p.UnusableDisplay;
 
     json j;
     j["version"]  = 1;   // on-disk preset protocol version (parser is tolerant)
@@ -121,6 +122,13 @@ QuickbarPreset ParsePresetJson(const json& j) {
     p.ScrollWrap       = GetBool (s, "scroll_wrap",                   p.ScrollWrap);
     p.CloseOnEsc       = GetBool (s, "close_on_esc",                  p.CloseOnEsc);
     p.CombatBehavior   = NormalizeQbCombat(GetInt(s, "combat_behavior", (int)p.CombatBehavior));
+    // Per-preset unusable display. A preset saved before this field existed has
+    // no key; default it to the LIVE g_Settings value, which by the time presets
+    // load has been migrated (M002) from the old global setting - so old presets
+    // transparently inherit the user's former global grey/hide choice, and persist
+    // it on the next save. New presets always write the key.
+    p.UnusableDisplay  = NormalizeUnusableBehavior(
+                             GetInt(s, "unusable_display", (int)g_Settings.QuickbarUnusableDisplay));
 
     // Same [0.5, 2.5] envelope settings.json uses, so an applied preset can't
     // carry an out-of-range scale into g_Settings.
@@ -206,6 +214,7 @@ void CaptureQuickbarPreset(QuickbarPreset& p) {
     p.ScrollWrap       = s.QuickbarScrollWrap;
     p.CloseOnEsc       = s.QuickbarCloseOnEsc;
     p.CombatBehavior   = s.QuickbarCombatBehavior;
+    p.UnusableDisplay  = s.QuickbarUnusableDisplay;
     if (g_QbGeometryValid) {
         p.HasGeometry = true;
         p.X = g_QbWinX; p.Y = g_QbWinY; p.W = g_QbWinW; p.H = g_QbWinH;
@@ -234,11 +243,12 @@ void ApplyQuickbarPreset(const QuickbarPreset& p) {
     s.QuickbarScrollWrap                = p.ScrollWrap;
     s.QuickbarCloseOnEsc                = p.CloseOnEsc;
     s.QuickbarCombatBehavior            = p.CombatBehavior;
+    s.QuickbarUnusableDisplay           = p.UnusableDisplay;
     if (p.HasGeometry) {
         g_QbApplyGeometry = true;
         g_QbApplyX = p.X; g_QbApplyY = p.Y; g_QbApplyW = p.W; g_QbApplyH = p.H;
     }
-    // Applying a preset rewrites ~18 Quickbar settings at once - record which
+    // Applying a preset rewrites ~19 Quickbar settings at once - record which
     // one, since the individual setting-change TRACE lines don't fire here.
     LOG_INFO("preset: applied \"%s\" (geometry: %s)",
              p.Name.c_str(), p.HasGeometry ? "yes" : "no");
@@ -266,7 +276,8 @@ bool QuickbarPresetMatchesCurrent(const QuickbarPreset& p) {
         p.WheelCycleWrap   == s.QuickbarWheelCycleWrap &&
         p.ScrollWrap       == s.QuickbarScrollWrap &&
         p.CloseOnEsc       == s.QuickbarCloseOnEsc &&
-        p.CombatBehavior   == s.QuickbarCombatBehavior;
+        p.CombatBehavior   == s.QuickbarCombatBehavior &&
+        p.UnusableDisplay  == s.QuickbarUnusableDisplay;
     if (!settingsMatch) return false;
 
     // Geometry only participates when the preset has it AND the live window is

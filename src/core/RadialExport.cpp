@@ -1,7 +1,7 @@
 #include "RadialExport.h"
 
 #include "Globals.h"      // g_RadialsDir (+ Windows.h)
-#include "Settings.h"     // g_Settings (QuickbarPreciseStateDetection)
+#include "Settings.h"     // g_Settings (BlockWhileAirborne / PreciseStateDetection)
 #include "EmoteData.h"    // g_Emotes, g_EmotesMutex, FindEmote
 #include "MeMotes.h"      // g_MeMotes, g_MeMotesMutex, FindMeMote, EMeMoteVariant
 #include "EmoteBinds.h"   // EmoteBindIdentifier, SyncEmoteBinds
@@ -114,9 +114,9 @@ json BuildItem(const std::string& itemName, const std::string& identifier,
         vis["IsMounted"] = kObserveNotMounted;  // always (mounted is reliable everywhere)
         // Mirror emot3's own gating, now split: airborne has its own toggle (MumbleLink,
         // reliable without RTAPI); the water states ride precise (RTAPI) detection.
-        if (g_Settings.QuickbarAirborneDetection)
+        if (g_Settings.BlockWhileAirborne)
             vis["IsAirborne"] = kObserveFalse;
-        if (g_Settings.QuickbarPreciseStateDetection) {
+        if (g_Settings.PreciseStateDetection) {
             vis["IsUnderwater"]     = kObserveFalse;
             vis["IsOnWaterSurface"] = kObserveFalse;
         }

@@ -14,11 +14,11 @@ struct QuickbarPreset {
     std::string Name;   // display name (stored as the file's "name")
     std::string File;   // on-disk filename incl. ".json"; "" until first written
 
-    // --- 17-field Quickbar settings snapshot (mirrors g_Settings.QuickbarXxx).
+    // --- 18-field Quickbar settings snapshot (mirrors g_Settings.QuickbarXxx).
     // Adding a Quickbar setting that should travel with presets means editing
-    // four spots in QuickbarPresets.cpp: CaptureQuickbarPreset, ApplyQuickbar-
-    // Preset, ParsePresetJson and PresetToJson. Kept explicit to match the
-    // field-list style already used in Settings.cpp.
+    // five spots in QuickbarPresets.cpp: CaptureQuickbarPreset, ApplyQuickbar-
+    // Preset, ParsePresetJson, PresetToJson and QuickbarPresetMatchesCurrent.
+    // Kept explicit to match the field-list style already used in Settings.cpp.
     EViewMode ViewMode        = EViewMode::Icon;
     float     IconScale       = 1.0f;
     bool      UseDropdown      = false;
@@ -39,6 +39,10 @@ struct QuickbarPreset {
     bool      ScrollWrap       = false;
     bool      CloseOnEsc       = false;
     EQbCombat CombatBehavior   = EQbCombat::Off;
+    // How this Quickbar shows an unusable emote (Grey/Hide/Normal). Only acts
+    // while the global BlockUnusableEmotes is on. Old presets (no key) inherit
+    // the migrated active value - see ParsePresetJson.
+    EUnusableBehavior UnusableDisplay = EUnusableBehavior::Grey;
 
     // --- optional window geometry (screen-space; clamped to the viewport on
     // apply). HasGeometry is false for a preset captured while the Quickbar

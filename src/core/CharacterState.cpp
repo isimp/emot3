@@ -109,14 +109,14 @@ uint32_t RTApiCharacterStateBits() {
 }
 
 EmoteBlock CurrentEmoteBlock() {
-    if (!g_Settings.QuickbarGreyUnusable) return EmoteBlock::None;
+    if (!g_Settings.BlockUnusableEmotes) return EmoteBlock::None;
 
     // Mounted: MumbleLink, always available (no RTAPI needed).
     if (MumbleLink && MumbleLink->Context.MountIndex != Mumble::EMountIndex::None)
         return EmoteBlock::Mounted;
 
     // Precise states: opt-in AND require a live RTAPI.
-    RealTimeData* rt = g_Settings.QuickbarPreciseStateDetection ? LiveRTApi() : nullptr;
+    RealTimeData* rt = g_Settings.PreciseStateDetection ? LiveRTApi() : nullptr;
     if (rt) {
         uint32_t s = rt->CharacterState;
         // Underwater ("diving") is more specific than Swimming ("on surface"),
@@ -128,11 +128,11 @@ EmoteBlock CurrentEmoteBlock() {
         if (s & CS_IsFlying)     return EmoteBlock::Flying;
     }
 
-    // Airborne (jump or fall): its OWN opt-in (QuickbarAirborneDetection), separate from
+    // Airborne (jump or fall): its OWN opt-in (BlockWhileAirborne), separate from
     // the RTAPI states above - it's MumbleLink-derived (core/AirborneDetect) and needs no
     // addon. Checked after the RTAPI states so a controlled descent (gliding / flying) or
     // a water state keeps its own, more specific reason.
-    if (g_Settings.QuickbarAirborneDetection && air::IsAirborne())
+    if (g_Settings.BlockWhileAirborne && air::IsAirborne())
         return EmoteBlock::Airborne;
     return EmoteBlock::None;
 }

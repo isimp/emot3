@@ -392,11 +392,11 @@ void AddonLoad(AddonAPI* aApi) {
     // Compact one-line snapshot of the effective high-signal settings, so a
     // shared log opens with the user's actual config (mirrors the dev-state
     // inspector's "Settings (key flags)"). TRACE: diagnostic, off by default.
-    LOG_TRACE("settings: window=%d quickbar=%d send_on_click=%d grey=%d precise=%d "
-              "unusable_behavior=%d qb_cat_idx=%d autosync=%d key_source=%d ui_lang=%s",
+    LOG_TRACE("settings: window=%d quickbar=%d send_on_click=%d block=%d precise=%d "
+              "unusable_display=%d qb_cat_idx=%d autosync=%d key_source=%d ui_lang=%s",
               g_Settings.ShowWindow, g_Settings.ShowQuickbar, g_Settings.SendOnClick,
-              g_Settings.QuickbarGreyUnusable, g_Settings.QuickbarPreciseStateDetection,
-              (int)g_Settings.QuickbarUnusableBehavior, g_Settings.QuickbarCategoryIdx,
+              g_Settings.BlockUnusableEmotes, g_Settings.PreciseStateDetection,
+              (int)g_Settings.QuickbarUnusableDisplay, g_Settings.QuickbarCategoryIdx,
               g_Settings.UnlockAutoSync, g_Settings.UnlockApiKeySource,
               g_Settings.UiLanguage.c_str());
 

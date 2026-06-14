@@ -467,6 +467,34 @@ void RenderQuickbarOptionsTab() {
 
     CheckboxWithSaveAndTooltip("opt.qb.high_contrast", &g_Settings.QuickbarHighContrast, /*defaultIsOn=*/false);
 
+    // How THIS Quickbar presents an emote that can't be used right now: grey the
+    // buttons (default), hide the whole bar, or show them normally (a click still
+    // refuses with a toast). Per-preset - travels with Quickbar presets. Only acts
+    // while the global "Block emotes that can't be used" is on (General > Sending);
+    // greyed + hinted otherwise so it's clear where the master lives.
+    {
+        const bool blocking = g_Settings.BlockUnusableEmotes;
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(L("opt.qb.unusable_display"));
+        ImGui::SameLine();
+        int didx = (int)g_Settings.QuickbarUnusableDisplay;  // 0 grey / 1 hide / 2 normal
+        const char* dItems[] = { L("opt.qb.unusable_grey"), L("opt.qb.unusable_hide"),
+                                 L("opt.qb.unusable_normal") };
+        ImGui::SetNextItemWidth(160.f);
+        if (!blocking) {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+        }
+        if (ImGui::Combo("##qbunusable", &didx, dItems, IM_ARRAYSIZE(dItems))) {
+            g_Settings.QuickbarUnusableDisplay = NormalizeUnusableBehavior(didx);
+            LOG_TRACE("setting quickbar.unusable_display: %d", didx);
+            RequestSave(SaveKind::Settings);
+        }
+        if (!blocking) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
+        if (blocking && ImGui::IsItemHovered()) TooltipText("opt.qb.unusable_display.tip");
+        if (!blocking) ImGui::TextDisabled("%s", L("opt.qb.unusable_needs_block"));
+    }
+
     CheckboxWithSaveAndTooltip("opt.qb.show_tooltips", &g_Settings.ShowQuickbarTooltips, /*defaultIsOn=*/true);
 
     // ===== Interaction =====
