@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "Logging.h"
 #include "I18n.h"
+#include "OptionsCommon.h"  // InputFieldWithHint (shared text-field standard)
 #include "Settings.h"
 #include "SaveScheduler.h"  // RequestSave / PumpSaves (debounced, off-thread saves)
 #include "EmoteData.h"
@@ -734,9 +735,12 @@ void AddonRender() {
     // hint were removed - the palette filters from the first keystroke and
     // the two surfaces should feel the same).
     const float clearW = 24.f;
-    ImGui::SetNextItemWidth(-(clearW + ImGui::GetStyle().ItemSpacing.x));
-    ImGui::InputTextWithHint("##search", L("mp.search_hint"),
-                             g_SearchBuf, sizeof(g_SearchBuf));
+    {
+        InputFieldOpts o;   // explicit width leaves room for the trailing X button
+        o.width = ImGui::GetContentRegionAvail().x - clearW - ImGui::GetStyle().ItemSpacing.x;
+        if (o.width < 60.f) o.width = 60.f;
+        InputFieldWithHint("##search", "mp.search_hint", g_SearchBuf, sizeof(g_SearchBuf), o);
+    }
     if (ImGui::IsItemHovered())
         TooltipText("mp.search_tooltip");
     ImGui::SameLine();
@@ -968,18 +972,17 @@ void AddonRender() {
         bool        newCatInvalid = !trimmedNewCat.empty() &&
                                     CategoryNameExists(trimmedNewCat);
 
-        ImGui::SetNextItemWidth(180.f);
-        if (newCatInvalid) PushInvalidInputStyle();
-        bool addPressed = ImGui::InputText("##newcat_main", newCatBuf,
-                                            sizeof(newCatBuf),
-                                            ImGuiInputTextFlags_EnterReturnsTrue);
-        if (newCatInvalid) {
-            PopInvalidInputStyle();
-            DrawInvalidInputBorder();
-        }
-        if (newCatInvalid && ImGui::IsItemHovered()) {
-            char m[160]; std::snprintf(m, sizeof m, L("mp.cat_exists"), trimmedNewCat.c_str());
-            TooltipTextRaw(m);
+        bool addPressed = false;
+        {
+            InputFieldOpts o; o.width = 180.f; o.invalid = newCatInvalid;
+            o.flags = ImGuiInputTextFlags_EnterReturnsTrue;
+            bool hov = false;
+            addPressed = InputFieldWithHint("##newcat_main", nullptr, newCatBuf,
+                                            sizeof(newCatBuf), o, nullptr, &hov);
+            if (newCatInvalid && hov) {
+                char m[160]; std::snprintf(m, sizeof m, L("mp.cat_exists"), trimmedNewCat.c_str());
+                TooltipTextRaw(m);
+            }
         }
 
         // X clear button next to the input.

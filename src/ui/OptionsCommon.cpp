@@ -135,7 +135,8 @@ bool InputFieldWithHint(const char* id, const char* hintKey,
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  IM_COL32(0, 0, 0, 0));
     ImGui::SetNextItemWidth(opts.charBudget > 0 ? (fullW - zoneW) : fullW);
     const char* hint = hintKey ? L(hintKey) : "";
-    const bool edited = ImGui::InputTextWithHint(id, hint, buf, bufSize);
+    const bool edited = ImGui::InputTextWithHint(id, hint, buf, bufSize,
+                                                 (ImGuiInputTextFlags)opts.flags);
     ImGui::PopStyleColor(3);
 
     if (opts.charBudget > 0) {

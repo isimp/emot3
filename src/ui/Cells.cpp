@@ -3,6 +3,7 @@
 #include "QuickbarGeometry.h"  // g_QbStep* / g_QbMaxScroll* / ... (grid layout)
 #include "QbHitRects.h"        // g_QbIconRects (register cell hit-rects)
 #include "I18n.h"
+#include "OptionsCommon.h"  // InputFieldWithHint (shared text-field standard)
 #include "Settings.h"
 #include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "EmoteData.h"
@@ -1402,18 +1403,21 @@ bool RenderCategoryHeader(int categoryIdx, const char* name, bool searchActive) 
         bool empty   = trimmed.empty();
         bool dup     = !empty && CategoryNameExists(trimmed, categoryIdx);
         bool invalid = empty || dup;
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (invalid) PushInvalidInputStyle();
-        bool enter = ImGui::InputText("##catrename", s_catRenameBuf, sizeof(s_catRenameBuf),
-                                      ImGuiInputTextFlags_EnterReturnsTrue);
-        bool active = ImGui::IsItemActive();
-        if (invalid) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
-        if (invalid && ImGui::IsItemHovered()) {
-            if (dup) {
-                char m[160]; std::snprintf(m, sizeof m, L("mp.cat_exists"), trimmed.c_str());
-                TooltipTextRaw(m);
-            } else {
-                TooltipText("common.name_empty");
+        bool enter = false, active = false;
+        {
+            InputFieldOpts o; o.invalid = invalid;   // width 0 = fill
+            o.flags = ImGuiInputTextFlags_EnterReturnsTrue;
+            bool hov = false;
+            enter  = InputFieldWithHint("##catrename", nullptr, s_catRenameBuf,
+                                        sizeof(s_catRenameBuf), o, nullptr, &hov);
+            active = ImGui::IsItemActive();   // last item = the InputText
+            if (invalid && hov) {
+                if (dup) {
+                    char m[160]; std::snprintf(m, sizeof m, L("mp.cat_exists"), trimmed.c_str());
+                    TooltipTextRaw(m);
+                } else {
+                    TooltipText("common.name_empty");
+                }
             }
         }
         auto commit = [&]() {

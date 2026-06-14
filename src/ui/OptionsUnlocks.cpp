@@ -86,10 +86,10 @@ void DrawApiSync() {
     if (g_Settings.UnlockApiKeySource == 1) {
         char buf[256];
         strncpy_s(buf, sizeof(buf), g_Settings.Gw2ApiKey.c_str(), _TRUNCATE);
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputTextWithHint("##gw2apikey", L("opt.unl.key_hint"), buf,
-                                     sizeof(buf), ImGuiInputTextFlags_Password)) {
-            g_Settings.Gw2ApiKey = buf;
+        {
+            InputFieldOpts o; o.flags = ImGuiInputTextFlags_Password;  // width 0 = fill
+            if (InputFieldWithHint("##gw2apikey", "opt.unl.key_hint", buf, sizeof(buf), o))
+                g_Settings.Gw2ApiKey = buf;
         }
         if (ImGui::IsItemDeactivatedAfterEdit()) SaveNow();
         ImGui::TextWrapped("%s", L("opt.unl.key_help"));

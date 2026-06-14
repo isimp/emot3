@@ -67,6 +67,10 @@ struct InputFieldOpts {
     bool  enabled    = true;      // false: skip hover/active highlight (caller dims via alpha)
     int   charBudget = 0;         // > 0: draw "n / budget" counter inside the frame
     float width      = 0.f;       // input width; 0 fills the available region
+    int   flags      = 0;         // ImGuiInputTextFlags forwarded to the input
+                                  // (Password, EnterReturnsTrue, ...); the return
+                                  // value is InputText's verbatim, so EnterReturnsTrue
+                                  // makes InputFieldWithHint return "Enter pressed".
 };
 bool InputFieldWithHint(const char* id, const char* hintKey,
                         char* buf, size_t bufSize, const InputFieldOpts& opts,

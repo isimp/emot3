@@ -142,17 +142,20 @@ static void RenderQuickbarPresetsSection() {
         // matching every other validated input - no muted hint written below.
         bool invalid = empty || dup;
 
-        ImGui::SetNextItemWidth(200.f);
-        if (invalid) PushInvalidInputStyle();
-        bool enter = ImGui::InputText("##presetname", s_nameBuf, sizeof(s_nameBuf),
-                                       ImGuiInputTextFlags_EnterReturnsTrue);
-        if (invalid) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
-        if (invalid && ImGui::IsItemHovered()) {
-            if (dup) {
-                char m[160]; std::snprintf(m, sizeof m, L("opt.qb.preset.name_dup"), trimmed.c_str());
-                TooltipTextRaw(m);
-            } else {
-                TooltipText("common.name_empty");
+        bool enter = false;
+        {
+            InputFieldOpts o; o.width = 200.f; o.invalid = invalid;
+            o.flags = ImGuiInputTextFlags_EnterReturnsTrue;
+            bool hov = false;
+            enter = InputFieldWithHint("##presetname", nullptr, s_nameBuf, sizeof(s_nameBuf),
+                                       o, nullptr, &hov);
+            if (invalid && hov) {
+                if (dup) {
+                    char m[160]; std::snprintf(m, sizeof m, L("opt.qb.preset.name_dup"), trimmed.c_str());
+                    TooltipTextRaw(m);
+                } else {
+                    TooltipText("common.name_empty");
+                }
             }
         }
 
