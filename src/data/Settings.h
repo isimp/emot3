@@ -366,6 +366,15 @@ struct Settings {
     bool                          AutoMoteWatchSquad   = false;
     bool                          AutoMoteWatchGuild   = false;
     bool                          AutoMoteWatchWhisper = false;
+    // Where auto-motes may fire, by GW2 map type (MumbleLink Context.MapType).
+    // Open world = Public + Public_Mini (cities, zones, Dry Top / Silverwastes /
+    // Mistlock Sanctuary) + WvW_Lounge (Armistice Bastion social space); Instances
+    // = Instance (dungeons, fractals, raids, strikes, story, guild/home). Open
+    // world on, instances off by default. Every other map type (PvP/WvW
+    // competitive - already send-gated, the unused BigBattle, and transient
+    // redirect/charcreate/tutorial) never fires.
+    bool                          AutoMoteInOpenWorld  = true;
+    bool                          AutoMoteInInstances  = false;
     // ADDITIONAL minimum interval between two AUTO-fires specifically, on top of
     // the global SendMinIntervalMs below. Auto-motes fire passively from your own
     // typing, so they get a longer floor of their own (e.g. /laugh shouldn't

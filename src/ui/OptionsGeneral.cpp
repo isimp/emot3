@@ -337,11 +337,33 @@ void RenderGeneralOptionsTab() {
         // not disabled. Auto-saves like the other g_Settings checkboxes.
         CheckboxWithSaveAndTooltip("opt.am.enabled", &g_Settings.AutoMotesEnabled,
                                    /*defaultIsOn=*/false);
+        const bool active = g_Settings.AutoMotesEnabled;
+
+        // Won't-fire warning, right under the enable toggle: the feature is ON but a
+        // sub-setting makes it inert - no watched channel, or no map type. Amber +
+        // un-greyed, like the unbound-chat / Events:Chat notices, so an "enabled but
+        // nothing happens" config is visible rather than silently dead.
+        if (active) {
+            const bool anyChannel =
+                g_Settings.AutoMoteWatchLocal || g_Settings.AutoMoteWatchParty ||
+                g_Settings.AutoMoteWatchMap   || g_Settings.AutoMoteWatchSquad ||
+                g_Settings.AutoMoteWatchGuild || g_Settings.AutoMoteWatchWhisper;
+            const bool anyMap =
+                g_Settings.AutoMoteInOpenWorld || g_Settings.AutoMoteInInstances;
+            const char* warn = !anyMap     ? "opt.am.warn_no_maps"
+                             : !anyChannel ? "opt.am.warn_no_channels"
+                             : nullptr;
+            if (warn) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+                ImGui::TextWrapped("%s", L(warn));
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+            }
+        }
 
         // Watched channels - sub-settings, disabled until the feature is on. Manual
         // checkboxes wrapped in the disabled idiom (DisabledCheckbox would need
         // per-channel on/off tooltip keys; a single help label is plenty here).
-        const bool active = g_Settings.AutoMotesEnabled;
         if (!active) {
             ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
@@ -360,6 +382,18 @@ void RenderGeneralOptionsTab() {
         channelToggle("opt.am.ch_guild",   &g_Settings.AutoMoteWatchGuild);
         ImGui::SameLine(340.f);
         channelToggle("opt.am.ch_whisper", &g_Settings.AutoMoteWatchWhisper);
+
+        // Where they may fire, by GW2 map type (reused from MumbleLink - no custom
+        // map lists). Two coarse buckets; PvP/WvW are always off (the send gate
+        // refuses there) so they aren't shown. Same greyed scope + helper.
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", L("opt.am.maps_label"));
+        channelToggle("opt.am.map_open_world", &g_Settings.AutoMoteInOpenWorld);
+        if (ImGui::IsItemHovered()) TooltipText("opt.am.map_open_world_tip");
+        ImGui::SameLine(180.f);
+        channelToggle("opt.am.map_instances",  &g_Settings.AutoMoteInInstances);
+        if (ImGui::IsItemHovered()) TooltipText("opt.am.map_instances_tip");
+        ImGui::TextDisabled("%s", L("opt.am.map_competitive_note"));
 
         // Auto-mote-specific minimum interval - ADDITIONAL to the global "Minimum
         // time between sends" (auto-fires obey both). Seconds (stored ms), label
