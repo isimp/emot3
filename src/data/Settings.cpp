@@ -603,6 +603,9 @@ bool LoadSettings(const std::string& path) {
     s.AutoMoteWatchSquad   = GetBool(amChannels, "squad",   s.AutoMoteWatchSquad);
     s.AutoMoteWatchGuild   = GetBool(amChannels, "guild",   s.AutoMoteWatchGuild);
     s.AutoMoteWatchWhisper = GetBool(amChannels, "whisper", s.AutoMoteWatchWhisper);
+    const json& amMaps = GetObj(automotes, "maps");
+    s.AutoMoteInOpenWorld = GetBool(amMaps, "open_world", s.AutoMoteInOpenWorld);
+    s.AutoMoteInInstances = GetBool(amMaps, "instances",  s.AutoMoteInInstances);
     s.AutoMoteMinIntervalMs = (uint32_t)GetInt(automotes, "min_interval_ms", (int)s.AutoMoteMinIntervalMs);
 
     if (j.contains("unlocks"))
@@ -807,6 +810,10 @@ std::string SerializeSettings() {
     f << "      \"squad\": "   << B(s.AutoMoteWatchSquad)   << ",\n";
     f << "      \"guild\": "   << B(s.AutoMoteWatchGuild)   << ",\n";
     f << "      \"whisper\": " << B(s.AutoMoteWatchWhisper) << "\n";
+    f << "    },\n";
+    f << "    \"maps\": {\n";
+    f << "      \"open_world\": " << B(s.AutoMoteInOpenWorld) << ",\n";
+    f << "      \"instances\": "  << B(s.AutoMoteInInstances) << "\n";
     f << "    }\n";
     f << "  },\n";
 

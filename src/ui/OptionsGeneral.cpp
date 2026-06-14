@@ -361,6 +361,18 @@ void RenderGeneralOptionsTab() {
         ImGui::SameLine(340.f);
         channelToggle("opt.am.ch_whisper", &g_Settings.AutoMoteWatchWhisper);
 
+        // Where they may fire, by GW2 map type (reused from MumbleLink - no custom
+        // map lists). Two coarse buckets; PvP/WvW are always off (the send gate
+        // refuses there) so they aren't shown. Same greyed scope + helper.
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", L("opt.am.maps_label"));
+        channelToggle("opt.am.map_open_world", &g_Settings.AutoMoteInOpenWorld);
+        if (ImGui::IsItemHovered()) TooltipText("opt.am.map_open_world_tip");
+        ImGui::SameLine(180.f);
+        channelToggle("opt.am.map_instances",  &g_Settings.AutoMoteInInstances);
+        if (ImGui::IsItemHovered()) TooltipText("opt.am.map_instances_tip");
+        ImGui::TextDisabled("%s", L("opt.am.map_competitive_note"));
+
         // Auto-mote-specific minimum interval - ADDITIONAL to the global "Minimum
         // time between sends" (auto-fires obey both). Seconds (stored ms), label
         // behind the slider, right-click resets. Greyed with the channels.

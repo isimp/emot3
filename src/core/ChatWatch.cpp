@@ -175,6 +175,27 @@ bool SafeExtractChat(const void* args, ChatExtract& out) {
 #endif
 }
 
+// Whether auto-motes may fire on the CURRENT map, by GW2 map type (reused from
+// MumbleLink Context.MapType - no custom map-ID lists). Open world (Public +
+// Public_Mini: zones, cities, Dry Top / Silverwastes / Mistlock Sanctuary; plus
+// WvW_Lounge, the non-combat Armistice Bastion social space) and instanced content
+// (Instance: dungeons, fractals, raids, strikes, story, guild/home) are the two
+// user toggles. Everything else fails closed: competitive PvP/WvW (already refused
+// by the send gate), the unused BigBattle, and transient maps
+// (redirect/charcreate/tutorial). A missing MumbleLink doesn't add a failure mode
+// (treat as allowed).
+static bool AutoMoteMapAllowed() {
+    if (!MumbleLink) return true;
+    using MT = Mumble::EMapType;
+    switch (MumbleLink->Context.MapType) {
+        case MT::Public:
+        case MT::Public_Mini:
+        case MT::WvW_Lounge:  return g_Settings.AutoMoteInOpenWorld;
+        case MT::Instance:    return g_Settings.AutoMoteInInstances;
+        default:              return false;
+    }
+}
+
 // The chat event. Fires (on some publisher thread) once per chat line. We keep
 // ONLY the user's own, sent, non-competitive lines on a watched channel, match
 // them against the catalog's auto-keywords, and queue the first hit. NEVER sends
@@ -209,6 +230,9 @@ void OnChat(void* aEventArgs) {
 
     // Defence-in-depth: never auto-act in PvP/WvW (the send gate also refuses).
     if (InCompetitiveMode()) return;
+
+    // Map-type gate: only fire where the user allowed it (open world / instances).
+    if (!AutoMoteMapAllowed()) return;
 
     // Own-message only. Whispers carry an explicit IsFromMe flag; every other
     // channel compares the author's character name to the local player.
@@ -361,6 +385,12 @@ static DevStateRegistrar s_autoMoteState(DevStateCat::GameSignals, "Auto-motes",
     add(g_Settings.AutoMoteWatchGuild,   "Guild");
     add(g_Settings.AutoMoteWatchWhisper, "Whisper");
     DevStateRow("watched",       "%s", chans.empty() ? "(none)" : chans.c_str());
+
+    {   // live map type + whether the map-type gate currently passes
+        int mt = MumbleLink ? (int)MumbleLink->Context.MapType : -1;
+        DevStateRow("map type",  "%d %s", mt,
+                    AutoMoteMapAllowed() ? "(allowed)" : "(blocked)");
+    }
 
     const std::string& me = LocalCharacterName();
     DevStateRow("local name",    "%s", me.empty() ? "(unknown)" : me.c_str());
