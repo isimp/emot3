@@ -978,7 +978,8 @@ void AddonRender() {
             DrawInvalidInputBorder();
         }
         if (newCatInvalid && ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(L("mp.cat_exists"), trimmedNewCat.c_str());
+            char m[160]; std::snprintf(m, sizeof m, L("mp.cat_exists"), trimmedNewCat.c_str());
+            TooltipTextRaw(m);
         }
 
         // X clear button next to the input.
@@ -1081,7 +1082,9 @@ void AddonRender() {
                 // the two paths look and behave identically.
                 ImVec2 textStart = ImGui::GetCursorPos();
                 float  availW    = ImGui::GetContentRegionAvail().x;
+                ImGui::PushTextWrapPos(0.0f);   // keep the placeholder inside the panel
                 ImGui::TextDisabled("%s", catEmptyMsg(catTotal[ci]));
+                ImGui::PopTextWrapPos();
                 ImVec2 afterText = ImGui::GetCursorPos();
 
                 ImGui::SetCursorPos(textStart);

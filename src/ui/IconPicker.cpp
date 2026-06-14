@@ -281,7 +281,7 @@ int RenderBucket(const char* headerKey, const std::vector<PickItem>& items,
         else  // texture missing (e.g. a folder PNG that failed to decode)
             clicked = ImGui::Button(it.name.c_str(), ImVec2(thumb + 4.f, thumb + 4.f));
         if (isCurrent) ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", it.name.c_str());
+        if (ImGui::IsItemHovered()) TooltipTextRaw(it.name.c_str());
         if (clicked) *outPick = it.writePath;
         // Manual wrap: keep on the same line until the next thumbnail would
         // overflow the content edge (ImGui doesn't auto-wrap ImageButtons).
@@ -375,7 +375,17 @@ void RenderIconPicker() {
     shown += RenderBucket("opt.pick.bucket_official",   s_official, needle, &pick);
     shown += RenderBucket("opt.pick.bucket_ai",         s_ai,       needle, &pick);
     shown += RenderBucket("opt.pick.bucket_memote_ai",  s_mmai,     needle, &pick);
-    shown += RenderBucket("opt.pick.bucket_folder",     s_folder,   needle, &pick);
+    if (!s_folder.empty()) {
+        shown += RenderBucket("opt.pick.bucket_folder", s_folder, needle, &pick);
+    } else if (needle.empty()) {
+        // No user icons yet: still show the folder section header + a hint pointing
+        // at the drop folder, rather than silently omitting the whole section.
+        ImGui::TextDisabled("%s", L("opt.pick.bucket_folder"));
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled(L("opt.pick.folder_empty_hint"), g_IconsDir.c_str());
+        ImGui::PopTextWrapPos();
+        ++shown;  // so the "no matches" line below doesn't also appear
+    }
     if (shown == 0)
         ImGui::TextDisabled("%s", L("opt.pick.no_matches"));
     ImGui::EndChild();

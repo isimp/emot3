@@ -201,87 +201,24 @@ bool FieldRow(const char* labelKey, const char* hintKey, const char* idSuffix,
     std::memcpy(scratch, buf.data(), copyN);
     scratch[copyN] = 0;
 
-    const ImGuiStyle& st = ImGui::GetStyle();
-
-    // In-field char counter (charBudget > 0): reserve a fixed-width zone on the
-    // right, sized to the worst case so the input edge doesn't jitter, and draw
-    // the count INSIDE the frame there. To keep the field ONE visual element
-    // (uniform hover/active, no seam between input and zone) we draw the frame
-    // background ourselves at full width and render the InputText with a
-    // transparent frame on top. charBudget == 0 fields just get an empty zone.
-    char   countBuf[24] = {0};
-    ImVec4 countColor;
-    bool   over  = false;
-    float  zoneW = 0.f;
-    if (charBudget > 0) {
-        const int n      = (int)buf.size();
-        const int warnAt = (charBudget * 80) / 100;   // 156 for 195
-        over = (n > charBudget);
-        std::snprintf(countBuf, sizeof countBuf, "%d / %d", n, charBudget);
-        if      (n <= warnAt) countColor = st.Colors[ImGuiCol_TextDisabled]; // informational
-        else if (!over)       countColor = ImVec4(0.92f, 0.78f, 0.32f, 1.0f); // amber — getting close
-        else                  countColor = ImVec4(1.0f, 0.45f, 0.40f, 1.0f);  // red   — over the cap
-        char worst[24];
-        std::snprintf(worst, sizeof worst, "%d / %d", charBudget, charBudget);
-        zoneW = ImGui::CalcTextSize(worst).x + st.FramePadding.x * 2.f;
-    }
-
-    const std::string inputId  = std::string("##") + idSuffix;
-    const float       fullW    = ImGui::GetContentRegionAvail().x;
-    const ImVec2      framePos = ImGui::GetCursorScreenPos();
-    const float       frameH   = ImGui::GetFrameHeight();
-    const ImVec2      frameMax(framePos.x + fullW, framePos.y + frameH);
-
-    // One unified frame bg under the whole field. fieldActive tracks live focus,
-    // fieldHovered the WHOLE rect (so the reserved zone lights up with the input,
-    // not just the input half). IsMouseHoveringRect clips to the visible region by
-    // default, so a row scrolled partly out of view won't false-hover.
-    const bool fieldActive  = (ImGui::GetActiveID() == ImGui::GetID(inputId.c_str()));
-    const bool fieldHovered = ImGui::IsMouseHoveringRect(framePos, frameMax);
-    ImU32 frameBg;
-    if (invalid) {   // matches PushInvalidInputStyle (Layout.cpp) by state
-        frameBg = ImGui::ColorConvertFloat4ToU32(
-            fieldActive  ? ImVec4(0.70f, 0.16f, 0.16f, 1.f)
-          : fieldHovered ? ImVec4(0.65f, 0.14f, 0.14f, 1.f)
-                         : ImVec4(0.55f, 0.10f, 0.10f, 1.f));
-    } else {
-        frameBg = ImGui::GetColorU32(fieldActive  ? ImGuiCol_FrameBgActive
-                                   : fieldHovered ? ImGuiCol_FrameBgHovered
-                                                  : ImGuiCol_FrameBg);
-    }
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(framePos, frameMax, frameBg, st.FrameRounding, ImDrawCornerFlags_All);
-
-    // Input on top, transparent-framed so only our unified bg shows; narrowed by
-    // the zone so typed text never reaches the counter.
-    ImGui::PushStyleColor(ImGuiCol_FrameBg,        IM_COL32(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  IM_COL32(0, 0, 0, 0));
-    ImGui::SetNextItemWidth(charBudget > 0 ? (fullW - zoneW) : -FLT_MIN);
-    const char* hint = hintKey ? L(hintKey) : "";
-    if (ImGui::InputTextWithHint(inputId.c_str(), hint, scratch, sizeof(scratch)))
+    // Render through the shared field helper so the catalog and /me-mote editors
+    // look identical (unified frame, hover/active, invalid red+border, in-frame
+    // char counter). The helper reports active/hovered over the WHOLE frame for
+    // the commit-on-defocus + hover tooltips below.
+    const std::string inputId = std::string("##") + idSuffix;
+    InputFieldOpts o;
+    o.invalid    = invalid;
+    o.charBudget = charBudget;
+    bool active = false, hovered = false;
+    if (InputFieldWithHint(inputId.c_str(), hintKey, scratch, sizeof scratch, o,
+                           &active, &hovered))
         buf = scratch;
-    ImGui::PopStyleColor(3);
-    const bool active = ImGui::IsItemActive();
 
-    // Count, right-aligned inside the reserved zone, vertically centered.
-    if (charBudget > 0) {
-        const ImVec2 tsz = ImGui::CalcTextSize(countBuf);
-        dl->AddText(ImVec2(frameMax.x - st.FramePadding.x - tsz.x,
-                           framePos.y + (frameH - tsz.y) * 0.5f),
-                    ImGui::ColorConvertFloat4ToU32(countColor), countBuf);
-    }
-
-    // Invalid: red border around the full field + explanatory tooltip on hover.
-    if (invalid)
-        dl->AddRect(framePos, frameMax, IM_COL32(255, 80, 80, 255),
-                    st.FrameRounding, ImDrawCornerFlags_All, 2.0f);
-    if (invalid && invalidTooltipKey && fieldHovered)
+    // Invalid: explanatory tooltip on hover (the red border is drawn by the helper).
+    if (invalid && invalidTooltipKey && hovered)
         TooltipText(invalidTooltipKey);
-
-    // Over budget: count is already red; the verbose "will be cut off" note is a
-    // hover hint rather than a reclaimed line.
-    if (charBudget > 0 && over && fieldHovered && !invalid)
+    // Over budget: the counter is already red; the "will be cut off" note is a hover hint.
+    if (charBudget > 0 && (int)buf.size() > charBudget && hovered && !invalid)
         TooltipText("opt.mm.body_truncate_warn");
 
     bool committed = false;
@@ -334,19 +271,19 @@ void RenderMeMotesTab() {
     }
     bool newInvalid = newHasInput && (normNew.empty() || newIdDup);
 
-    ImGui::SetNextItemWidth(180.f);
-    if (newInvalid) PushInvalidInputStyle();
-    ImGui::InputTextWithHint("##new_me_mote_id", L("opt.mm.new_id_hint"),
-                             s_newIdBuf, sizeof(s_newIdBuf));
-    if (newInvalid) {
-        PopInvalidInputStyle();
-        DrawInvalidInputBorder();
+    bool newMmHovered = false;
+    {
+        InputFieldOpts o; o.invalid = newInvalid; o.width = 180.f;
+        InputFieldWithHint("##new_me_mote_id", "opt.mm.new_id_hint",
+                           s_newIdBuf, sizeof(s_newIdBuf), o, nullptr, &newMmHovered);
     }
-    if (newInvalid && ImGui::IsItemHovered()) {
-        if (normNew.empty())
+    if (newInvalid && newMmHovered) {
+        if (normNew.empty()) {
             TooltipText("opt.mm.id_min");
-        else
-            ImGui::SetTooltip(L("opt.mm.id_exists"), normNew.c_str());
+        } else {
+            char m[160]; std::snprintf(m, sizeof m, L("opt.mm.id_exists"), normNew.c_str());
+            TooltipTextRaw(m);
+        }
     }
 
     ImGui::SameLine();
@@ -639,7 +576,7 @@ void RenderMeMotesTab() {
                 std::string fit = Ellipsize(ics.text, availW);
                 ImGui::TextDisabled("%s", fit.c_str());
                 if (ImGui::IsItemHovered() && !iconPathSnapshot.empty())
-                    ImGui::SetTooltip("%s", iconPathSnapshot.c_str());
+                    TooltipTextRaw(iconPathSnapshot.c_str());
 
                 // In-app icon picker (visual grid). The OS "From file..." dialog
                 // was removed once the picker landed: it pulls from every bundled
@@ -703,13 +640,11 @@ void RenderMeMotesTab() {
                 if (copyN >= sizeof(aliasBuf)) copyN = sizeof(aliasBuf) - 1;
                 std::memcpy(aliasBuf, rb.aliases.data(), copyN);
                 aliasBuf[copyN] = 0;
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                if (ImGui::InputTextWithHint("##mm_aliases",
-                                             L("opt.mm.aliases_hint"),
-                                             aliasBuf, sizeof(aliasBuf))) {
+                bool aliasActive = false;
+                if (InputFieldWithHint("##mm_aliases", "opt.mm.aliases_hint",
+                                       aliasBuf, sizeof(aliasBuf), {}, &aliasActive)) {
                     rb.aliases = aliasBuf;
                 }
-                bool aliasActive = ImGui::IsItemActive();
                 if (!aliasActive) {
                     std::vector<std::string> parsed = ParseAliases(rb.aliases);
                     std::lock_guard<std::mutex> lk(g_MeMotesMutex);

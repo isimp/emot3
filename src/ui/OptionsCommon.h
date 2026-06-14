@@ -54,6 +54,23 @@ bool PlusDisabledCheckbox(const char* labelKey, bool* state, bool enabled,
                           bool defaultIsOn, const char* disabledTipKey);
 #endif  // EMOT3_PLUS
 
+// Shared text input + hint, used by the catalog and /me-mote editors so every
+// editable field renders identically: ONE unified frame (consistent hover/active
+// drawn from the theme's FrameBg* colors), an optional invalid red frame+border,
+// and an optional in-frame "n / budget" char counter. Pure rendering at the
+// current cursor - the caller owns its label/layout/commit. Returns InputText's
+// edited-this-frame bool; outActive/outHovered report state over the WHOLE frame
+// (incl. the counter zone) for commit-on-defocus + hover tooltips.
+struct InputFieldOpts {
+    bool  invalid    = false;     // red frame + 2px border
+    bool  enabled    = true;      // false: skip hover/active highlight (caller dims via alpha)
+    int   charBudget = 0;         // > 0: draw "n / budget" counter inside the frame
+    float width      = 0.f;       // input width; 0 fills the available region
+};
+bool InputFieldWithHint(const char* id, const char* hintKey,
+                        char* buf, size_t bufSize, const InputFieldOpts& opts,
+                        bool* outActive = nullptr, bool* outHovered = nullptr);
+
 // Muted section header + hairline that groups a tab's controls ("Layout",
 // "Window", "Look", ...) without the weight of a CollapsingHeader.
 void OptionsSection(const char* title);

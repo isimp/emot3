@@ -38,6 +38,31 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+// Does the user's icons/ folder (addons/emot3/icons) hold at least one file?
+// Gates the "Rescan icons" button - there's nothing to re-pick-up otherwise.
+// Cheap directory probe, throttled to ~once/sec (re-checked so a freshly dropped
+// first icon enables the button within a second, without per-frame disk I/O).
+static bool FolderHasIcons() {
+    static unsigned long long lastMs = 0;
+    static bool cached = false;
+    const unsigned long long now = GetTickCount64();
+    if (now - lastMs >= 1000 || lastMs == 0) {
+        lastMs = now;
+        cached = false;
+        if (!g_IconsDir.empty()) {
+            WIN32_FIND_DATAA fd;
+            HANDLE h = FindFirstFileA((g_IconsDir + "\\*").c_str(), &fd);
+            if (h != INVALID_HANDLE_VALUE) {
+                do {
+                    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) { cached = true; break; }
+                } while (FindNextFileA(h, &fd));
+                FindClose(h);
+            }
+        }
+    }
+    return cached;
+}
+
 // ---- Emotes editor state ----------------------------------
 
 // Persistent per-row edit buffer for the Emotes editor. Carries the row's
@@ -212,19 +237,19 @@ void RenderEmotesTab() {
     // Hard-invalid (blocks add): empty stem or Id collision.
     bool newInvalid = newHasInput && (newId.empty() || newIdDup);
 
-    ImGui::SetNextItemWidth(180.f);
-    if (newInvalid) PushInvalidInputStyle();
-    ImGui::InputTextWithHint("##newcmd", L("opt.em.cmd_hint"),
-                             newCmdBuf, sizeof(newCmdBuf));
-    if (newInvalid) {
-        PopInvalidInputStyle();
-        DrawInvalidInputBorder();
+    bool newHovered = false;
+    {
+        InputFieldOpts o; o.invalid = newInvalid; o.width = 180.f;
+        InputFieldWithHint("##newcmd", "opt.em.cmd_hint",
+                           newCmdBuf, sizeof(newCmdBuf), o, nullptr, &newHovered);
     }
-    if (newInvalid && ImGui::IsItemHovered()) {
-        if (newId.empty())
+    if (newInvalid && newHovered) {
+        if (newId.empty()) {
             TooltipText("opt.em.cmd_min");
-        else
-            ImGui::SetTooltip(L("opt.em.id_exists"), newId.c_str());
+        } else {
+            char m[160]; std::snprintf(m, sizeof m, L("opt.em.id_exists"), newId.c_str());
+            TooltipTextRaw(m);
+        }
     }
 
     ImGui::SameLine();
@@ -336,13 +361,16 @@ void RenderEmotesTab() {
         float total     = wRescan + wExpand + wCollapse + st.ItemSpacing.x * 2.f;
         ImGui::SameLine();
         RightAlignCursor(total);
+        const bool canRescan = FolderHasIcons();
+        if (!canRescan) BeginDisabledCompat();
         if (ImGui::SmallButton(L("opt.icon.rescan"))) {
             s_iconStatus.clear();   // every row re-stats its icon status next render
             MarkEmotesDirty();      // every visible cell re-resolves (memo drops on the epoch)
             LOG_INFO("Rescan icons: cleared the icon-status cache + bumped the catalog epoch");
         }
-        if (ImGui::IsItemHovered())
-            TooltipText("opt.icon.rescan_tooltip");
+        if (!canRescan) EndDisabledCompat();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            TooltipText(canRescan ? "opt.icon.rescan_tooltip" : "opt.icon.rescan_disabled_tip");
         ImGui::SameLine();
         if (ImGui::SmallButton(L("opt.em.expand_all")))   s_setAllOpen =  1;
         ImGui::SameLine();
@@ -524,13 +552,12 @@ void RenderEmotesTab() {
                 bool cmdDirty = (trimmedCmd != e.Command);
                 char cmdBuf[64];
                 strncpy_s(cmdBuf, sizeof(cmdBuf), rb.command.c_str(), _TRUNCATE);
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                if (ImGui::InputTextWithHint("##command", L("opt.em.cmd_hint"),
-                                              cmdBuf, sizeof(cmdBuf))) {
+                bool cmdActive = false, cmdHovered = false;
+                if (InputFieldWithHint("##command", "opt.em.cmd_hint",
+                                       cmdBuf, sizeof(cmdBuf), {}, &cmdActive, &cmdHovered)) {
                     rb.command = cmdBuf;
                 }
-                bool cmdActive = ImGui::IsItemActive();
-                if (ImGui::IsItemHovered())
+                if (cmdHovered)
                     TooltipText("opt.em.cmd_field_tooltip");
                 if (cmdDirty && !trimmedCmd.empty() && !cmdActive) {
                     // Normalize on commit (leading '/' etc.) so an edited command
@@ -565,22 +592,20 @@ void RenderEmotesTab() {
                                                              e.Name == trimmedName));
                 char nameBuf[64];
                 strncpy_s(nameBuf, sizeof(nameBuf), rb.name.c_str(), _TRUNCATE);
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                if (nameInvalid) PushInvalidInputStyle();
-                if (ImGui::InputTextWithHint("##name", L("opt.em.name_hint"),
-                                              nameBuf, sizeof(nameBuf))) {
-                    rb.name = nameBuf;
+                bool nameActive = false, nameHovered = false;
+                {
+                    InputFieldOpts o; o.invalid = nameInvalid;
+                    if (InputFieldWithHint("##name", "opt.em.name_hint",
+                                           nameBuf, sizeof(nameBuf), o, &nameActive, &nameHovered)) {
+                        rb.name = nameBuf;
+                    }
                 }
-                bool nameActive = ImGui::IsItemActive();
-                if (nameInvalid) {
-                    PopInvalidInputStyle();
-                    DrawInvalidInputBorder();
-                }
-                if (nameInvalid && ImGui::IsItemHovered()) {
+                if (nameInvalid && nameHovered) {
                     if (trimmedName.empty()) {
                         TooltipText("common.name_empty");
                     } else {
-                        ImGui::SetTooltip(L("opt.em.name_dup"), trimmedName.c_str());
+                        char m[160]; std::snprintf(m, sizeof m, L("opt.em.name_dup"), trimmedName.c_str());
+                        TooltipTextRaw(m);
                     }
                 }
                 // Auto-commit: dirty + valid + not currently being edited.
@@ -603,13 +628,12 @@ void RenderEmotesTab() {
                 {
                     char aliasBuf[256];
                     strncpy_s(aliasBuf, sizeof(aliasBuf), rb.aliases.c_str(), _TRUNCATE);
-                    ImGui::SetNextItemWidth(-FLT_MIN);
-                    if (ImGui::InputTextWithHint("##aliases", L("opt.em.aliases_hint"),
-                                                 aliasBuf, sizeof(aliasBuf))) {
+                    bool aliasActive = false, aliasHovered = false;
+                    if (InputFieldWithHint("##aliases", "opt.em.aliases_hint",
+                                           aliasBuf, sizeof(aliasBuf), {}, &aliasActive, &aliasHovered)) {
                         rb.aliases = aliasBuf;
                     }
-                    bool aliasActive = ImGui::IsItemActive();
-                    if (ImGui::IsItemHovered())
+                    if (aliasHovered)
                         TooltipText("opt.em.aliases_tooltip");
                     // Commit when not actively editing: parse the buffer into a
                     // normalized, deduped list (drop empties + the primary command)
@@ -660,13 +684,15 @@ void RenderEmotesTab() {
                     }
                     char kwBuf[256];
                     strncpy_s(kwBuf, sizeof(kwBuf), rb.autoKeywords.c_str(), _TRUNCATE);
-                    ImGui::SetNextItemWidth(-FLT_MIN);
-                    if (ImGui::InputTextWithHint("##autokeywords", L("opt.am.keywords_hint"),
-                                                 kwBuf, sizeof(kwBuf))) {
-                        rb.autoKeywords = kwBuf;
+                    bool kwActive = false, kwHovered = false;
+                    {
+                        InputFieldOpts o; o.enabled = amOn;
+                        if (InputFieldWithHint("##autokeywords", "opt.am.keywords_hint",
+                                               kwBuf, sizeof(kwBuf), o, &kwActive, &kwHovered)) {
+                            rb.autoKeywords = kwBuf;
+                        }
                     }
-                    bool kwActive = ImGui::IsItemActive();
-                    if (amOn && ImGui::IsItemHovered())  // disabled items don't hover-report
+                    if (amOn && kwHovered)
                         TooltipText("opt.am.keywords_tooltip");
                     // Commit when not actively editing: lowercase + trim each token,
                     // drop empties, dedupe (first-wins), canonicalize the buffer. A
@@ -814,7 +840,7 @@ void RenderEmotesTab() {
                     std::string statusFit = Ellipsize(ics.text, availW);
                     ImGui::TextDisabled("%s", statusFit.c_str());
                     if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", ics.text.c_str());
+                        TooltipTextRaw(ics.text.c_str());
                 }
                 // In-app icon picker (visual grid). The OS "From file..." dialog
                 // was removed once the picker landed: it pulls from every bundled

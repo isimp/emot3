@@ -219,6 +219,15 @@ void TooltipText(const char* key) {
     ImGui::EndTooltip();
 }
 
+void TooltipTextRaw(const char* text) {
+    if (!text) return;
+    ImGui::BeginTooltip();
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * kTipWrapEm);
+    ImGui::TextUnformatted(text);
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
+}
+
 void TooltipOnOff(const char* onKey, const char* offKey, bool defaultIsOn) {
     ImGui::BeginTooltip();
     const std::string def = DefaultTag();

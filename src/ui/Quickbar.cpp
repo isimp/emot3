@@ -37,6 +37,14 @@
 // pull imgui into core/Globals.h.
 std::vector<std::pair<ImVec2, ImVec2>> g_QbIconRects;
 
+#ifdef EMOT3_DEVTOOLS
+// Quickbar sizing readout, registered as a runtime-inspector section under
+// "Content & catalogs". The rows are drawn by EmitQuickbarSection (QuickbarDebug.h)
+// from a snapshot captured each Quickbar render (below) - no separate overlay.
+static DevStateRegistrar s_qbStateSection(DevStateCat::Content, "Quickbar",
+                                          []{ EmitQuickbarSection(); });
+#endif
+
 namespace {
 // Drag-snap metrics for the Quickbar window (experimental QuickbarSnapWindow).
 // step + the grid's top offset are recomputed from CURRENT settings each frame
@@ -688,7 +696,7 @@ void QuickbarRender() {
                                        ImGui::GetItemRectMax());
             // Full active name on hover when the preview was truncated.
             if (previewClip && ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", cats[active].name.c_str());
+                TooltipTextRaw(cats[active].name.c_str());
         } else {
             // Tab-style buttons — active one highlighted blue. Wrap onto a
             // new line when the next button wouldn't fit horizontally.
@@ -744,7 +752,7 @@ void QuickbarRender() {
                 bool showTip = clipped && ImGui::IsItemHovered();
                 ImGui::PopID();
                 if (isActive) ImGui::PopStyleColor(3);
-                if (showTip) ImGui::SetTooltip("%s", cats[i].name.c_str());
+                if (showTip) TooltipTextRaw(cats[i].name.c_str());
             }
         }
         // Capture the bottom of the bar — use the cursor's Y position
@@ -1205,7 +1213,9 @@ void QuickbarRender() {
     // Dev sizing readout: snapshot the real numbers so the fit/snap math can
     // be diagnosed from actual values (see QuickbarDebug.h). Gated by
     // EMOT3_DEVTOOLS (the dev tools axis), not EMOT3_PLUS (the swallow axis).
-    if (qbdbg::Enabled()) {
+    // Captured every render (cheap - just stores ~25 floats) so the runtime
+    // inspector's Quickbar section always shows fresh values.
+    {
         const ImGuiStyle& st = ImGui::GetStyle();
         float topPad = EmoteGridTopPad(g_Settings.QuickbarViewMode);
         qbdbg::QbMetrics& dm = qbdbg::M();

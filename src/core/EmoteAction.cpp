@@ -635,3 +635,23 @@ void MarkEmoteLocked(const std::string& id) {
         RequestSave(SaveKind::Settings);
     }
 }
+
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+// Runtime-inspector section: the shared send gate, consolidated - a single
+// "why won't it send?" view (competitive lockout + transient busy + throttle +
+// held keys) instead of hunting across the Game-state / Auto-motes sections.
+static DevStateRegistrar s_sendGateSection(DevStateCat::GameSignals, "Send gate", [] {
+    SendBusy b = CurrentSendBusy(/*checkHeldKeys=*/true);
+    const char* busy = b == SendBusy::Typing   ? "typing"
+                     : b == SendBusy::KeysHeld  ? "keys held"
+                     : b == SendBusy::Throttled ? "throttled"
+                                                : "none";
+    DevStateRow("competitive",     "%s", InCompetitiveMode() ? "LOCKED (PvP/WvW)" : "no");
+    DevStateRow("transient busy",  "%s", busy);
+    DevStateRow("throttle left",   "%u ms", SendThrottleRemainingMs());
+    DevStateRow("min interval",    "%u ms", g_Settings.SendMinIntervalMs);
+    DevStateRow("held printables", "%d", HeldPrintableCount());
+    DevStateRow("swallow (+plus)", "%s", EmoteSendSwallowActive() ? "on" : "off");
+});
+#endif  // EMOT3_DEVTOOLS

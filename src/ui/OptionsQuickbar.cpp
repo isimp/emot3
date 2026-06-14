@@ -90,8 +90,8 @@ static void RenderQuickbarPresetsSection() {
         RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", hasSel ? L("opt.qb.preset.apply_tooltip")
-                                       : L("opt.qb.preset.select_first"));
+        TooltipTextRaw(hasSel ? L("opt.qb.preset.apply_tooltip")
+                              : L("opt.qb.preset.select_first"));
     if (modified) {
         ImGui::SameLine();
         ImGui::TextDisabled("%s", L("opt.qb.preset.modified"));
@@ -110,9 +110,9 @@ static void RenderQuickbarPresetsSection() {
         WriteQuickbarPreset(g_QuickbarPresets[s_sel]);
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", !hasSel ? L("opt.qb.preset.select_first")
-                                : !modified ? L("opt.qb.preset.update_clean")
-                                            : L("opt.qb.preset.update_tooltip"));
+        TooltipTextRaw(!hasSel ? L("opt.qb.preset.select_first")
+                       : !modified ? L("opt.qb.preset.update_clean")
+                                   : L("opt.qb.preset.update_tooltip"));
 
     ImGui::SameLine();
     if (actionButton(L("opt.qb.preset.rename"), hasSel)) {
@@ -121,16 +121,16 @@ static void RenderQuickbarPresetsSection() {
                  g_QuickbarPresets[s_sel].Name.c_str());
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", hasSel ? L("opt.qb.preset.rename_tooltip")
-                                       : L("opt.qb.preset.select_first"));
+        TooltipTextRaw(hasSel ? L("opt.qb.preset.rename_tooltip")
+                              : L("opt.qb.preset.select_first"));
 
     ImGui::SameLine();
     if (actionButton(L("common.delete"), hasSel)) {
         s_confirmDelete = true; s_mode = 0;
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", hasSel ? L("opt.qb.preset.delete_tooltip")
-                                       : L("opt.qb.preset.select_first"));
+        TooltipTextRaw(hasSel ? L("opt.qb.preset.delete_tooltip")
+                              : L("opt.qb.preset.select_first"));
 
     // --- Inline name entry (New / Rename) ---
     if (s_mode != 0) {
@@ -148,8 +148,12 @@ static void RenderQuickbarPresetsSection() {
                                        ImGuiInputTextFlags_EnterReturnsTrue);
         if (invalid) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
         if (invalid && ImGui::IsItemHovered()) {
-            if (dup) ImGui::SetTooltip(L("opt.qb.preset.name_dup"), trimmed.c_str());
-            else     TooltipText("common.name_empty");
+            if (dup) {
+                char m[160]; std::snprintf(m, sizeof m, L("opt.qb.preset.name_dup"), trimmed.c_str());
+                TooltipTextRaw(m);
+            } else {
+                TooltipText("common.name_empty");
+            }
         }
 
         ImGui::SameLine();

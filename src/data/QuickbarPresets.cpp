@@ -400,3 +400,16 @@ void LoadQuickbarPresets() {
 
     LOG_INFO("presets: loaded %d", (int)g_QuickbarPresets.size());
 }
+
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+// Runtime-inspector section: preset count + which preset (if any) the live
+// Quickbar settings currently match (so "modified" is visible at a glance).
+static DevStateRegistrar s_presetSection(DevStateCat::Config, "Quickbar presets", [] {
+    DevStateRow("presets", "%d", (int)g_QuickbarPresets.size());
+    const char* match = "(custom / modified)";
+    for (const auto& p : g_QuickbarPresets)
+        if (QuickbarPresetMatchesCurrent(p)) { match = p.Name.c_str(); break; }
+    DevStateRow("live matches", "%s", match);
+});
+#endif  // EMOT3_DEVTOOLS
