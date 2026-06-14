@@ -94,15 +94,21 @@ inline int FlattenRing(const Ring& r, float* out) {
 // Live, this-frame accumulation per label. calls counts how many scopes with
 // this name closed this frame (so the same label in MainPanel + Quickbar shows
 // 2 calls and their summed ms).
-struct Accum { double ms = 0.0; int calls = 0; };
+struct Accum { double ms = 0.0; int calls = 0; int depth = 1 << 30; };  // depth = min nesting depth seen (0 = root)
 // Promoted, displayed stats per label: last frame's summed ms + call count, plus
-// the rolling history feeding avg/median/peak.
-struct SectionStat { double cur = 0.0; int calls = 0; Ring hist; };
+// the rolling history feeding avg/median/peak. `depth` 0 = a root (non-overlapping)
+// scope, >0 = nested inside a parent (inclusive time, never summed into the total).
+struct SectionStat { double cur = 0.0; int calls = 0; int depth = 0; Ring hist; };
 
 inline std::map<std::string, Accum>&       accumMap()   { static std::map<std::string, Accum> m;       return m; }
 inline std::map<std::string, SectionStat>& displayMap() { static std::map<std::string, SectionStat> m; return m; }
 inline Ring& frameHist() { static Ring r; return r; }  // whole-frame ms (io.DeltaTime)
 inline int&  lastFrame() { static int f = -1; return f; }
+// Render-thread scope nesting depth. A Scope opened at depth 0 is a ROOT - its time
+// doesn't overlap any other scope, so the roots SUM to the true per-frame addon cost.
+// depth>0 is NESTED (its time is already inside a parent) -> shown as detail, never
+// summed. Tracked automatically in the Scope ctor/dtor; no call-site changes.
+inline int& Depth() { static thread_local int d = 0; return d; }
 
 // Promote accum -> display once per ImGui frame, so the overlay shows stable,
 // whole-frame totals regardless of which render callback runs first. The
@@ -119,6 +125,7 @@ inline void NewFrameIfNeeded() {
             SectionStat& s = displayMap()[kv.first];
             s.cur   = kv.second.ms;
             s.calls = kv.second.calls;
+            s.depth = kv.second.depth;
             s.hist.push((float)kv.second.ms);
         }
         // Sections we've seen before but that didn't run this frame: push 0 so
@@ -142,20 +149,89 @@ struct Scope {
     const char*                           name;
     std::chrono::steady_clock::time_point t0;
     bool                                  active;
+    int                                   depth = 0;
     explicit Scope(const char* n) : name(n), active(Enabled()) {
-        if (active) { NewFrameIfNeeded(); t0 = std::chrono::steady_clock::now(); }
+        if (active) {
+            NewFrameIfNeeded();
+            depth = Depth()++;   // 0 = root scope, >0 = nested inside another
+            t0 = std::chrono::steady_clock::now();
+        }
     }
     ~Scope() {
         if (!active) return;
         double ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - t0).count();
+        --Depth();
         Accum& a = accumMap()[name];
         a.ms    += ms;
         a.calls += 1;
+        if (depth < a.depth) a.depth = depth;   // remember the shallowest sighting
     }
     Scope(const Scope&)            = delete;
     Scope& operator=(const Scope&) = delete;
 };
+
+// One row in the perf table (shared by the roots + nested sections below).
+struct PRow { const std::string* name; double cur, avg, med, peak, pct; int calls; };
+
+// Render a sortable 7-column perf table for `prows`. `id` must be unique per table
+// (each keeps its own ImGui sort state). Pulled out of RenderProfilerOverlay so the
+// roots and nested sections render identically.
+inline void DrawPerfTable(const char* id, std::vector<PRow>& prows) {
+    // avg over this = hotspot (red). The whole addon is usually a small slice of the
+    // frame, so a single section past ~2 ms is worth the eye.
+    constexpr double kBudgetMsRed = 2.0;
+    constexpr ImGuiTableFlags kPerfFlags =
+        ImGuiTableFlags_Sortable | ImGuiTableFlags_RowBg |
+        ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV |
+        ImGuiTableFlags_NoSavedSettings;
+    if (!ImGui::BeginTable(id, 7, kPerfFlags)) return;
+    ImGui::TableSetupColumn("section",
+        ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoSort);
+    ImGui::TableSetupColumn("cur",    ImGuiTableColumnFlags_PreferSortDescending);
+    ImGui::TableSetupColumn("avg",    ImGuiTableColumnFlags_PreferSortDescending);
+    ImGui::TableSetupColumn("med",    ImGuiTableColumnFlags_PreferSortDescending);
+    ImGui::TableSetupColumn("peak",   ImGuiTableColumnFlags_PreferSortDescending);
+    ImGui::TableSetupColumn("%frame",
+        ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_DefaultSort);
+    ImGui::TableSetupColumn("calls",  ImGuiTableColumnFlags_PreferSortDescending);
+    ImGui::TableHeadersRow();
+
+    if (ImGuiTableSortSpecs* sp = ImGui::TableGetSortSpecs()) {
+        if (sp->SpecsCount > 0) {
+            const ImGuiTableColumnSortSpecs& c = sp->Specs[0];
+            bool asc = c.SortDirection == ImGuiSortDirection_Ascending;
+            std::sort(prows.begin(), prows.end(), [&](const PRow& a, const PRow& b) {
+                double x = 0, y = 0;
+                switch (c.ColumnIndex) {
+                    case 1: x = a.cur;   y = b.cur;   break;
+                    case 2: x = a.avg;   y = b.avg;   break;
+                    case 3: x = a.med;   y = b.med;   break;
+                    case 4: x = a.peak;  y = b.peak;  break;
+                    case 5: x = a.pct;   y = b.pct;   break;
+                    case 6: x = a.calls; y = b.calls; break;
+                    default: return false;
+                }
+                return asc ? (x < y) : (x > y);
+            });
+        }
+    }
+
+    for (const PRow& r : prows) {
+        ImGui::TableNextRow();
+        bool hot = r.avg > kBudgetMsRed;
+        if (hot) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.55f, 1.0f));
+        ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(r.name->c_str());
+        ImGui::TableSetColumnIndex(1); devui::NumCell("%.3f", r.cur);
+        ImGui::TableSetColumnIndex(2); devui::NumCell("%.3f", r.avg);
+        ImGui::TableSetColumnIndex(3); devui::NumCell("%.3f", r.med);
+        ImGui::TableSetColumnIndex(4); devui::NumCell("%.3f", r.peak);
+        ImGui::TableSetColumnIndex(5); devui::NumCell("%.1f%%", r.pct);
+        ImGui::TableSetColumnIndex(6); devui::NumCell("%d", r.calls);
+        if (hot) ImGui::PopStyleColor();
+    }
+    ImGui::EndTable();
+}
 
 } // namespace prof
 
@@ -191,82 +267,37 @@ inline void RenderProfilerOverlay() {
         ImGui::Text("frame %8.3f ms  (%5.1f fps)  avg %8.3f ms", frMs, fps, frAvg);
         ImGui::Separator();
 
-        // Per-section table - addon scopes only (never the whole frame). Columns
-        // are click-sortable; numeric cells are right-aligned so digits line up
-        // (the old printf-padded Text never did under the proportional UI font).
-        // A section whose avg exceeds the budget threshold is flagged red.
-        struct PRow { const std::string* name; double cur, avg, med, peak, pct; int calls; };
-        std::vector<PRow> prows;
-        prows.reserve(::prof::displayMap().size());
-        double total = 0.0;
+        // Per-section tables - addon scopes only (never the whole frame). Columns are
+        // click-sortable; numeric cells right-aligned so digits line up. A section whose
+        // avg exceeds the budget threshold is flagged red.
+        //
+        // Split by NESTING so the sum is honest: ROOT scopes (depth 0) don't overlap, so
+        // they sum to the true per-frame addon cost. NESTED scopes (depth>0) are inclusive
+        // breakdowns already counted inside a root - shown for detail, NEVER summed (adding
+        // them was the old "(sum marked)" double-count that read far above the real cost).
+        std::vector<::prof::PRow> roots, nested;
+        double rootSum = 0.0;
         for (const auto& kv : ::prof::displayMap()) {
             const ::prof::SectionStat& s = kv.second;
-            total += s.cur;
             // Share of the whole-frame budget, averaged so it doesn't jitter.
             double pct = frAvg > 0.0 ? (s.hist.avg() / frAvg * 100.0) : 0.0;
-            prows.push_back({ &kv.first, s.cur, s.hist.avg(), s.hist.median(),
-                              s.hist.peak(), pct, s.calls });
+            ::prof::PRow r{ &kv.first, s.cur, s.hist.avg(), s.hist.median(),
+                            s.hist.peak(), pct, s.calls };
+            if (s.depth == 0) { roots.push_back(r); rootSum += s.cur; }
+            else                nested.push_back(r);
         }
 
-        // avg ms over this = hotspot (red). The whole addon is usually a small
-        // slice of the frame, so a single section past ~2 ms is worth the eye.
-        constexpr double kBudgetMsRed = 2.0;
-
-        constexpr ImGuiTableFlags kPerfFlags =
-            ImGuiTableFlags_Sortable | ImGuiTableFlags_RowBg |
-            ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV |
-            ImGuiTableFlags_NoSavedSettings;
-        if (ImGui::BeginTable("##perf", 7, kPerfFlags)) {
-            ImGui::TableSetupColumn("section",
-                ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoSort);
-            ImGui::TableSetupColumn("cur",    ImGuiTableColumnFlags_PreferSortDescending);
-            ImGui::TableSetupColumn("avg",    ImGuiTableColumnFlags_PreferSortDescending);
-            ImGui::TableSetupColumn("med",    ImGuiTableColumnFlags_PreferSortDescending);
-            ImGui::TableSetupColumn("peak",   ImGuiTableColumnFlags_PreferSortDescending);
-            ImGui::TableSetupColumn("%frame",
-                ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_DefaultSort);
-            ImGui::TableSetupColumn("calls",  ImGuiTableColumnFlags_PreferSortDescending);
-            ImGui::TableHeadersRow();
-
-            if (ImGuiTableSortSpecs* sp = ImGui::TableGetSortSpecs()) {
-                if (sp->SpecsCount > 0) {
-                    const ImGuiTableColumnSortSpecs& c = sp->Specs[0];
-                    bool asc = c.SortDirection == ImGuiSortDirection_Ascending;
-                    std::sort(prows.begin(), prows.end(),
-                              [&](const PRow& a, const PRow& b) {
-                        double x = 0, y = 0;
-                        switch (c.ColumnIndex) {
-                            case 1: x = a.cur;   y = b.cur;   break;
-                            case 2: x = a.avg;   y = b.avg;   break;
-                            case 3: x = a.med;   y = b.med;   break;
-                            case 4: x = a.peak;  y = b.peak;  break;
-                            case 5: x = a.pct;   y = b.pct;   break;
-                            case 6: x = a.calls; y = b.calls; break;
-                            default: return false;
-                        }
-                        return asc ? (x < y) : (x > y);
-                    });
-                }
-            }
-
-            for (const PRow& r : prows) {
-                ImGui::TableNextRow();
-                bool hot = r.avg > kBudgetMsRed;
-                if (hot) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.55f, 1.0f));
-                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(r.name->c_str());
-                ImGui::TableSetColumnIndex(1); devui::NumCell("%.3f", r.cur);
-                ImGui::TableSetColumnIndex(2); devui::NumCell("%.3f", r.avg);
-                ImGui::TableSetColumnIndex(3); devui::NumCell("%.3f", r.med);
-                ImGui::TableSetColumnIndex(4); devui::NumCell("%.3f", r.peak);
-                ImGui::TableSetColumnIndex(5); devui::NumCell("%.1f%%", r.pct);
-                ImGui::TableSetColumnIndex(6); devui::NumCell("%d", r.calls);
-                if (hot) ImGui::PopStyleColor();
-            }
-            ImGui::EndTable();
-        }
+        ImGui::TextDisabled("frame scopes (non-overlapping)");
+        ::prof::DrawPerfTable("##perf_roots", roots);
         ImGui::Separator();
-        ImGui::Text("(sum marked) %.3f ms", total);
-        ImGui::TextDisabled("addon sections only - not whole frame");
+        ImGui::Text("(sum of frame scopes) %.3f ms", rootSum);
+        ImGui::TextDisabled("^ true per-frame addon cost (vs the %.3f ms frame)", frMs);
+
+        if (!nested.empty()) {
+            ImGui::Spacing();
+            ImGui::TextDisabled("nested breakdown - inclusive, already inside a frame scope");
+            ::prof::DrawPerfTable("##perf_nested", nested);
+        }
     }
     ImGui::End();
 }
