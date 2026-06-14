@@ -363,6 +363,20 @@ void AddonLoad(AddonAPI* aApi) {
     // ids are kept so re-seeding the catalog restores them.
     ReconcileFavoritesWithCatalog();
 
+    // Resident-DLL reload safety. Nexus keeps the DLL in the process across a
+    // disable -> enable (see the g_Unloading note at the top of AddonLoad), so the
+    // catalog-version atomics AND the ui/CatalogView cache statics (s_builtEmote /
+    // s_view) persist from the previous session. We just REPLACED g_Emotes / g_MeMotes
+    // (ClearEmotes + LoadEmotesJson / ClearMeMotes + LoadMeMotesJson above) with fresh
+    // buffers WITHOUT bumping any version, so GetCatalogView() would short-circuit on
+    // the stale versions and hand out dangling Emote*/MeMote* into the freed old buffers
+    // -> use-after-free on the first render after a reload. Bump all three epochs
+    // unconditionally now so every version-keyed cache (CatalogView + the lazy texture
+    // cache + TextCache) rebuilds fresh against the just-loaded catalogs.
+    MarkEmotesDirty();
+    MarkMeMotesDirty();
+    MarkUiViewDirty();
+
     // Usage log (Recently/Frequently used). Load after both catalogs so PruneDead
     // can drop refs that no longer resolve (re-entrant-safe; statics re-init in
     // Load). Prune is per-type catalog-empty-guarded inside UsageRefLive.
