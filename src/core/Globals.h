@@ -71,6 +71,22 @@ inline void MarkMeMotesDirty() {
     g_MeMotesVersion.fetch_add(1, std::memory_order_relaxed);
 }
 
+// UI "view" revision: bumped when something the rendered HUD/library LISTS derive
+// from - but that ISN'T emote/me-mote catalog CONTENT - changes. Specifically the
+// favorites membership (which ids sit in any category) and the manual-unlock set.
+// The shared cached catalog view (ui/CatalogView) rebuilds when this OR either
+// catalog version changes, so favoriting / unlocking is reflected next frame
+// without the per-frame index rebuild every surface used to do. Bumped ONLY at the
+// favorites + unlock mutation chokepoints (Favorites.cpp add/remove/delete-category,
+// the Library drag-drop's favorite-a-new-id helper, EmoteAction MarkEmote*). NOT
+// bumped on category reorder/rename or a ref move between categories - those don't
+// change the favorited-id UNION, and the per-surface output build reads order live.
+extern std::atomic<uint64_t> g_UiViewRevision;
+
+inline void MarkUiViewDirty() {
+    g_UiViewRevision.fetch_add(1, std::memory_order_relaxed);
+}
+
 // --- New-bundled-emote notifier ----------------------------------------
 //
 // Set at AddonLoad when the bundled table gained emotes since the user's
