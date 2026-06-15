@@ -52,6 +52,8 @@ struct LocaleEntry {            // one emote in the bundled table
     bool        isCore     = false;
     bool        targetable = false;
     bool        madKing    = false;   // "Your Mad King Says..." event set
+    int         unlockItem = 0;       // GW2 API item id of the unlock tome (0 = core)
+    std::string wikiSlug;             // unlock-page URL path slug ("" for core)
     std::map<std::string, LangEntry> byLang;  // lang code -> data
 };
 
@@ -109,6 +111,8 @@ void EnsureTableLoaded() {
         e.isCore     = jsonutil::GetBool(item, "is_core", false);
         e.targetable = jsonutil::GetBool(item, "targetable", false);
         e.madKing    = jsonutil::GetBool(item, "mad_king", false);
+        e.unlockItem = jsonutil::GetInt(item, "unlock_item", 0);
+        e.wikiSlug   = jsonutil::GetString(item, "wiki_slug", std::string());
         if (e.id.empty()) continue;
         for (auto it = item.begin(); it != item.end(); ++it) {
             if (!it.value().is_object()) continue;  // skip id/flags scalars
@@ -167,6 +171,8 @@ Emote BuildSeedEmote(const LocaleEntry& entry, const std::string& lang,
     e.IsCore       = entry.isCore;
     e.IsTargetable = entry.targetable;
     e.IsMadKing    = entry.madKing;
+    e.UnlockItem   = entry.unlockItem;
+    e.WikiSlug     = entry.wikiSlug;
     // Seed aliases (normalized like Command; drop empties / the primary
     // command / duplicates).
     auto addAlias = [&](const std::string& raw) {
@@ -319,6 +325,8 @@ const BundledUnlockInfo& GetBundledUnlockInfo() {
     for (const auto& entry : s_table) {
         if (entry.isCore) continue;  // only unlockables have an account-API state
         s_unlockInfo.unlockableIds.insert(entry.id);
+        if (!entry.wikiSlug.empty()) s_unlockInfo.wikiSlugById[entry.id] = entry.wikiSlug;
+        if (entry.unlockItem)        s_unlockInfo.unlockItemById[entry.id] = entry.unlockItem;
         // The id itself is a key so a PascalCase account-API id ("Rock") resolves.
         s_unlockInfo.normKeyToId[NormalizeUnlockKey(entry.id)] = entry.id;
         for (const auto& kv : entry.byLang) {
@@ -335,6 +343,11 @@ const BundledUnlockInfo& GetBundledUnlockInfo() {
     LOG_INFO("Unlock index: %d unlockable id(s), %d match key(s)",
              (int)s_unlockInfo.unlockableIds.size(), (int)s_unlockInfo.normKeyToId.size());
     return s_unlockInfo;
+}
+
+std::string WikiUrl(const std::string& slug) {
+    if (slug.empty()) return std::string();
+    return "https://wiki.guildwars2.com/wiki/" + slug;
 }
 
 // Dev-tool (MemoryMonitor) accessors: estimated heap footprint of the two bundled
@@ -437,6 +450,8 @@ bool LoadEmotesJson(const std::string& path) {
         e.IsCore       = jsonutil::GetBool  (item, "is_core",    false);
         e.IsMadKing    = jsonutil::GetBool  (item, "mad_king",   false);
         e.UserKeybind  = jsonutil::GetBool  (item, "keybind",    false);
+        e.UnlockItem   = jsonutil::GetInt   (item, "unlock_item", 0);
+        e.WikiSlug     = jsonutil::GetString(item, "wiki_slug",  std::string());
 
         // Every command ingress runs the same normalization (leading '/' etc.)
         // so the send path's "skip index 0" assumption always holds.
@@ -448,6 +463,23 @@ bool LoadEmotesJson(const std::string& path) {
         // A valid emote with no display name gets one derived from its command
         // stem, mirroring the seed path (so a blank "name" never renders empty).
         if (e.Name.empty()) { e.Name = DeriveName(e.Command); changed = true; }
+
+        // Heal-on-load: backfill unlock provenance for bundled unlockables whose
+        // stored catalog predates these fields. Keyed by id (the stable identity),
+        // only when missing, only for bundled unlockables - so core and user-added
+        // emotes stay empty. The wiki link is then read from the emote's OWN
+        // WikiSlug, never re-derived by id at use sites.
+        if (e.WikiSlug.empty() || e.UnlockItem == 0) {
+            const BundledUnlockInfo& bi = GetBundledUnlockInfo();
+            if (e.WikiSlug.empty()) {
+                auto it = bi.wikiSlugById.find(e.Id);
+                if (it != bi.wikiSlugById.end()) { e.WikiSlug = it->second; changed = true; }
+            }
+            if (e.UnlockItem == 0) {
+                auto it = bi.unlockItemById.find(e.Id);
+                if (it != bi.unlockItemById.end()) { e.UnlockItem = it->second; changed = true; }
+            }
+        }
 
         // Optional aliases (alternate commands). Normalized like Command; drop
         // empties, the primary command itself, and duplicates. Missing key is
@@ -560,6 +592,13 @@ std::string SerializeEmotesJson() {
             f << "      \"mad_king\": "   << B(e.IsMadKing)     << ",\n";
             f << "      \"keybind\": "    << B(e.UserKeybind)   << ",\n";
             f << "      \"icon\": "       << quoted(e.IconPath);
+            // Unlock provenance - omitted when 0/empty (core + user-added emotes),
+            // so only the bundled unlockables carry them. Same omit-when-empty
+            // convention as aliases/auto_keywords below.
+            if (e.UnlockItem != 0)
+                f << ",\n      \"unlock_item\": " << e.UnlockItem;
+            if (!e.WikiSlug.empty())
+                f << ",\n      \"wiki_slug\": " << quoted(e.WikiSlug);
             // aliases omitted entirely when empty (matches prior behaviour);
             // when present, written inline so the file stays compact.
             if (!e.Aliases.empty()) {

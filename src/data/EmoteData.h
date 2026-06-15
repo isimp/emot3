@@ -57,6 +57,15 @@ struct Emote {
     // Distinct from Aliases (which are search/unlock slash-command variants) so
     // search aliases don't silently become chat triggers. See core/ChatWatch.
     std::vector<std::string> AutoKeywords;
+
+    // Unlock provenance for bundled unlockable emotes (seeded from the bundled
+    // table; empty/0 for core and user-added emotes). Reference data for the UI -
+    // UnlockItem is the GW2 API item id of the unlock tome; WikiSlug is the wiki
+    // URL path segment of its unlock page (append to <wiki host>/wiki/; powers the
+    // "Copy wiki link" menu). Serialized as "unlock_item"/"wiki_slug" in
+    // emotes.json (omitted when 0/empty), mirroring the bundled emotes_i18n.json.
+    int         UnlockItem = 0;
+    std::string WikiSlug;
 };
 
 // Runtime emote catalog. All emotes (core + unlockable) live here, and
@@ -162,9 +171,17 @@ std::string NormalizeUnlockKey(std::string s);
 // resolve to the stable id. Built once from emotes_i18n.json (then cached).
 struct BundledUnlockInfo {
     std::unordered_set<std::string>              unlockableIds;
-    std::unordered_map<std::string, std::string> normKeyToId;  // norm(key) -> id
+    std::unordered_map<std::string, std::string> normKeyToId;    // norm(key) -> id
+    std::unordered_map<std::string, std::string> wikiSlugById;   // id -> wiki URL path slug
+    std::unordered_map<std::string, int>         unlockItemById; // id -> unlock item id
 };
 const BundledUnlockInfo& GetBundledUnlockInfo();
+
+// Build a full GW2 wiki URL from a stored wiki_slug (Emote::WikiSlug), or "" if the
+// slug is empty. The slug already carries the page's canonical URL encoding. The
+// slug belongs to the emote (seeded / loaded), so callers pass e.WikiSlug rather
+// than re-deriving by id.
+std::string WikiUrl(const std::string& slug);
 
 // Dev-tool (MemoryMonitor) accessors: estimated entry count + heap footprint of the two
 // bundled startup tables (the emote-i18n table behind seeding/search, and the unlock

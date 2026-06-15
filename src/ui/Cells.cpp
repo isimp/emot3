@@ -744,6 +744,14 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
                 } else {
                     if (ImGui::MenuItem(L("cells.mark_unlocked"))) MarkEmoteUnlocked(e.Id);
                 }
+                // Wiki link to the emote's unlock (tome / unlock-item) page, from the
+                // emote's OWN WikiSlug (not derived by id). Clipboard only -
+                // deliberately no ShellExecute, which can minimise an
+                // exclusive-fullscreen client (same rule as the update link).
+                if (!e.WikiSlug.empty() && ImGui::MenuItem(L("cells.copy_wiki"))) {
+                    ImGui::SetClipboardText(WikiUrl(e.WikiSlug).c_str());
+                    ShowFeedback(L("cells.wiki_copied"));
+                }
                 ImGui::Separator();
             }
 
