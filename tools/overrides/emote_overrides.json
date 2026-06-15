@@ -1,0 +1,1003 @@
+{
+  "_note": "Curated overrides for tools/gen_emote_catalog.py. Per emote, per language: optional name/command/aliases that WIN over API+wiki. Names here were seeded best-effort from the localized commands; edit freely. Add command/aliases to pin those too.",
+  "emotes": {
+    "beckon": {
+      "mad_king": true,
+      "en": {
+        "name": "Beckon"
+      },
+      "de": {
+        "name": "Herbeiwinken"
+      },
+      "fr": {
+        "name": "Approcher"
+      },
+      "es": {
+        "name": "Llamar"
+      }
+    },
+    "bow": {
+      "mad_king": true,
+      "en": {
+        "name": "Bow"
+      },
+      "de": {
+        "name": "Verbeugen"
+      },
+      "fr": {
+        "name": "Se prosterner"
+      },
+      "es": {
+        "name": "Inclinarse"
+      }
+    },
+    "cheer": {
+      "mad_king": true,
+      "en": {
+        "name": "Cheer"
+      },
+      "de": {
+        "name": "Jubeln"
+      },
+      "fr": {
+        "name": "Encourager"
+      },
+      "es": {
+        "name": "Animar"
+      }
+    },
+    "cower": {
+      "mad_king": true,
+      "en": {
+        "name": "Cower"
+      },
+      "de": {
+        "name": "Ducken"
+      },
+      "fr": {
+        "name": "Lâche"
+      },
+      "es": {
+        "name": "Acobardarse"
+      }
+    },
+    "crossarms": {
+      "en": {
+        "name": "Cross Arms"
+      },
+      "de": {
+        "name": "Arme kreuzen"
+      },
+      "fr": {
+        "name": "Bras croisés"
+      },
+      "es": {
+        "name": "Brazos cruzados"
+      }
+    },
+    "cry": {
+      "en": {
+        "name": "Cry"
+      },
+      "de": {
+        "name": "Weinen"
+      },
+      "fr": {
+        "name": "Pleurer"
+      },
+      "es": {
+        "name": "Llorar"
+      }
+    },
+    "dance": {
+      "mad_king": true,
+      "en": {
+        "name": "Dance"
+      },
+      "de": {
+        "name": "Tanzen"
+      },
+      "fr": {
+        "name": "Danser"
+      },
+      "es": {
+        "name": "Bailar"
+      }
+    },
+    "facepalm": {
+      "en": {
+        "name": "Facepalm"
+      },
+      "de": {
+        "name": "Ärgerlich"
+      },
+      "fr": {
+        "name": "Fâché"
+      },
+      "es": {
+        "name": "Enfadada"
+      }
+    },
+    "kneel": {
+      "mad_king": true,
+      "en": {
+        "name": "Kneel"
+      },
+      "de": {
+        "name": "Hinknien"
+      },
+      "fr": {
+        "name": "À genoux"
+      },
+      "es": {
+        "name": "Arrodillarse"
+      }
+    },
+    "laugh": {
+      "mad_king": true,
+      "en": {
+        "name": "Laugh"
+      },
+      "de": {
+        "name": "Lachen"
+      },
+      "fr": {
+        "name": "Rire"
+      },
+      "es": {
+        "name": "Reír"
+      }
+    },
+    "no": {
+      "mad_king": true,
+      "en": {
+        "name": "No"
+      },
+      "de": {
+        "name": "Nein"
+      },
+      "fr": {
+        "name": "Non"
+      },
+      "es": {
+        "name": "No"
+      }
+    },
+    "point": {
+      "mad_king": true,
+      "en": {
+        "name": "Point"
+      },
+      "de": {
+        "name": "Deuten"
+      },
+      "fr": {
+        "name": "Montrer"
+      },
+      "es": {
+        "name": "Señalar"
+      }
+    },
+    "ponder": {
+      "mad_king": true,
+      "en": {
+        "name": "Ponder"
+      },
+      "de": {
+        "name": "Grübeln"
+      },
+      "fr": {
+        "name": "Cogiter"
+      },
+      "es": {
+        "name": "Reflexionar"
+      }
+    },
+    "rank": {
+      "en": {
+        "name": "Rank"
+      },
+      "de": {
+        "name": "Rang"
+      },
+      "fr": {
+        "name": "Rang"
+      },
+      "es": {
+        "name": "Rango"
+      }
+    },
+    "sad": {
+      "en": {
+        "name": "Sad"
+      },
+      "de": {
+        "name": "Traurig"
+      },
+      "fr": {
+        "name": "Triste"
+      },
+      "es": {
+        "name": "Triste"
+      }
+    },
+    "salute": {
+      "mad_king": true,
+      "en": {
+        "name": "Salute"
+      },
+      "de": {
+        "name": "Grüßen"
+      },
+      "fr": {
+        "name": "Salut"
+      },
+      "es": {
+        "name": "Firmes"
+      }
+    },
+    "shrug": {
+      "mad_king": true,
+      "en": {
+        "name": "Shrug"
+      },
+      "de": {
+        "name": "Schultern zucken"
+      },
+      "fr": {
+        "name": "Hausser les épaules"
+      },
+      "es": {
+        "name": "Encogerse"
+      }
+    },
+    "sit": {
+      "mad_king": true,
+      "en": {
+        "name": "Sit"
+      },
+      "de": {
+        "name": "Hinsetzen"
+      },
+      "fr": {
+        "name": "S'asseoir"
+      },
+      "es": {
+        "name": "Sentarse"
+      }
+    },
+    "sleep": {
+      "mad_king": true,
+      "en": {
+        "name": "Sleep"
+      },
+      "de": {
+        "name": "Schlafen"
+      },
+      "fr": {
+        "name": "Dormir"
+      },
+      "es": {
+        "name": "Dormir"
+      }
+    },
+    "surprised": {
+      "mad_king": true,
+      "en": {
+        "name": "Surprised"
+      },
+      "de": {
+        "name": "Überraschen"
+      },
+      "fr": {
+        "name": "Surpris"
+      },
+      "es": {
+        "name": "Sorpresa"
+      }
+    },
+    "talk": {
+      "en": {
+        "name": "Talk"
+      },
+      "de": {
+        "name": "Reden"
+      },
+      "fr": {
+        "name": "Parler"
+      },
+      "es": {
+        "name": "Hablar"
+      }
+    },
+    "thank": {
+      "en": {
+        "name": "Thank"
+      },
+      "de": {
+        "name": "Danke"
+      },
+      "fr": {
+        "name": "Merci"
+      },
+      "es": {
+        "name": "Gracias"
+      }
+    },
+    "threaten": {
+      "mad_king": true,
+      "en": {
+        "name": "Threaten"
+      },
+      "de": {
+        "name": "Drohen"
+      },
+      "fr": {
+        "name": "Menacer"
+      },
+      "es": {
+        "name": "Amenazar"
+      }
+    },
+    "wave": {
+      "mad_king": true,
+      "en": {
+        "name": "Wave"
+      },
+      "de": {
+        "name": "Winken"
+      },
+      "fr": {
+        "name": "Coucou"
+      },
+      "es": {
+        "name": "Saludar"
+      }
+    },
+    "yes": {
+      "mad_king": true,
+      "en": {
+        "name": "Yes"
+      },
+      "de": {
+        "name": "Ja"
+      },
+      "fr": {
+        "name": "Oui"
+      },
+      "es": {
+        "name": "Sí"
+      }
+    },
+    "barbecue": {
+      "en": {
+        "name": "Barbecue"
+      },
+      "de": {
+        "name": "Grillen"
+      },
+      "fr": {
+        "name": "Barbecue"
+      },
+      "es": {
+        "name": "Barbacoa"
+      }
+    },
+    "bless": {
+      "en": {
+        "name": "Bless"
+      },
+      "de": {
+        "name": "Segnen"
+      },
+      "fr": {
+        "name": "Bénir"
+      },
+      "es": {
+        "name": "Bendecir"
+      }
+    },
+    "bloodstoneboogie": {
+      "en": {
+        "name": "Bloodstone Boogie"
+      },
+      "fr": {
+        "name": "Boogie de sang"
+      },
+      "es": {
+        "name": "Baile de la hematites"
+      },
+      "de": {
+        "name": "Blutstein-Boogie"
+      }
+    },
+    "blowkiss": {
+      "en": {
+        "name": "Blow Kiss"
+      },
+      "de": {
+        "name": "Luftkuss zuwerfen"
+      },
+      "fr": {
+        "name": "Lancer un baiser"
+      },
+      "es": {
+        "name": "Lanzar beso"
+      }
+    },
+    "breakdance": {
+      "en": {
+        "name": "Breakdance"
+      },
+      "de": {
+        "name": "Breakdance"
+      },
+      "fr": {
+        "name": "Breakdance"
+      },
+      "es": {
+        "name": "Breakdance"
+      }
+    },
+    "channel": {
+      "en": {
+        "name": "Channel"
+      },
+      "de": {
+        "name": "Kanalisieren"
+      },
+      "fr": {
+        "name": "Canaliser"
+      },
+      "es": {
+        "name": "Canalizar"
+      }
+    },
+    "crabdance": {
+      "en": {
+        "name": "Crab Dance"
+      },
+      "de": {
+        "name": "Krabbentanz"
+      },
+      "fr": {
+        "name": "Danse du crabe"
+      },
+      "es": {
+        "name": "Baile del cangrejo"
+      }
+    },
+    "drink": {
+      "en": {
+        "name": "Drink"
+      },
+      "de": {
+        "name": "Trinken"
+      },
+      "fr": {
+        "name": "Boire"
+      },
+      "es": {
+        "name": "Beber"
+      }
+    },
+    "flex": {
+      "en": {
+        "name": "Flex"
+      },
+      "de": {
+        "name": "Bizeps"
+      },
+      "fr": {
+        "name": "Biceps"
+      },
+      "es": {
+        "name": "Bíceps"
+      }
+    },
+    "geargrind": {
+      "en": {
+        "name": "Gear Grind"
+      },
+      "de": {
+        "name": "Endlosschleife"
+      },
+      "fr": {
+        "name": "Freak de l'équipement"
+      },
+      "es": {
+        "name": "Corredor rutinario"
+      }
+    },
+    "happydance": {
+      "en": {
+        "name": "Happy Dance"
+      },
+      "de": {
+        "name": "Fröhlicher Tanz"
+      },
+      "fr": {
+        "name": "Danse joyeuse"
+      },
+      "es": {
+        "name": "Baile alegre"
+      }
+    },
+    "heroic": {
+      "en": {
+        "name": "Heroic"
+      },
+      "de": {
+        "name": "Heldenhaft"
+      },
+      "fr": {
+        "name": "Héroïque"
+      },
+      "es": {
+        "name": "Heroico"
+      }
+    },
+    "hiss": {
+      "en": {
+        "name": "Hiss"
+      },
+      "de": {
+        "name": "Zischen"
+      },
+      "fr": {
+        "name": "Feuler"
+      },
+      "es": {
+        "name": "Bufar"
+      }
+    },
+    "magicjuggle": {
+      "en": {
+        "name": "Magic Juggle"
+      },
+      "de": {
+        "name": "Magie jonglieren"
+      },
+      "fr": {
+        "name": "Jonglage magique"
+      },
+      "es": {
+        "name": "Malabar mágico"
+      }
+    },
+    "magictrick": {
+      "en": {
+        "name": "Magic Trick"
+      },
+      "de": {
+        "name": "Zaubertrick"
+      },
+      "fr": {
+        "name": "Tour de magie"
+      },
+      "es": {
+        "name": "Truco de magia"
+      }
+    },
+    "paper": {
+      "en": {
+        "name": "Paper"
+      },
+      "de": {
+        "name": "Papier"
+      },
+      "fr": {
+        "name": "Feuille"
+      },
+      "es": {
+        "name": "Papel"
+      }
+    },
+    "petalthrow": {
+      "en": {
+        "name": "Petal Throw"
+      },
+      "de": {
+        "name": "Blütenblätter werfen"
+      },
+      "fr": {
+        "name": "Lancer un pétale"
+      },
+      "es": {
+        "name": "Lanzar pétalos"
+      }
+    },
+    "playdead": {
+      "en": {
+        "name": "Play Dead"
+      },
+      "de": {
+        "name": "Totstellen"
+      },
+      "fr": {
+        "name": "Faire le mort"
+      },
+      "es": {
+        "name": "Yacer"
+      }
+    },
+    "posecover": {
+      "en": {
+        "name": "Pose Cover"
+      },
+      "de": {
+        "name": "Schüchterne Pose"
+      },
+      "fr": {
+        "name": "Pose timide"
+      },
+      "es": {
+        "name": "Pose tímida"
+      }
+    },
+    "poseheart": {
+      "en": {
+        "name": "Pose Heart"
+      },
+      "de": {
+        "name": "Herzpose"
+      },
+      "fr": {
+        "name": "Pose coeur"
+      },
+      "es": {
+        "name": "Pose de corazón"
+      }
+    },
+    "posehigh": {
+      "en": {
+        "name": "Pose High"
+      },
+      "de": {
+        "name": "Stolze Pose"
+      },
+      "fr": {
+        "name": "Pose fière"
+      },
+      "es": {
+        "name": "Pose orgullosa"
+      }
+    },
+    "poselow": {
+      "en": {
+        "name": "Pose Low"
+      },
+      "de": {
+        "name": "Überraschte Pose"
+      },
+      "fr": {
+        "name": "Pose surprise"
+      },
+      "es": {
+        "name": "Pose sorpresa"
+      }
+    },
+    "posepeace": {
+      "en": {
+        "name": "Pose Peace"
+      },
+      "de": {
+        "name": "Friedenspose"
+      },
+      "fr": {
+        "name": "Pose paix"
+      },
+      "es": {
+        "name": "Pose de paz"
+      }
+    },
+    "posesassy": {
+      "en": {
+        "name": "Pose Sassy"
+      },
+      "de": {
+        "name": "Freche Pose"
+      },
+      "fr": {
+        "name": "Pose impertinente"
+      },
+      "es": {
+        "name": "Pose atrevida"
+      }
+    },
+    "poseshy": {
+      "en": {
+        "name": "Pose Shy"
+      },
+      "de": {
+        "name": "Verlegene Pose"
+      },
+      "fr": {
+        "name": "Pose farouche"
+      },
+      "es": {
+        "name": "Pose recatada"
+      }
+    },
+    "posetwist": {
+      "en": {
+        "name": "Pose Twist"
+      },
+      "de": {
+        "name": "Halbherzige Pose"
+      },
+      "fr": {
+        "name": "Pose de mi-tour"
+      },
+      "es": {
+        "name": "Pose media vuelta"
+      }
+    },
+    "possessed": {
+      "en": {
+        "name": "Possessed"
+      },
+      "de": {
+        "name": "Besessen"
+      },
+      "fr": {
+        "name": "Possédé"
+      },
+      "es": {
+        "name": "Poseído"
+      }
+    },
+    "readbook": {
+      "en": {
+        "name": "Read Book"
+      },
+      "de": {
+        "name": "Buch lesen"
+      },
+      "fr": {
+        "name": "Lecture"
+      },
+      "es": {
+        "name": "Leer libro"
+      }
+    },
+    "rock": {
+      "en": {
+        "name": "Rock"
+      },
+      "de": {
+        "name": "Stein"
+      },
+      "fr": {
+        "name": "Pierre"
+      },
+      "es": {
+        "name": "Piedra"
+      }
+    },
+    "rockout": {
+      "en": {
+        "name": "Rock Out"
+      },
+      "de": {
+        "name": "Abrocken"
+      },
+      "fr": {
+        "name": "Hard rock"
+      },
+      "es": {
+        "name": "Rockear"
+      }
+    },
+    "scissors": {
+      "en": {
+        "name": "Scissors"
+      },
+      "de": {
+        "name": "Schere"
+      },
+      "fr": {
+        "name": "Ciseaux"
+      },
+      "es": {
+        "name": "Tijeras"
+      }
+    },
+    "serve": {
+      "en": {
+        "name": "Serve"
+      },
+      "de": {
+        "name": "Servieren"
+      },
+      "fr": {
+        "name": "Servir"
+      },
+      "es": {
+        "name": "Servir"
+      }
+    },
+    "shiver": {
+      "en": {
+        "name": "Shiver"
+      },
+      "de": {
+        "name": "Zittern"
+      },
+      "fr": {
+        "name": "Trembler"
+      },
+      "es": {
+        "name": "Tiritar"
+      }
+    },
+    "shiverplus": {
+      "en": {
+        "name": "Shiver Plus"
+      },
+      "de": {
+        "name": "Zittern Plus"
+      },
+      "fr": {
+        "name": "Trembler fort"
+      },
+      "es": {
+        "name": "Tiritar mucho"
+      }
+    },
+    "shocked": {
+      "en": {
+        "name": "Shocked"
+      },
+      "de": {
+        "name": "Schockiert"
+      },
+      "fr": {
+        "name": "Choqué"
+      },
+      "es": {
+        "name": "Conmoción"
+      }
+    },
+    "shuffle": {
+      "en": {
+        "name": "Inventory Shuffle"
+      },
+      "es": {
+        "name": "Mezclador de inventarios"
+      },
+      "de": {
+        "name": "Inventar-Shuffle"
+      },
+      "fr": {
+        "name": "Shuffle de l'inventaire"
+      }
+    },
+    "sipcoffee": {
+      "en": {
+        "name": "Sip Coffee"
+      },
+      "de": {
+        "name": "Kaffee schlürfen"
+      },
+      "fr": {
+        "name": "Boire un café"
+      },
+      "es": {
+        "name": "Tomar café"
+      }
+    },
+    "step": {
+      "en": {
+        "name": "Dodge Step"
+      },
+      "de": {
+        "name": "Ausweichschritt"
+      },
+      "fr": {
+        "name": "Pas d'esquive"
+      },
+      "es": {
+        "name": "Paso esquivo"
+      }
+    },
+    "stretch": {
+      "en": {
+        "name": "Stretch"
+      },
+      "de": {
+        "name": "Dehnen"
+      },
+      "fr": {
+        "name": "Étirement"
+      },
+      "es": {
+        "name": "Estirarse"
+      }
+    },
+    "thumbsdown": {
+      "en": {
+        "name": "Thumbs Down"
+      },
+      "de": {
+        "name": "Daumen runter"
+      },
+      "fr": {
+        "name": "Pouce bas"
+      },
+      "es": {
+        "name": "Pulgar abajo"
+      }
+    },
+    "thumbsup": {
+      "en": {
+        "name": "Thumbs Up"
+      },
+      "de": {
+        "name": "Daumen hoch"
+      },
+      "fr": {
+        "name": "Pouce haut"
+      },
+      "es": {
+        "name": "Pulgar arriba"
+      }
+    },
+    "unleash": {
+      "en": {
+        "name": "Unleash"
+      },
+      "de": {
+        "name": "Entfesseln"
+      },
+      "fr": {
+        "name": "Libérer"
+      },
+      "es": {
+        "name": "Desatar"
+      }
+    },
+    "whistle": {
+      "en": {
+        "name": "Whistle"
+      },
+      "de": {
+        "name": "Pfeifen"
+      },
+      "fr": {
+        "name": "Siffler"
+      },
+      "es": {
+        "name": "Silbido"
+      }
+    },
+    "masterpiece": {
+      "en": {
+        "name": "Masterpiece"
+      },
+      "de": {
+        "name": "Meisterwerk"
+      },
+      "fr": {
+        "name": "Chef-d'oeuvre"
+      },
+      "es": {
+        "name": "Una obra maestra"
+      }
+    },
+    "transform": {
+      "en": {
+        "name": "Transform"
+      },
+      "de": {
+        "name": "Verwandeln"
+      },
+      "fr": {
+        "name": "Transforme-moi"
+      },
+      "es": {
+        "name": "Transformación"
+      }
+    }
+  }
+}

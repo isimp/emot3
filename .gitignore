@@ -78,6 +78,10 @@ ipch/
 __pycache__/
 *.pyc
 
+# tools/gen_emote_catalog.py caches every GW2 API / wiki HTTP response here so
+# re-runs are cheap/offline. Pure download cache - safe to delete, never shared.
+tools/.emote_cache/
+
 
 # ---- OS noise -------------------------------------------------------------
 Thumbs.db
