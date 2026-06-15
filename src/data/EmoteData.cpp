@@ -10,6 +10,7 @@
 #include "Favorites.h"   // RemoveEmoteFromCategories (DeleteEmote cascade)
 #include "Globals.h"     // g_*Path + MarkEmotesDirty (DeleteEmote)
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.catalog"
+#include "migrations/EmoteCatalogMigration.h"  // RunEmoteCatalogMigrations (v1->v2)
 
 #include <nlohmann/json.hpp>
 
@@ -225,44 +226,40 @@ void EnsureV1TableLoaded() {
     LOG_INFO("emotes_i18n_v1 (migration map): %d emote(s)", (int)s_v1Table.size());
 }
 
-// v1->v2: for each bundled emote still holding its v1 default (matched by id, in
-// the catalog's seed language), adopt the current bundle value - leaving
-// user-customized fields untouched. unlock_item/wiki_slug (absent in v1) are
-// filled here, REPLACING the former always-on backfill. Aliases are intentionally
-// NOT migrated. Custom emotes (id not bundled) and the two NEW emotes (added by
-// the new-bundled-emote notifier) are out of scope. Idempotent once stamped v2.
-bool RunEmoteCatalogMigrations(std::vector<Emote>& emotes, int fromVersion,
-                               const std::string& lang) {
-    if (fromVersion >= kEmotesSchemaVersion) return false;
-    EnsureTableLoaded();
-    EnsureV1TableLoaded();
-    const std::string L = lang.empty() ? std::string("en") : lang;
-    for (Emote& e : emotes) {
-        auto v1it = s_v1Index.find(e.Id);
-        auto v2it = s_tableIndex.find(e.Id);
-        if (v1it == s_v1Index.end() || v2it == s_tableIndex.end()) continue;
-        const LocaleEntry& v1 = *v1it->second;
-        const LocaleEntry& v2 = *v2it->second;
-        const LangEntry oldd = ResolveForLang(v1, L);
-        const LangEntry newd = ResolveForLang(v2, L);
-        // command/name: replace only if still the v1 default (normalize both
-        // command sides so the compare mirrors load-time normalization).
-        if (e.Command == NormalizeEmoteCommand(oldd.command))
-            e.Command = NormalizeEmoteCommand(newd.command);
-        if (e.Name == oldd.name) e.Name = newd.name;
-        // flags (per-id): adopt v2 only when the user still has the v1 value.
-        if (e.IsTargetable == v1.targetable) e.IsTargetable = v2.targetable;
-        if (e.IsCore       == v1.isCore)     e.IsCore       = v2.isCore;
-        if (e.IsMadKing    == v1.madKing)    e.IsMadKing    = v2.madKing;
-        // unlock provenance: absent in v1 -> fill from v2 (one-time).
-        if (e.WikiSlug.empty()) e.WikiSlug   = v2.wikiSlug;
-        if (e.UnlockItem == 0)  e.UnlockItem = v2.unlockItem;
-    }
-    LOG_INFO("emote catalog: migrated schema v%d -> v%d", fromVersion, kEmotesSchemaVersion);
-    return true;
-}
+// (The v1->v2 catalog migration POLICY moved to data/migrations/
+// EmoteCatalogMigration.cpp; it reaches the v1 snapshot + current bundle through
+// the ResolveBundledById seam defined just below the namespace.)
 
 } // namespace
+
+// Flatten one bundled emote (current bundle or the frozen v1 snapshot) to a
+// language-resolved view for the catalog migration. Keeps LocaleEntry /
+// ResolveForLang private to this TU; the migration runner sees only this seam.
+ResolvedBundleEmote ResolveBundledById(const std::string& id,
+                                       const std::string& lang, bool fromV1) {
+    ResolvedBundleEmote out;
+    const LocaleEntry* entry = nullptr;
+    if (fromV1) {
+        EnsureV1TableLoaded();
+        auto it = s_v1Index.find(id);
+        if (it != s_v1Index.end()) entry = it->second;
+    } else {
+        EnsureTableLoaded();
+        auto it = s_tableIndex.find(id);
+        if (it != s_tableIndex.end()) entry = it->second;
+    }
+    if (!entry) return out;  // found stays false: custom / brand-new id
+    const LangEntry le = ResolveForLang(*entry, lang);
+    out.found      = true;
+    out.command    = le.command;
+    out.name       = le.name;
+    out.wikiSlug   = entry->wikiSlug;
+    out.unlockItem = entry->unlockItem;
+    out.targetable = entry->targetable;
+    out.isCore     = entry->isCore;
+    out.madKing    = entry->madKing;
+    return out;
+}
 
 std::vector<std::string> AvailableEmoteLanguages() {
     EnsureTableLoaded();
@@ -600,7 +597,7 @@ bool LoadEmotesJson(const std::string& path) {
     // fields a user never customized (matched by id, in the seed language).
     // Replaces the former always-on unlock/wiki backfill; the file is stamped v2 on
     // the re-save below and never auto-migrates again.
-    if (RunEmoteCatalogMigrations(parsed, fromVersion, lang)) changed = true;
+    if (emot3::migrations::RunEmoteCatalogMigrations(parsed, fromVersion, lang)) changed = true;
 
     int coreCount = 0, unlockCount = 0;
     {

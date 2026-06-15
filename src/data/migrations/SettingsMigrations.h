@@ -3,8 +3,14 @@
 #include <nlohmann/json.hpp>
 
 // =====================================================================
-// Settings schema migrations
+// Settings schema migrations  (settings.json — DOM transforms)
 // =====================================================================
+// This folder holds emot3's TWO migration systems, kept side by side:
+//   - SettingsMigrations.* (this file) — the settings.json framework below.
+//   - EmoteCatalogMigration.* — the emote catalog's v1->v2 migration. It runs
+//     POST-parse on the std::vector<Emote> (not a DOM) and is bundle-aware, so
+//     it can't be a DOM step here; it lives next door as a parallel runner.
+//
 // emot3's FIRST versioned-migration framework. settings.json carries an
 // integer "version". On load (data/Settings.cpp LoadSettings), BEFORE the
 // field-by-field parse, RunSettingsMigrations() walks the stored version up to
