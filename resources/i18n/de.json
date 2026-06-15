@@ -173,7 +173,7 @@
   "cells.send_target_sync": "Auf Ziel, synchronisiert senden",
   "cells.mark_locked": "Als gesperrt markieren",
   "cells.mark_unlocked": "Als freigeschaltet markieren",
-  "cells.copy_wiki": "Wiki-Link kopieren",
+  "cells.copy_wiki": "Link zur GW2-Wiki-Seite kopieren",
   "cells.wiki_copied": "Wiki-Link in die Zwischenablage kopiert",
   "cells.no_categories": "Keine Favoritenkategorien.",
   "cells.locked_cant_fav": "Gesperrte Emotes können nicht favorisiert werden.",

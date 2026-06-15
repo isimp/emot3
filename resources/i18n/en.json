@@ -176,7 +176,7 @@
   "cells.send_target_sync": "Send on target, synchronized",
   "cells.mark_locked": "Mark as locked",
   "cells.mark_unlocked": "Mark as unlocked",
-  "cells.copy_wiki": "Copy wiki link",
+  "cells.copy_wiki": "Copy link to GW2 Wiki page",
   "cells.wiki_copied": "Wiki link copied to clipboard",
   "cells.no_categories": "No favorite categories.",
   "cells.locked_cant_fav": "Locked emotes cannot be favorited.",
