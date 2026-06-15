@@ -35,10 +35,10 @@ CLEAN-SLATE MODEL
   The catalog is a pure projection of the sources -- no legacy hand-curated value
   is carried forward. Per language: command = override > API > wiki; aliases = the
   other API/wiki variants (+ override aliases); name = override > best-effort
-  derive. Curated overrides (tools/emote_overrides.json) are the reserved
-  top-priority layer -- they hold the best-effort display names and are where
-  future manual command/alias pins go. Structural flags (is_core/targetable/
-  mad_king) are preserved; a language with no source at all is dropped.
+  derive. Curated overrides live under tools/overrides/: emote_overrides.json is
+  the reserved top-priority layer (best-effort display names + manual command/alias/
+  flag pins), and icons/<id>.png hard-replaces an emote's icon (wins over API/wiki,
+  survives --refresh-icons). A language with no source at all is dropped.
 
 USAGE
     py -3 tools/gen_emote_catalog.py                 # dry-run: diff + report
@@ -63,8 +63,13 @@ REPO = os.path.dirname(HERE)
 JSON_PATH = os.path.join(REPO, "resources", "emote_data", "emotes_i18n.json")
 ICON_DIR = os.path.join(REPO, "resources", "emotes_official")
 CACHE_DIR = os.path.join(HERE, ".emote_cache")
-# Curated overrides (NOT bundled): top-priority command/name/aliases per emote/lang.
-OVERRIDES_PATH = os.path.join(HERE, "emote_overrides.json")
+# Curated overrides (NOT bundled), grouped under tools/overrides/:
+#   emote_overrides.json -- top-priority command/name/aliases/flags per emote.
+#   icons/<id>.png       -- per-emote icon override; wins over API/wiki and
+#                           survives --refresh-icons (a "hard replace").
+OVERRIDES_DIR = os.path.join(HERE, "overrides")
+OVERRIDES_PATH = os.path.join(OVERRIDES_DIR, "emote_overrides.json")
+ICON_OVERRIDE_DIR = os.path.join(OVERRIDES_DIR, "icons")
 
 LANGS = ["en", "de", "fr", "es"]            # our catalog language order (file order)
 # The EN wiki's four command columns are ordered English | French | German |
@@ -458,7 +463,7 @@ def merge(existing, api, en_rows, en_index, lang_extra, icon_index, shared_urls,
         aliases : every other API/wiki variant, plus any override aliases
         name    : override > derived-from-command (no source carries a name)
 
-    `overrides` (tools/emote_overrides.json) is the reserved curated layer: it WINS
+    `overrides` (tools/overrides/emote_overrides.json) is the reserved curated layer: it WINS
     over API/wiki and is where best-effort display names live + where future manual
     command/alias pins go. Structural flags (is_core/targetable/mad_king) are NOT
     localization values and are preserved. A language with no source at all is
@@ -473,6 +478,8 @@ def merge(existing, api, en_rows, en_index, lang_extra, icon_index, shared_urls,
         "flag_changed": [],      # (id, flag, old, new) derived/override flag differs
         "icon_new": [],          # (id, kind)
         "icon_refresh": [],      # (id, kind)
+        "icon_override": [],     # (id) curated icon override in effect
+        "icon_bad_override": [], # (id) override file present but not a valid PNG / over cap
         "icon_missing": [],      # (id) tome emote with no resolvable icon
         "icon_shared": [],       # (id) icon is a shared collection icon, skipped
         "wiki_not_in_catalog": [],
@@ -595,17 +602,32 @@ def merge(existing, api, en_rows, en_index, lang_extra, icon_index, shared_urls,
         elif "wiki_slug" in e:
             del e["wiki_slug"]
 
-        # icon
-        icon = resolve_icon(eid)
-        if icon:
-            kind, url = icon
-            dest = os.path.join(ICON_DIR, eid + ".png")
-            if not os.path.exists(dest):
-                report["icon_new"].append((eid, kind))
-                icon_jobs.append((eid, kind, url))
-            elif opts.refresh_icons:
-                report["icon_refresh"].append((eid, kind))
-                icon_jobs.append((eid, kind, url))
+        # icon: a curated override (tools/overrides/icons/<id>.png) is a HARD
+        # replace - it wins over API/wiki and survives --refresh-icons. Validated
+        # like a download (PNG + <=cap); a bad override falls through to API/wiki.
+        ov_icon = os.path.join(ICON_OVERRIDE_DIR, eid + ".png")
+        handled = False
+        if os.path.isfile(ov_icon):
+            with open(ov_icon, "rb") as f:
+                d = f.read()
+            dims = png_dims(d)
+            if dims and dims[0] <= MAX_ICON_DIM and dims[1] <= MAX_ICON_DIM:
+                report["icon_override"].append(eid)
+                icon_jobs.append((eid, "override", ov_icon))
+                handled = True
+            else:
+                report["icon_bad_override"].append(eid)  # invalid -> fall through
+        if not handled:
+            icon = resolve_icon(eid)
+            if icon:
+                kind, url = icon
+                dest = os.path.join(ICON_DIR, eid + ".png")
+                if not os.path.exists(dest):
+                    report["icon_new"].append((eid, kind))
+                    icon_jobs.append((eid, kind, url))
+                elif opts.refresh_icons:
+                    report["icon_refresh"].append((eid, kind))
+                    icon_jobs.append((eid, kind, url))
 
     # 1) update existing emotes
     for e in existing["emotes"]:
@@ -661,7 +683,7 @@ NOTE = (
     "projection of the sources: command = curated override > GW2 API (/v2/items, "
     "id via the wiki Unlock-item link or /v2/emotes) > wiki; aliases = the other "
     "API/wiki variants; name = override > best-effort derive (no source carries a "
-    "localized display name). Curated overrides live in tools/emote_overrides.json. "
+    "localized display name). Curated overrides live in tools/overrides/. "
     "Names are best-effort; verify in-game."
 )
 
@@ -756,6 +778,10 @@ def print_report(report):
           % len(report["name_derived"]))
     section("flags changed (derived/override vs previous)", report["flag_changed"],
             lambda t: "%s.%s: %s -> %s" % (t[0], t[1], t[2], t[3]))
+    section("icon overrides in effect (tools/overrides/icons/)",
+            [(x,) for x in report["icon_override"]], lambda t: t[0])
+    section("BAD icon overrides (not a PNG / over cap; ignored)",
+            [(x,) for x in report["icon_bad_override"]], lambda t: t[0])
     section("icons to add", report["icon_new"],
             lambda t: "%s (%s)" % t)
     section("icons to refresh (--refresh-icons)", report["icon_refresh"],
@@ -854,22 +880,31 @@ def main():
         f.write(dump_json(existing))
     print("\nWrote %s" % os.path.relpath(JSON_PATH, REPO))
 
-    # download icons
+    # download / copy icons (override jobs read a local file, the rest fetch)
     if icon_jobs:
         os.makedirs(ICON_DIR, exist_ok=True)
-        for eid, kind, url in icon_jobs:
-            data = fetch(url, binary=True, refresh=opts.refresh, no_cache=opts.no_cache)
+        for eid, kind, src in icon_jobs:
+            if kind == "override":
+                with open(src, "rb") as f:
+                    data = f.read()
+            else:
+                data = fetch(src, binary=True, refresh=opts.refresh, no_cache=opts.no_cache)
             dims = png_dims(data)
             if not dims:
-                print("  ! %s: not a PNG, skipped (%s)" % (eid, url))
+                print("  ! %s: not a PNG, skipped (%s)" % (eid, src))
                 continue
             if dims[0] > MAX_ICON_DIM or dims[1] > MAX_ICON_DIM:
                 print("  ! %s: %dx%d exceeds %dpx cap, skipped (kept existing)"
                       % (eid, dims[0], dims[1], MAX_ICON_DIM))
                 continue
-            with open(os.path.join(ICON_DIR, eid + ".png"), "wb") as f:
+            dest = os.path.join(ICON_DIR, eid + ".png")
+            if os.path.exists(dest):                      # idempotent: skip identical bytes
+                with open(dest, "rb") as f:
+                    if f.read() == data:
+                        continue
+            with open(dest, "wb") as f:
                 f.write(data)
-            print("  icon %s <- %s (%dx%d, %s)" % (eid, kind, dims[0], dims[1], kind))
+            print("  icon %s <- %s (%dx%d)" % (eid, kind, dims[0], dims[1]))
     print("\nDone. Review with: git diff resources/")
 
 
