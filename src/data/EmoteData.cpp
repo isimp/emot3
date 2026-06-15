@@ -326,6 +326,7 @@ const BundledUnlockInfo& GetBundledUnlockInfo() {
         if (entry.isCore) continue;  // only unlockables have an account-API state
         s_unlockInfo.unlockableIds.insert(entry.id);
         if (!entry.wikiSlug.empty()) s_unlockInfo.wikiSlugById[entry.id] = entry.wikiSlug;
+        if (entry.unlockItem)        s_unlockInfo.unlockItemById[entry.id] = entry.unlockItem;
         // The id itself is a key so a PascalCase account-API id ("Rock") resolves.
         s_unlockInfo.normKeyToId[NormalizeUnlockKey(entry.id)] = entry.id;
         for (const auto& kv : entry.byLang) {
@@ -344,11 +345,9 @@ const BundledUnlockInfo& GetBundledUnlockInfo() {
     return s_unlockInfo;
 }
 
-std::string WikiUrlForEmote(const std::string& id) {
-    const BundledUnlockInfo& info = GetBundledUnlockInfo();
-    auto it = info.wikiSlugById.find(id);
-    if (it == info.wikiSlugById.end() || it->second.empty()) return std::string();
-    return "https://wiki.guildwars2.com/wiki/" + it->second;
+std::string WikiUrl(const std::string& slug) {
+    if (slug.empty()) return std::string();
+    return "https://wiki.guildwars2.com/wiki/" + slug;
 }
 
 // Dev-tool (MemoryMonitor) accessors: estimated heap footprint of the two bundled
@@ -464,6 +463,23 @@ bool LoadEmotesJson(const std::string& path) {
         // A valid emote with no display name gets one derived from its command
         // stem, mirroring the seed path (so a blank "name" never renders empty).
         if (e.Name.empty()) { e.Name = DeriveName(e.Command); changed = true; }
+
+        // Heal-on-load: backfill unlock provenance for bundled unlockables whose
+        // stored catalog predates these fields. Keyed by id (the stable identity),
+        // only when missing, only for bundled unlockables - so core and user-added
+        // emotes stay empty. The wiki link is then read from the emote's OWN
+        // WikiSlug, never re-derived by id at use sites.
+        if (e.WikiSlug.empty() || e.UnlockItem == 0) {
+            const BundledUnlockInfo& bi = GetBundledUnlockInfo();
+            if (e.WikiSlug.empty()) {
+                auto it = bi.wikiSlugById.find(e.Id);
+                if (it != bi.wikiSlugById.end()) { e.WikiSlug = it->second; changed = true; }
+            }
+            if (e.UnlockItem == 0) {
+                auto it = bi.unlockItemById.find(e.Id);
+                if (it != bi.unlockItemById.end()) { e.UnlockItem = it->second; changed = true; }
+            }
+        }
 
         // Optional aliases (alternate commands). Normalized like Command; drop
         // empties, the primary command itself, and duplicates. Missing key is

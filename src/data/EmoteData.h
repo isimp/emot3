@@ -173,12 +173,15 @@ struct BundledUnlockInfo {
     std::unordered_set<std::string>              unlockableIds;
     std::unordered_map<std::string, std::string> normKeyToId;    // norm(key) -> id
     std::unordered_map<std::string, std::string> wikiSlugById;   // id -> wiki URL path slug
+    std::unordered_map<std::string, int>         unlockItemById; // id -> unlock item id
 };
 const BundledUnlockInfo& GetBundledUnlockInfo();
 
-// Full GW2 wiki URL for an emote's unlock page (tome / unlock item), or "" if the
-// emote has no bundled wiki_slug (core emotes). Built from emotes_i18n.json.
-std::string WikiUrlForEmote(const std::string& id);
+// Build a full GW2 wiki URL from a stored wiki_slug (Emote::WikiSlug), or "" if the
+// slug is empty. The slug already carries the page's canonical URL encoding. The
+// slug belongs to the emote (seeded / loaded), so callers pass e.WikiSlug rather
+// than re-deriving by id.
+std::string WikiUrl(const std::string& slug);
 
 // Dev-tool (MemoryMonitor) accessors: estimated entry count + heap footprint of the two
 // bundled startup tables (the emote-i18n table behind seeding/search, and the unlock
