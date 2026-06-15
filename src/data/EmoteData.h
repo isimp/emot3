@@ -5,6 +5,11 @@
 #include <unordered_map>
 #include <unordered_set>
 
+// emotes.json schema version this build writes. Lower-versioned files are migrated
+// up on load (see RunEmoteCatalogMigrations in EmoteData.cpp); a fresh file is
+// stamped with this on first save.
+constexpr int kEmotesSchemaVersion = 2;
+
 struct Emote {
     // Id is the stable, language-INDEPENDENT key across the codebase
     // (favorites, ManuallyUnlocked, texture cache key, bundled-icon
@@ -112,6 +117,11 @@ std::vector<std::string> AvailableEmoteLanguages();
 // notifier").
 std::vector<std::string> AllBundledEmoteIds();
 
+// True if `id` is a reserved bundled emote id (core OR unlockable). Blocks users
+// from creating a custom emote that would shadow a bundled one. Cached set built
+// from the bundled table on first call.
+bool IsBundledEmoteId(const std::string& id);
+
 // Bundle ids that are NEW relative to `known` (a snapshot of bundled ids seen on
 // a prior run) AND not already present in the live catalog. Drives the notifier:
 // a non-empty result is the set of emotes to offer the user. Deliberately-
@@ -197,3 +207,8 @@ void BundledUnlockIndexStats(size_t& count, size_t& bytes);
 // send path relies on is guaranteed wherever a command enters. Returns the
 // input unchanged when it trims to empty.
 std::string NormalizeEmoteCommand(std::string command);
+
+// Canonical form for a user-typed emote Id (the stable catalog key): lowercase,
+// keep [a-z0-9_], collapse any other run to a single '_', drop leading/trailing
+// '_'. Mirrors NormalizeMeMoteId so emote + /me-mote ids share one safe-key rule.
+std::string NormalizeEmoteId(std::string s);

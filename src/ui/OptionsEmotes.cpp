@@ -1050,42 +1050,61 @@ void RenderEmotesTab() {
     // that duplicates another emote's is allowed (Id is the key), soft note only.
     OptionsSection(L("opt.sec.add_emote"));
     {
+        static char newIdBuf[64]  = {};
         static char newCmdBuf[64] = {};
 
-        // Normalize via the shared helper (trim, force leading slash, lowercase),
-        // then derive the stable id from the normalized stem.
-        std::string trimmedNew    = TrimWhitespace(std::string(newCmdBuf));
-        std::string normalizedNew = NormalizeEmoteCommand(trimmedNew);
-        std::string newId         = normalizedNew.size() > 1 ? normalizedNew.substr(1)
-                                                             : std::string();
-        bool newHasInput = !trimmedNew.empty();
-        bool newIdDup = false, newCmdDup = false;
-        {
+        // The Id is the stable catalog key (favorites, unlock state, icon/texture
+        // keys), so it's the primary input now - sanitized to [a-z0-9_]. The
+        // Command (what's sent) is separate and optional: blank -> "/<id>".
+        std::string id = NormalizeEmoteId(std::string(newIdBuf));
+        bool hasId = !id.empty();
+        bool idDup = false, idReserved = false;
+        if (hasId) {
+            idReserved = IsBundledEmoteId(id);   // can't shadow a built-in emote
             std::lock_guard<std::mutex> lk(g_EmotesMutex);
-            if (newHasInput && !newId.empty()) {
-                newIdDup  = IdCollidesWith(newId, nullptr);
-                newCmdDup = CommandCollidesWith(normalizedNew, nullptr);
-            }
+            idDup = IdCollidesWith(id, nullptr);
         }
-        bool newInvalid = newHasInput && (newId.empty() || newIdDup);
+        bool idInvalid = hasId && (idDup || idReserved);
 
-        bool newHovered = false;
-        {
-            InputFieldOpts o; o.invalid = newInvalid; o.width = 180.f;
-            InputFieldWithHint("##newcmd", "opt.em.cmd_hint",
-                               newCmdBuf, sizeof(newCmdBuf), o, nullptr, &newHovered);
+        std::string cmdRaw  = TrimWhitespace(std::string(newCmdBuf));
+        std::string command = cmdRaw.empty() ? (hasId ? "/" + id : std::string())
+                                             : NormalizeEmoteCommand(cmdRaw);
+        bool cmdDup = false;
+        if (hasId && !command.empty()) {
+            std::lock_guard<std::mutex> lk(g_EmotesMutex);
+            cmdDup = CommandCollidesWith(command, nullptr);
         }
-        if (newInvalid && newHovered) {
-            if (newId.empty()) {
-                TooltipText("opt.em.cmd_min");
-            } else {
-                char m[160]; std::snprintf(m, sizeof m, L("opt.em.id_exists"), newId.c_str());
+
+        // --- Id (required) ---
+        bool idHovered = false;
+        {
+            InputFieldOpts o; o.invalid = idInvalid; o.width = 180.f;
+            InputFieldWithHint("##newid", "opt.em.id_hint",
+                               newIdBuf, sizeof(newIdBuf), o, nullptr, &idHovered);
+        }
+        if (idHovered) {
+            if (idReserved) {
+                char m[200]; std::snprintf(m, sizeof m, L("opt.em.id_reserved"), id.c_str());
                 TooltipTextRaw(m);
+            } else if (idDup) {
+                char m[160]; std::snprintf(m, sizeof m, L("opt.em.id_exists"), id.c_str());
+                TooltipTextRaw(m);
+            } else {
+                TooltipText("opt.em.id_tooltip");
             }
         }
+
+        // --- Command (optional; defaults to /<id>) ---
+        bool cmdHovered = false;
+        {
+            InputFieldOpts o; o.width = 180.f;
+            InputFieldWithHint("##newcmd", "opt.em.newcmd_hint",
+                               newCmdBuf, sizeof(newCmdBuf), o, nullptr, &cmdHovered);
+        }
+        if (cmdHovered) TooltipText("opt.em.newcmd_tooltip");
 
         ImGui::SameLine();
-        bool addEnabled = newHasInput && !newInvalid;
+        bool addEnabled = hasId && !idInvalid;
         if (!addEnabled) {
             ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.45f);
@@ -1095,11 +1114,11 @@ void RenderEmotesTab() {
             ImGui::PopStyleVar();
             ImGui::PopItemFlag();
         }
-        if (addEnabled && newCmdDup) {
-            ImGui::TextDisabled(L("opt.em.shared_note"), normalizedNew.c_str());
+        if (addEnabled && cmdDup) {
+            ImGui::TextDisabled(L("opt.em.shared_note"), command.c_str());
         }
         if (addPressed && addEnabled) {
-            std::string baseName = TitleCaseStem(normalizedNew);
+            std::string baseName = TitleCaseStem(command);
             std::string finalName = baseName;
             {
                 std::lock_guard<std::mutex> lk(g_EmotesMutex);
@@ -1111,8 +1130,8 @@ void RenderEmotesTab() {
                     finalName = baseName + " " + std::to_string(n);
                 }
                 Emote e;
-                e.Id           = newId;
-                e.Command      = normalizedNew;
+                e.Id           = id;
+                e.Command      = command;
                 e.Name         = finalName;
                 e.IsCore       = false;
                 e.IsTargetable = false;
@@ -1120,9 +1139,10 @@ void RenderEmotesTab() {
                 g_Emotes.push_back(std::move(e));
             }
             LOG_INFO("Added emote id=%s command=%s (\"%s\")",
-                     newId.c_str(), normalizedNew.c_str(), finalName.c_str());
+                     id.c_str(), command.c_str(), finalName.c_str());
             RequestSave(SaveKind::Emotes);
             MarkEmotesDirty();
+            newIdBuf[0] = '\0';
             newCmdBuf[0] = '\0';
         }
     }
