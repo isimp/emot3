@@ -52,6 +52,7 @@ struct LocaleEntry {            // one emote in the bundled table
     bool        isCore     = false;
     bool        targetable = false;
     bool        madKing    = false;   // "Your Mad King Says..." event set
+    std::string wikiSlug;             // unlock-page URL path slug ("" for core)
     std::map<std::string, LangEntry> byLang;  // lang code -> data
 };
 
@@ -109,6 +110,7 @@ void EnsureTableLoaded() {
         e.isCore     = jsonutil::GetBool(item, "is_core", false);
         e.targetable = jsonutil::GetBool(item, "targetable", false);
         e.madKing    = jsonutil::GetBool(item, "mad_king", false);
+        e.wikiSlug   = jsonutil::GetString(item, "wiki_slug", std::string());
         if (e.id.empty()) continue;
         for (auto it = item.begin(); it != item.end(); ++it) {
             if (!it.value().is_object()) continue;  // skip id/flags scalars
@@ -319,6 +321,7 @@ const BundledUnlockInfo& GetBundledUnlockInfo() {
     for (const auto& entry : s_table) {
         if (entry.isCore) continue;  // only unlockables have an account-API state
         s_unlockInfo.unlockableIds.insert(entry.id);
+        if (!entry.wikiSlug.empty()) s_unlockInfo.wikiSlugById[entry.id] = entry.wikiSlug;
         // The id itself is a key so a PascalCase account-API id ("Rock") resolves.
         s_unlockInfo.normKeyToId[NormalizeUnlockKey(entry.id)] = entry.id;
         for (const auto& kv : entry.byLang) {
@@ -335,6 +338,13 @@ const BundledUnlockInfo& GetBundledUnlockInfo() {
     LOG_INFO("Unlock index: %d unlockable id(s), %d match key(s)",
              (int)s_unlockInfo.unlockableIds.size(), (int)s_unlockInfo.normKeyToId.size());
     return s_unlockInfo;
+}
+
+std::string WikiUrlForEmote(const std::string& id) {
+    const BundledUnlockInfo& info = GetBundledUnlockInfo();
+    auto it = info.wikiSlugById.find(id);
+    if (it == info.wikiSlugById.end() || it->second.empty()) return std::string();
+    return "https://wiki.guildwars2.com/wiki/" + it->second;
 }
 
 // Dev-tool (MemoryMonitor) accessors: estimated heap footprint of the two bundled

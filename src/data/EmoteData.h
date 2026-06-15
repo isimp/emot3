@@ -162,9 +162,14 @@ std::string NormalizeUnlockKey(std::string s);
 // resolve to the stable id. Built once from emotes_i18n.json (then cached).
 struct BundledUnlockInfo {
     std::unordered_set<std::string>              unlockableIds;
-    std::unordered_map<std::string, std::string> normKeyToId;  // norm(key) -> id
+    std::unordered_map<std::string, std::string> normKeyToId;    // norm(key) -> id
+    std::unordered_map<std::string, std::string> wikiSlugById;   // id -> wiki URL path slug
 };
 const BundledUnlockInfo& GetBundledUnlockInfo();
+
+// Full GW2 wiki URL for an emote's unlock page (tome / unlock item), or "" if the
+// emote has no bundled wiki_slug (core emotes). Built from emotes_i18n.json.
+std::string WikiUrlForEmote(const std::string& id);
 
 // Dev-tool (MemoryMonitor) accessors: estimated entry count + heap footprint of the two
 // bundled startup tables (the emote-i18n table behind seeding/search, and the unlock
