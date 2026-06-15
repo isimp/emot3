@@ -141,6 +141,14 @@ def derive_name(command):
     return s[:1].upper() + s[1:] if s else ""
 
 
+def wiki_slug(title):
+    """A real MediaWiki URL path segment for a page title: spaces -> '_', special
+    chars percent-encoded the MediaWiki way (e.g. '"/Flex" Emote Tome' ->
+    '%22/Flex%22_Emote_Tome'; 'How to Dance, Volume 1' -> 'How_to_Dance,_Volume_1').
+    Append to '<wiki host>/wiki/' to build the page URL."""
+    return urllib.parse.quote(title.replace(" ", "_"), safe="/:,;@$!*()")
+
+
 # ---------------------------------------------------------------------------
 # GW2 API
 # ---------------------------------------------------------------------------
@@ -555,7 +563,7 @@ def merge(existing, api, en_rows, en_index, lang_extra, icon_index, shared_urls,
         elif "unlock_item" in e:
             del e["unlock_item"]
         if slug:
-            e["wiki_slug"] = slug
+            e["wiki_slug"] = wiki_slug(slug)
         elif "wiki_slug" in e:
             del e["wiki_slug"]
 
