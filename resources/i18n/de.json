@@ -718,6 +718,13 @@
   "opt.em.aliases_hint": "/alias /weiterer (optional)",
   "opt.em.aliases_tooltip": "Alternative Slash-Befehle für Suche und Freischaltsynchronisation. Werden nicht gesendet - der Befehl oben wird immer verwendet.",
   "opt.em.clear_icon_tooltip": "Eigenen Pfad löschen. Der Status fällt auf die nächste verfügbare Quelle zurück (Ordner-Override, Bündel, Ersatz).",
+  "opt.em.lbl_wiki_slug": "Wiki-Slug",
+  "opt.em.lbl_unlock_item": "Freischalt-Gegenstand-ID",
+  "opt.em.wiki_slug_hint": "Seiten-Slug, z. B. %22/Flex%22_Emote_Tome (optional)",
+  "opt.em.wiki_slug_tooltip": "Pfad der GW2-Wiki-Seite, angehängt an wiki.guildwars2.com/wiki/ . Steuert den Rechtsklick-Eintrag \"Wiki-Link kopieren\". Eine vollständige Wiki-URL wird auf den Slug gekürzt.",
+  "opt.em.unlock_item_hint": "GW2-Gegenstand-ID (optional)",
+  "opt.em.unlock_item_tooltip": "GW2-API-Gegenstand-ID des Freischalt-Folianten. Referenzdaten; 0/leer bedeutet keine.",
+  "opt.em.unlock_item_invalid": "Nur Ziffern (eine GW2-Gegenstand-ID).",
 
   "shortcut.pal_open": "Palette öffnen",
   "shortcut.pal_close": "Palette schließen",

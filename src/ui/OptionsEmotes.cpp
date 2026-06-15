@@ -103,6 +103,8 @@ struct RowBuffer {
     std::string command;   // editable localized command (was read-only before)
     std::string aliases;   // alternate commands, space-separated edit buffer
     std::string autoKeywords;  // auto-mote chat triggers, space-separated edit buffer
+    std::string wikiSlug;      // wiki page URL path slug edit buffer
+    std::string unlockItem;    // unlock item id edit buffer (digits; empty = none)
     bool        initialized = false;
 };
 
@@ -479,6 +481,8 @@ void RenderEmotesTab() {
                     if (!rb.autoKeywords.empty()) rb.autoKeywords += ' ';
                     rb.autoKeywords += k;
                 }
+                rb.wikiSlug   = e.WikiSlug;
+                rb.unlockItem = e.UnlockItem ? std::to_string(e.UnlockItem) : std::string();
                 rb.initialized = true;
             }
 
@@ -897,6 +901,70 @@ void RenderEmotesTab() {
                     if (!hasOverride) ImGui::PopStyleVar();
                     if (ImGui::IsItemHovered() && hasOverride)
                         TooltipText("opt.em.clear_icon_tooltip");
+                }
+
+                // ---- Wiki slug ----
+                // URL path segment of the emote's wiki page (powers the "Copy wiki
+                // link" cell menu; appended to the GW2 wiki /wiki/ base). Seeded for
+                // bundled unlockables; editable for any emote. Sanitized on commit:
+                // trim + drop a pasted "<host>/wiki/" prefix and leading slash.
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(L("opt.em.lbl_wiki_slug"));
+                ImGui::TableSetColumnIndex(1);
+                {
+                    char slugBuf[256];
+                    strncpy_s(slugBuf, sizeof(slugBuf), rb.wikiSlug.c_str(), _TRUNCATE);
+                    bool slugActive = false, slugHovered = false;
+                    if (InputFieldWithHint("##wikislug", "opt.em.wiki_slug_hint",
+                                           slugBuf, sizeof(slugBuf), {}, &slugActive, &slugHovered)) {
+                        rb.wikiSlug = slugBuf;
+                    }
+                    if (slugHovered) TooltipText("opt.em.wiki_slug_tooltip");
+                    if (slugActive) rowActive = true;
+                    if (!slugActive) {
+                        std::string s = TrimWhitespace(rb.wikiSlug);
+                        size_t w = s.rfind("/wiki/");          // strip a pasted full URL
+                        if (w != std::string::npos) s = s.substr(w + 6);
+                        while (!s.empty() && s.front() == '/') s.erase(0, 1);
+                        if (s != e.WikiSlug) { e.WikiSlug = s; emoteEdited = true; }
+                        rb.wikiSlug = s;
+                    }
+                }
+
+                // ---- Unlock item ----
+                // GW2 API item id of the unlock tome (reference data; 0 = none).
+                // Digits only (<=9); empty clears to 0.
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(L("opt.em.lbl_unlock_item"));
+                ImGui::TableSetColumnIndex(1);
+                {
+                    std::string trimmed = TrimWhitespace(rb.unlockItem);
+                    bool invalid = !trimmed.empty() &&
+                                   (trimmed.find_first_not_of("0123456789") != std::string::npos ||
+                                    trimmed.size() > 9);
+                    char idBuf[16];
+                    strncpy_s(idBuf, sizeof(idBuf), rb.unlockItem.c_str(), _TRUNCATE);
+                    bool idActive = false, idHovered = false;
+                    {
+                        InputFieldOpts o; o.invalid = invalid;
+                        if (InputFieldWithHint("##unlockitem", "opt.em.unlock_item_hint",
+                                               idBuf, sizeof(idBuf), o, &idActive, &idHovered)) {
+                            rb.unlockItem = idBuf;
+                        }
+                    }
+                    if (idHovered)
+                        TooltipText(invalid ? "opt.em.unlock_item_invalid"
+                                            : "opt.em.unlock_item_tooltip");
+                    if (idActive) rowActive = true;
+                    if (!idActive && !invalid) {
+                        int val = trimmed.empty() ? 0 : std::stoi(trimmed);
+                        if (val != e.UnlockItem) { e.UnlockItem = val; emoteEdited = true; }
+                        rb.unlockItem = val ? std::to_string(val) : std::string();
+                    }
                 }
 
                 // (rowActive was OR'd from each field's active flag where it's in
