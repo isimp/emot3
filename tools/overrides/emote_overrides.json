@@ -500,13 +500,13 @@
         "name": "Gear Grind"
       },
       "de": {
-        "name": "Endlos"
+        "name": "Endlosschleife"
       },
       "fr": {
-        "name": "Coureur"
+        "name": "Freak de l'équipement"
       },
       "es": {
-        "name": "Corredor"
+        "name": "Corredor rutinario"
       }
     },
     "happydance": {
@@ -861,16 +861,16 @@
     },
     "shuffle": {
       "en": {
-        "name": "Shuffle"
+        "name": "Inventory Shuffle"
       },
       "es": {
-        "name": "Mezclador"
+        "name": "Mezclador de inventarios"
       },
       "de": {
-        "name": "Shuffle"
+        "name": "Inventar-Shuffle"
       },
       "fr": {
-        "name": "Shuffle"
+        "name": "Shuffle de l'inventaire"
       }
     },
     "sipcoffee": {
@@ -889,16 +889,16 @@
     },
     "step": {
       "en": {
-        "name": "Step"
+        "name": "Dodge Step"
       },
       "de": {
-        "name": "Schritt"
+        "name": "Ausweichschritt"
       },
       "fr": {
-        "name": "Esquive"
+        "name": "Pas d'esquive"
       },
       "es": {
-        "name": "Paso"
+        "name": "Paso esquivo"
       }
     },
     "stretch": {
