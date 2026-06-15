@@ -73,6 +73,10 @@ WIKI_COL_LANGS = ["en", "fr", "de", "es"]
 WIKI_HOST = {"en": "wiki", "de": "wiki-de", "fr": "wiki-fr", "es": "wiki-es"}
 USER_AGENT = "emot3-catalog-builder/1.0 (https://github.com/isimp/emot3)"
 DEFAULT_TTL = 7 * 24 * 3600                  # 7 days
+# Hard cap for downloaded icons, matching the addon's icon dimension cap
+# (ProbeIconFile / icon_cache.json maxIconDim). We can't resize (stdlib only), so
+# an over-cap icon is skipped (the existing/AI icon stands) rather than shipped.
+MAX_ICON_DIM = 128
 
 CMD_RE = re.compile(r"'''\s*(/[^'<]+?)\s*'''")
 ITEM_NAME_CMD_RE = re.compile(r'"\s*(/[^"]+?)\s*"')        # `"/Rockout" Emote Tome`
@@ -817,6 +821,10 @@ def main():
             dims = png_dims(data)
             if not dims:
                 print("  ! %s: not a PNG, skipped (%s)" % (eid, url))
+                continue
+            if dims[0] > MAX_ICON_DIM or dims[1] > MAX_ICON_DIM:
+                print("  ! %s: %dx%d exceeds %dpx cap, skipped (kept existing)"
+                      % (eid, dims[0], dims[1], MAX_ICON_DIM))
                 continue
             with open(os.path.join(ICON_DIR, eid + ".png"), "wb") as f:
                 f.write(data)
