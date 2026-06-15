@@ -60,6 +60,7 @@ struct LocaleEntry {            // one emote in the bundled table
 bool                     s_tableLoaded = false;
 std::vector<LocaleEntry> s_table;
 std::vector<std::string> s_tableLangs;
+std::unordered_map<std::string, const LocaleEntry*> s_tableIndex;  // id -> &s_table entry
 
 // The unlock-match index, built once from s_table. File-scope (not a function-local
 // static) so the dev-tool stats accessor can read it without forcing a build.
@@ -77,33 +78,14 @@ std::string DeriveName(const std::string& command) {
     return s;
 }
 
-void EnsureTableLoaded() {
-    if (s_tableLoaded) return;
-    s_tableLoaded = true;  // even on failure - don't retry every call
-
-    const void* data = nullptr; size_t size = 0;
-    if (!TryLoadBundledData(kEmoteData, kEmoteDataCount, "emotes_i18n",
-                            data, size)) {
-        LOG_CRITICAL("emotes_i18n bundled table missing - no emotes to seed");
-        return;
-    }
-    json j;
-    try {
-        j = json::parse(static_cast<const char*>(data),
-                        static_cast<const char*>(data) + size);
-    } catch (const json::parse_error& e) {
-        LOG_CRITICAL("emotes_i18n parse error at byte %zu: %s",
-                     (size_t)e.byte, e.what());
-        return;
-    }
-    if (j.contains("languages") && j["languages"].is_array()) {
+// Parse a bundled emotes_i18n DOM into LocaleEntry records. Shared by the live
+// table (EnsureTableLoaded) and the frozen v1 snapshot used as the migration map.
+void ParseBundleTable(const json& j, std::vector<LocaleEntry>& out,
+                      std::vector<std::string>* langsOut) {
+    if (langsOut && j.contains("languages") && j["languages"].is_array())
         for (const auto& l : j["languages"])
-            if (l.is_string()) s_tableLangs.push_back(l.get<std::string>());
-    }
-    if (!j.contains("emotes") || !j["emotes"].is_array()) {
-        LOG_CRITICAL("emotes_i18n has no \"emotes\" array");
-        return;
-    }
+            if (l.is_string()) langsOut->push_back(l.get<std::string>());
+    if (!j.contains("emotes") || !j["emotes"].is_array()) return;
     for (const auto& item : j["emotes"]) {
         if (!item.is_object()) continue;
         LocaleEntry e;
@@ -126,8 +108,31 @@ void EnsureTableLoaded() {
                 if (a.is_string()) le.aliases.push_back(a.get<std::string>());
             e.byLang[code] = std::move(le);
         }
-        s_table.push_back(std::move(e));
+        out.push_back(std::move(e));
     }
+}
+
+void EnsureTableLoaded() {
+    if (s_tableLoaded) return;
+    s_tableLoaded = true;  // even on failure - don't retry every call
+
+    const void* data = nullptr; size_t size = 0;
+    if (!TryLoadBundledData(kEmoteData, kEmoteDataCount, "emotes_i18n",
+                            data, size)) {
+        LOG_CRITICAL("emotes_i18n bundled table missing - no emotes to seed");
+        return;
+    }
+    json j;
+    try {
+        j = json::parse(static_cast<const char*>(data),
+                        static_cast<const char*>(data) + size);
+    } catch (const json::parse_error& e) {
+        LOG_CRITICAL("emotes_i18n parse error at byte %zu: %s",
+                     (size_t)e.byte, e.what());
+        return;
+    }
+    ParseBundleTable(j, s_table, &s_tableLangs);
+    for (const auto& e : s_table) s_tableIndex[e.id] = &e;
     LOG_INFO("emotes_i18n: %d emote(s), %d language(s)",
              (int)s_table.size(), (int)s_tableLangs.size());
 }
@@ -195,6 +200,68 @@ Emote BuildSeedEmote(const LocaleEntry& entry, const std::string& lang,
     return e;
 }
 
+// --- v1 snapshot (the migration map) + the v1->v2 catalog migration --------
+std::vector<LocaleEntry> s_v1Table;
+bool                     s_v1Loaded = false;
+std::unordered_map<std::string, const LocaleEntry*> s_v1Index;  // id -> &s_v1Table entry
+
+void EnsureV1TableLoaded() {
+    if (s_v1Loaded) return;
+    s_v1Loaded = true;
+    const void* data = nullptr; size_t size = 0;
+    if (!TryLoadBundledData(kEmoteData, kEmoteDataCount, "emotes_i18n_v1", data, size)) {
+        LOG_WARNING("emotes_i18n_v1 (migration map) missing - v1 catalogs won't migrate");
+        return;
+    }
+    try {
+        json j = json::parse(static_cast<const char*>(data),
+                             static_cast<const char*>(data) + size);
+        ParseBundleTable(j, s_v1Table, nullptr);
+    } catch (const json::parse_error& e) {
+        LOG_WARNING("emotes_i18n_v1 parse error: %s", e.what());
+        return;
+    }
+    for (const auto& e : s_v1Table) s_v1Index[e.id] = &e;
+    LOG_INFO("emotes_i18n_v1 (migration map): %d emote(s)", (int)s_v1Table.size());
+}
+
+// v1->v2: for each bundled emote still holding its v1 default (matched by id, in
+// the catalog's seed language), adopt the current bundle value - leaving
+// user-customized fields untouched. unlock_item/wiki_slug (absent in v1) are
+// filled here, REPLACING the former always-on backfill. Aliases are intentionally
+// NOT migrated. Custom emotes (id not bundled) and the two NEW emotes (added by
+// the new-bundled-emote notifier) are out of scope. Idempotent once stamped v2.
+bool RunEmoteCatalogMigrations(std::vector<Emote>& emotes, int fromVersion,
+                               const std::string& lang) {
+    if (fromVersion >= kEmotesSchemaVersion) return false;
+    EnsureTableLoaded();
+    EnsureV1TableLoaded();
+    const std::string L = lang.empty() ? std::string("en") : lang;
+    for (Emote& e : emotes) {
+        auto v1it = s_v1Index.find(e.Id);
+        auto v2it = s_tableIndex.find(e.Id);
+        if (v1it == s_v1Index.end() || v2it == s_tableIndex.end()) continue;
+        const LocaleEntry& v1 = *v1it->second;
+        const LocaleEntry& v2 = *v2it->second;
+        const LangEntry oldd = ResolveForLang(v1, L);
+        const LangEntry newd = ResolveForLang(v2, L);
+        // command/name: replace only if still the v1 default (normalize both
+        // command sides so the compare mirrors load-time normalization).
+        if (e.Command == NormalizeEmoteCommand(oldd.command))
+            e.Command = NormalizeEmoteCommand(newd.command);
+        if (e.Name == oldd.name) e.Name = newd.name;
+        // flags (per-id): adopt v2 only when the user still has the v1 value.
+        if (e.IsTargetable == v1.targetable) e.IsTargetable = v2.targetable;
+        if (e.IsCore       == v1.isCore)     e.IsCore       = v2.isCore;
+        if (e.IsMadKing    == v1.madKing)    e.IsMadKing    = v2.madKing;
+        // unlock provenance: absent in v1 -> fill from v2 (one-time).
+        if (e.WikiSlug.empty()) e.WikiSlug   = v2.wikiSlug;
+        if (e.UnlockItem == 0)  e.UnlockItem = v2.unlockItem;
+    }
+    LOG_INFO("emote catalog: migrated schema v%d -> v%d", fromVersion, kEmotesSchemaVersion);
+    return true;
+}
+
 } // namespace
 
 std::vector<std::string> AvailableEmoteLanguages() {
@@ -208,6 +275,11 @@ std::vector<std::string> AllBundledEmoteIds() {
     ids.reserve(s_table.size());
     for (const auto& entry : s_table) ids.push_back(entry.id);
     return ids;
+}
+
+bool IsBundledEmoteId(const std::string& id) {
+    EnsureTableLoaded();
+    return s_tableIndex.count(id) != 0;
 }
 
 std::vector<std::string> ComputeNewBundledEmotes(const std::vector<std::string>& known) {
@@ -305,6 +377,21 @@ std::string NormalizeEmoteCommand(std::string command) {
     std::transform(command.begin(), command.end(), command.begin(),
                    [](unsigned char c) { return (char)std::tolower(c); });
     return command;
+}
+
+std::string NormalizeEmoteId(std::string s) {
+    std::string out;
+    bool lastUnderscore = false;
+    for (char c : s) {
+        char lc = (char)std::tolower((unsigned char)c);
+        if ((lc >= 'a' && lc <= 'z') || (lc >= '0' && lc <= '9')) {
+            out += lc; lastUnderscore = false;
+        } else if (!out.empty() && !lastUnderscore) {
+            out += '_'; lastUnderscore = true;   // collapse any run, no leading '_'
+        }
+    }
+    while (!out.empty() && out.back() == '_') out.pop_back();
+    return out;
 }
 
 std::string NormalizeUnlockKey(std::string s) {
@@ -413,6 +500,10 @@ bool LoadEmotesJson(const std::string& path) {
     // we re-save at the end so the on-disk file heals.
     bool changed = false;
 
+    // Stored schema version drives the one-time v1->v2 migration below (missing =
+    // v1 baseline). Stamped to kEmotesSchemaVersion by SerializeEmotesJson on save.
+    const int fromVersion = jsonutil::GetInt(j, "version", 1);
+
     std::string lang = jsonutil::GetString(j, "emote_language", std::string());
     if (!lang.empty()) {
         const auto& langs = AvailableEmoteLanguages();
@@ -464,22 +555,8 @@ bool LoadEmotesJson(const std::string& path) {
         // stem, mirroring the seed path (so a blank "name" never renders empty).
         if (e.Name.empty()) { e.Name = DeriveName(e.Command); changed = true; }
 
-        // Heal-on-load: backfill unlock provenance for bundled unlockables whose
-        // stored catalog predates these fields. Keyed by id (the stable identity),
-        // only when missing, only for bundled unlockables - so core and user-added
-        // emotes stay empty. The wiki link is then read from the emote's OWN
-        // WikiSlug, never re-derived by id at use sites.
-        if (e.WikiSlug.empty() || e.UnlockItem == 0) {
-            const BundledUnlockInfo& bi = GetBundledUnlockInfo();
-            if (e.WikiSlug.empty()) {
-                auto it = bi.wikiSlugById.find(e.Id);
-                if (it != bi.wikiSlugById.end()) { e.WikiSlug = it->second; changed = true; }
-            }
-            if (e.UnlockItem == 0) {
-                auto it = bi.unlockItemById.find(e.Id);
-                if (it != bi.unlockItemById.end()) { e.UnlockItem = it->second; changed = true; }
-            }
-        }
+        // (unlock_item/wiki_slug are no longer backfilled per-load; the one-time
+        // v1->v2 migration below fills them - see RunEmoteCatalogMigrations.)
 
         // Optional aliases (alternate commands). Normalized like Command; drop
         // empties, the primary command itself, and duplicates. Missing key is
@@ -518,6 +595,12 @@ bool LoadEmotesJson(const std::string& path) {
         if (!dup) parsed.push_back(std::move(e));
         else { changed = true; LOG_WARNING("emotes.json: dropped duplicate emote id \"%s\"", e.Id.c_str()); }
     }
+
+    // One-time schema migration (v1 -> v2): adopt current bundle defaults for the
+    // fields a user never customized (matched by id, in the seed language).
+    // Replaces the former always-on unlock/wiki backfill; the file is stamped v2 on
+    // the re-save below and never auto-migrates again.
+    if (RunEmoteCatalogMigrations(parsed, fromVersion, lang)) changed = true;
 
     int coreCount = 0, unlockCount = 0;
     {
@@ -574,7 +657,7 @@ std::string SerializeEmotesJson() {
     auto B = [](bool v) { return v ? "true" : "false"; };
 
     f << "{\n";
-    f << "  \"version\": 1,\n";
+    f << "  \"version\": " << kEmotesSchemaVersion << ",\n";
     f << "  \"emote_language\": " << quoted(g_EmoteLanguage) << ",\n";
     f << "  \"emotes\": [";
 
