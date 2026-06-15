@@ -52,6 +52,7 @@ struct LocaleEntry {            // one emote in the bundled table
     bool        isCore     = false;
     bool        targetable = false;
     bool        madKing    = false;   // "Your Mad King Says..." event set
+    int         unlockItem = 0;       // GW2 API item id of the unlock tome (0 = core)
     std::string wikiSlug;             // unlock-page URL path slug ("" for core)
     std::map<std::string, LangEntry> byLang;  // lang code -> data
 };
@@ -110,6 +111,7 @@ void EnsureTableLoaded() {
         e.isCore     = jsonutil::GetBool(item, "is_core", false);
         e.targetable = jsonutil::GetBool(item, "targetable", false);
         e.madKing    = jsonutil::GetBool(item, "mad_king", false);
+        e.unlockItem = jsonutil::GetInt(item, "unlock_item", 0);
         e.wikiSlug   = jsonutil::GetString(item, "wiki_slug", std::string());
         if (e.id.empty()) continue;
         for (auto it = item.begin(); it != item.end(); ++it) {
@@ -169,6 +171,8 @@ Emote BuildSeedEmote(const LocaleEntry& entry, const std::string& lang,
     e.IsCore       = entry.isCore;
     e.IsTargetable = entry.targetable;
     e.IsMadKing    = entry.madKing;
+    e.UnlockItem   = entry.unlockItem;
+    e.WikiSlug     = entry.wikiSlug;
     // Seed aliases (normalized like Command; drop empties / the primary
     // command / duplicates).
     auto addAlias = [&](const std::string& raw) {
@@ -447,6 +451,8 @@ bool LoadEmotesJson(const std::string& path) {
         e.IsCore       = jsonutil::GetBool  (item, "is_core",    false);
         e.IsMadKing    = jsonutil::GetBool  (item, "mad_king",   false);
         e.UserKeybind  = jsonutil::GetBool  (item, "keybind",    false);
+        e.UnlockItem   = jsonutil::GetInt   (item, "unlock_item", 0);
+        e.WikiSlug     = jsonutil::GetString(item, "wiki_slug",  std::string());
 
         // Every command ingress runs the same normalization (leading '/' etc.)
         // so the send path's "skip index 0" assumption always holds.
@@ -570,6 +576,13 @@ std::string SerializeEmotesJson() {
             f << "      \"mad_king\": "   << B(e.IsMadKing)     << ",\n";
             f << "      \"keybind\": "    << B(e.UserKeybind)   << ",\n";
             f << "      \"icon\": "       << quoted(e.IconPath);
+            // Unlock provenance - omitted when 0/empty (core + user-added emotes),
+            // so only the bundled unlockables carry them. Same omit-when-empty
+            // convention as aliases/auto_keywords below.
+            if (e.UnlockItem != 0)
+                f << ",\n      \"unlock_item\": " << e.UnlockItem;
+            if (!e.WikiSlug.empty())
+                f << ",\n      \"wiki_slug\": " << quoted(e.WikiSlug);
             // aliases omitted entirely when empty (matches prior behaviour);
             // when present, written inline so the file stays compact.
             if (!e.Aliases.empty()) {

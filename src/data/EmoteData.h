@@ -57,6 +57,15 @@ struct Emote {
     // Distinct from Aliases (which are search/unlock slash-command variants) so
     // search aliases don't silently become chat triggers. See core/ChatWatch.
     std::vector<std::string> AutoKeywords;
+
+    // Unlock provenance for bundled unlockable emotes (seeded from the bundled
+    // table; empty/0 for core and user-added emotes). Reference data for the UI -
+    // UnlockItem is the GW2 API item id of the unlock tome; WikiSlug is the wiki
+    // URL path segment of its unlock page (append to <wiki host>/wiki/; powers the
+    // "Copy wiki link" menu). Serialized as "unlock_item"/"wiki_slug" in
+    // emotes.json (omitted when 0/empty), mirroring the bundled emotes_i18n.json.
+    int         UnlockItem = 0;
+    std::string WikiSlug;
 };
 
 // Runtime emote catalog. All emotes (core + unlockable) live here, and
