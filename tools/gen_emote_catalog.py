@@ -142,10 +142,10 @@ def derive_name(command):
 
 
 def wiki_slug(title):
-    """A real MediaWiki URL path segment for a page title: spaces -> '_', special
-    chars percent-encoded the MediaWiki way (e.g. '"/Flex" Emote Tome' ->
-    '%22/Flex%22_Emote_Tome'; 'How to Dance, Volume 1' -> 'How_to_Dance,_Volume_1').
-    Append to '<wiki host>/wiki/' to build the page URL."""
+    """FALLBACK encoder for a wiki URL path slug when MediaWiki's own fullurl isn't
+    available (see resolve_canonical_slugs, the authoritative path): spaces -> '_',
+    specials percent-encoded the MediaWiki way ('"/Flex" Emote Tome' ->
+    '%22/Flex%22_Emote_Tome'). Verified byte-identical to the wiki's URLs."""
     return urllib.parse.quote(title.replace(" ", "_"), safe="/:,;@$!*()")
 
 
@@ -410,6 +410,34 @@ def resolve_wiki_page(title, opts):
     return ""
 
 
+def resolve_canonical_slugs(opts, titles):
+    """Map page title -> the canonical URL path slug taken STRAIGHT from MediaWiki
+    (prop=info&inprop=url -> fullurl, the part after '/wiki/'). Authoritative -- no
+    self-encoding guesswork. Batched (<=50 titles/query); the `normalized` map
+    handles any title MediaWiki rewrites so the input title still resolves."""
+    out = {}
+    uniq = sorted({t for t in titles if t})
+    marker = "/wiki/"
+    for i in range(0, len(uniq), 50):
+        batch = uniq[i:i + 50]
+        url = ("https://%s.guildwars2.com/api.php?format=json&action=query"
+               "&prop=info&inprop=url&redirects=1&titles=%s"
+               % (WIKI_HOST["en"], urllib.parse.quote("|".join(batch))))
+        q = fetch_json(url, refresh=opts.refresh, no_cache=opts.no_cache).get("query", {})
+        norm_map = {n["from"]: n["to"] for n in q.get("normalized", [])}
+        title_slug = {}
+        for p in q.get("pages", {}).values():
+            full = p.get("fullurl", "")
+            j = full.find(marker)
+            if j >= 0:
+                title_slug[p.get("title", "")] = full[j + len(marker):]
+        for t in batch:
+            slug = title_slug.get(norm_map.get(t, t)) or title_slug.get(t)
+            if slug:
+                out[t] = slug
+    return out
+
+
 def png_dims(data):
     """(w, h) from a PNG's IHDR, or None. Mirrors the C++ ProbeIconFile check."""
     if len(data) >= 24 and data[:8] == b"\x89PNG\r\n\x1a\n":
@@ -563,7 +591,7 @@ def merge(existing, api, en_rows, en_index, lang_extra, icon_index, shared_urls,
         elif "unlock_item" in e:
             del e["unlock_item"]
         if slug:
-            e["wiki_slug"] = wiki_slug(slug)
+            e["wiki_slug"] = slug              # canonical URL path slug (see main)
         elif "wiki_slug" in e:
             del e["wiki_slug"]
 
@@ -777,6 +805,11 @@ def main():
     catalog_keys = {e["id"] for e in existing["emotes"]}
     key_to_id, key_to_slug = collect_tome_ids(opts, en_rows, catalog_keys)
     api = fetch_api(opts, key_to_id, key_to_slug)
+    # key_to_slug currently holds page TITLES; replace each with the canonical URL
+    # path slug taken straight from MediaWiki (fallback: our own encoder).
+    title_to_slug = resolve_canonical_slugs(opts, key_to_slug.values())
+    for k, title in list(key_to_slug.items()):
+        key_to_slug[k] = title_to_slug.get(title) or wiki_slug(title)
     print("  API tome emotes: %d  (unlock ids: %d, wiki slugs: %d)"
           % (len(api), len(key_to_id), len(key_to_slug)))
 
