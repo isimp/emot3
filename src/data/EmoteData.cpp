@@ -10,6 +10,7 @@
 #include "Favorites.h"   // RemoveEmoteFromCategories (DeleteEmote cascade)
 #include "Globals.h"     // g_*Path + MarkEmotesDirty (DeleteEmote)
 #include "Profiling.h"   // PROFILE_SCOPE (no-op without EMOT3_DEVTOOLS) - "save.catalog"
+#include "migrations/EmoteCatalogMigration.h"  // RunEmoteCatalogMigrations (v1->v2)
 
 #include <nlohmann/json.hpp>
 
@@ -52,12 +53,20 @@ struct LocaleEntry {            // one emote in the bundled table
     bool        isCore     = false;
     bool        targetable = false;
     bool        madKing    = false;   // "Your Mad King Says..." event set
+    int         unlockItem = 0;       // GW2 API item id of the unlock tome (0 = core)
+    std::string wikiSlug;             // unlock-page URL path slug ("" for core)
     std::map<std::string, LangEntry> byLang;  // lang code -> data
 };
 
 bool                     s_tableLoaded = false;
 std::vector<LocaleEntry> s_table;
 std::vector<std::string> s_tableLangs;
+std::unordered_map<std::string, const LocaleEntry*> s_tableIndex;  // id -> &s_table entry
+
+// The unlock-match index, built once from s_table. File-scope (not a function-local
+// static) so the dev-tool stats accessor can read it without forcing a build.
+BundledUnlockInfo s_unlockInfo;
+bool              s_unlockBuilt = false;
 
 // Title-case a command stem for use as a derived display name when a
 // language carries a command but no curated name: "/danse" -> "Danse".
@@ -68,6 +77,40 @@ std::string DeriveName(const std::string& command) {
     if (!s.empty() && s.front() == '/') s.erase(0, 1);
     if (!s.empty()) s[0] = (char)std::toupper((unsigned char)s[0]);
     return s;
+}
+
+// Parse a bundled emotes_i18n DOM into LocaleEntry records. Shared by the live
+// table (EnsureTableLoaded) and the frozen v1 snapshot used as the migration map.
+void ParseBundleTable(const json& j, std::vector<LocaleEntry>& out,
+                      std::vector<std::string>* langsOut) {
+    if (langsOut && j.contains("languages") && j["languages"].is_array())
+        for (const auto& l : j["languages"])
+            if (l.is_string()) langsOut->push_back(l.get<std::string>());
+    if (!j.contains("emotes") || !j["emotes"].is_array()) return;
+    for (const auto& item : j["emotes"]) {
+        if (!item.is_object()) continue;
+        LocaleEntry e;
+        e.id         = jsonutil::GetString(item, "id", std::string());
+        e.isCore     = jsonutil::GetBool(item, "is_core", false);
+        e.targetable = jsonutil::GetBool(item, "targetable", false);
+        e.madKing    = jsonutil::GetBool(item, "mad_king", false);
+        e.unlockItem = jsonutil::GetInt(item, "unlock_item", 0);
+        e.wikiSlug   = jsonutil::GetString(item, "wiki_slug", std::string());
+        if (e.id.empty()) continue;
+        for (auto it = item.begin(); it != item.end(); ++it) {
+            if (!it.value().is_object()) continue;  // skip id/flags scalars
+            const std::string& code = it.key();
+            LangEntry le;
+            le.command = jsonutil::GetString(it.value(), "command", std::string());
+            le.name    = jsonutil::GetString(it.value(), "name",    std::string());
+            if (le.command.empty()) continue;
+            const json& al = jsonutil::GetArray(it.value(), "aliases");
+            for (const auto& a : al)
+                if (a.is_string()) le.aliases.push_back(a.get<std::string>());
+            e.byLang[code] = std::move(le);
+        }
+        out.push_back(std::move(e));
+    }
 }
 
 void EnsureTableLoaded() {
@@ -89,36 +132,8 @@ void EnsureTableLoaded() {
                      (size_t)e.byte, e.what());
         return;
     }
-    if (j.contains("languages") && j["languages"].is_array()) {
-        for (const auto& l : j["languages"])
-            if (l.is_string()) s_tableLangs.push_back(l.get<std::string>());
-    }
-    if (!j.contains("emotes") || !j["emotes"].is_array()) {
-        LOG_CRITICAL("emotes_i18n has no \"emotes\" array");
-        return;
-    }
-    for (const auto& item : j["emotes"]) {
-        if (!item.is_object()) continue;
-        LocaleEntry e;
-        e.id         = jsonutil::GetString(item, "id", std::string());
-        e.isCore     = jsonutil::GetBool(item, "is_core", false);
-        e.targetable = jsonutil::GetBool(item, "targetable", false);
-        e.madKing    = jsonutil::GetBool(item, "mad_king", false);
-        if (e.id.empty()) continue;
-        for (auto it = item.begin(); it != item.end(); ++it) {
-            if (!it.value().is_object()) continue;  // skip id/flags scalars
-            const std::string& code = it.key();
-            LangEntry le;
-            le.command = jsonutil::GetString(it.value(), "command", std::string());
-            le.name    = jsonutil::GetString(it.value(), "name",    std::string());
-            if (le.command.empty()) continue;
-            const json& al = jsonutil::GetArray(it.value(), "aliases");
-            for (const auto& a : al)
-                if (a.is_string()) le.aliases.push_back(a.get<std::string>());
-            e.byLang[code] = std::move(le);
-        }
-        s_table.push_back(std::move(e));
-    }
+    ParseBundleTable(j, s_table, &s_tableLangs);
+    for (const auto& e : s_table) s_tableIndex[e.id] = &e;
     LOG_INFO("emotes_i18n: %d emote(s), %d language(s)",
              (int)s_table.size(), (int)s_tableLangs.size());
 }
@@ -162,6 +177,8 @@ Emote BuildSeedEmote(const LocaleEntry& entry, const std::string& lang,
     e.IsCore       = entry.isCore;
     e.IsTargetable = entry.targetable;
     e.IsMadKing    = entry.madKing;
+    e.UnlockItem   = entry.unlockItem;
+    e.WikiSlug     = entry.wikiSlug;
     // Seed aliases (normalized like Command; drop empties / the primary
     // command / duplicates).
     auto addAlias = [&](const std::string& raw) {
@@ -184,7 +201,65 @@ Emote BuildSeedEmote(const LocaleEntry& entry, const std::string& lang,
     return e;
 }
 
+// --- v1 snapshot (the migration map) + the v1->v2 catalog migration --------
+std::vector<LocaleEntry> s_v1Table;
+bool                     s_v1Loaded = false;
+std::unordered_map<std::string, const LocaleEntry*> s_v1Index;  // id -> &s_v1Table entry
+
+void EnsureV1TableLoaded() {
+    if (s_v1Loaded) return;
+    s_v1Loaded = true;
+    const void* data = nullptr; size_t size = 0;
+    if (!TryLoadBundledData(kEmoteData, kEmoteDataCount, "emotes_i18n_v1", data, size)) {
+        LOG_WARNING("emotes_i18n_v1 (migration map) missing - v1 catalogs won't migrate");
+        return;
+    }
+    try {
+        json j = json::parse(static_cast<const char*>(data),
+                             static_cast<const char*>(data) + size);
+        ParseBundleTable(j, s_v1Table, nullptr);
+    } catch (const json::parse_error& e) {
+        LOG_WARNING("emotes_i18n_v1 parse error: %s", e.what());
+        return;
+    }
+    for (const auto& e : s_v1Table) s_v1Index[e.id] = &e;
+    LOG_INFO("emotes_i18n_v1 (migration map): %d emote(s)", (int)s_v1Table.size());
+}
+
+// (The v1->v2 catalog migration POLICY moved to data/migrations/
+// EmoteCatalogMigration.cpp; it reaches the v1 snapshot + current bundle through
+// the ResolveBundledById seam defined just below the namespace.)
+
 } // namespace
+
+// Flatten one bundled emote (current bundle or the frozen v1 snapshot) to a
+// language-resolved view for the catalog migration. Keeps LocaleEntry /
+// ResolveForLang private to this TU; the migration runner sees only this seam.
+ResolvedBundleEmote ResolveBundledById(const std::string& id,
+                                       const std::string& lang, bool fromV1) {
+    ResolvedBundleEmote out;
+    const LocaleEntry* entry = nullptr;
+    if (fromV1) {
+        EnsureV1TableLoaded();
+        auto it = s_v1Index.find(id);
+        if (it != s_v1Index.end()) entry = it->second;
+    } else {
+        EnsureTableLoaded();
+        auto it = s_tableIndex.find(id);
+        if (it != s_tableIndex.end()) entry = it->second;
+    }
+    if (!entry) return out;  // found stays false: custom / brand-new id
+    const LangEntry le = ResolveForLang(*entry, lang);
+    out.found      = true;
+    out.command    = le.command;
+    out.name       = le.name;
+    out.wikiSlug   = entry->wikiSlug;
+    out.unlockItem = entry->unlockItem;
+    out.targetable = entry->targetable;
+    out.isCore     = entry->isCore;
+    out.madKing    = entry->madKing;
+    return out;
+}
 
 std::vector<std::string> AvailableEmoteLanguages() {
     EnsureTableLoaded();
@@ -197,6 +272,11 @@ std::vector<std::string> AllBundledEmoteIds() {
     ids.reserve(s_table.size());
     for (const auto& entry : s_table) ids.push_back(entry.id);
     return ids;
+}
+
+bool IsBundledEmoteId(const std::string& id) {
+    EnsureTableLoaded();
+    return s_tableIndex.count(id) != 0;
 }
 
 std::vector<std::string> ComputeNewBundledEmotes(const std::vector<std::string>& known) {
@@ -296,6 +376,21 @@ std::string NormalizeEmoteCommand(std::string command) {
     return command;
 }
 
+std::string NormalizeEmoteId(std::string s) {
+    std::string out;
+    bool lastUnderscore = false;
+    for (char c : s) {
+        char lc = (char)std::tolower((unsigned char)c);
+        if ((lc >= 'a' && lc <= 'z') || (lc >= '0' && lc <= '9')) {
+            out += lc; lastUnderscore = false;
+        } else if (!out.empty() && !lastUnderscore) {
+            out += '_'; lastUnderscore = true;   // collapse any run, no leading '_'
+        }
+    }
+    while (!out.empty() && out.back() == '_') out.pop_back();
+    return out;
+}
+
 std::string NormalizeUnlockKey(std::string s) {
     auto isws = [](char c) { return c == ' ' || c == '\t'; };
     while (!s.empty() && isws(s.front())) s.erase(s.begin());
@@ -309,29 +404,71 @@ std::string NormalizeUnlockKey(std::string s) {
 }
 
 const BundledUnlockInfo& GetBundledUnlockInfo() {
-    static BundledUnlockInfo info;
-    static bool built = false;
-    if (built) return info;
+    if (s_unlockBuilt) return s_unlockInfo;
     EnsureTableLoaded();  // populates s_table from the bundled emotes_i18n.json
     for (const auto& entry : s_table) {
         if (entry.isCore) continue;  // only unlockables have an account-API state
-        info.unlockableIds.insert(entry.id);
+        s_unlockInfo.unlockableIds.insert(entry.id);
+        if (!entry.wikiSlug.empty()) s_unlockInfo.wikiSlugById[entry.id] = entry.wikiSlug;
+        if (entry.unlockItem)        s_unlockInfo.unlockItemById[entry.id] = entry.unlockItem;
         // The id itself is a key so a PascalCase account-API id ("Rock") resolves.
-        info.normKeyToId[NormalizeUnlockKey(entry.id)] = entry.id;
+        s_unlockInfo.normKeyToId[NormalizeUnlockKey(entry.id)] = entry.id;
         for (const auto& kv : entry.byLang) {
             const LangEntry& le = kv.second;
             std::string k = NormalizeUnlockKey(le.command);
-            if (!k.empty()) info.normKeyToId[k] = entry.id;
+            if (!k.empty()) s_unlockInfo.normKeyToId[k] = entry.id;
             for (const auto& a : le.aliases) {
                 std::string ka = NormalizeUnlockKey(a);
-                if (!ka.empty()) info.normKeyToId[ka] = entry.id;
+                if (!ka.empty()) s_unlockInfo.normKeyToId[ka] = entry.id;
             }
         }
     }
-    built = true;
+    s_unlockBuilt = true;
     LOG_INFO("Unlock index: %d unlockable id(s), %d match key(s)",
-             (int)info.unlockableIds.size(), (int)info.normKeyToId.size());
-    return info;
+             (int)s_unlockInfo.unlockableIds.size(), (int)s_unlockInfo.normKeyToId.size());
+    return s_unlockInfo;
+}
+
+std::string WikiUrl(const std::string& slug) {
+    if (slug.empty()) return std::string();
+    return "https://wiki.guildwars2.com/wiki/" + slug;
+}
+
+// Dev-tool (MemoryMonitor) accessors: estimated heap footprint of the two bundled
+// startup tables (within ~2x). Report 0 until loaded/built - the monitor must not
+// allocate just by observing, so NEITHER forces a load. Defined unconditionally; only
+// called under EMOT3_DEVTOOLS (the linker drops them from shipped builds).
+static size_t emote_str_heap(const std::string& s) { return s.capacity() > 15 ? s.capacity() + 1 : 0; }
+
+void BundledEmoteTableStats(size_t& count, size_t& bytes) {
+    count = s_table.size();
+    bytes = s_table.capacity() * sizeof(LocaleEntry);
+    for (const auto& e : s_table) {
+        bytes += emote_str_heap(e.id);
+        for (const auto& kv : e.byLang) {
+            // one std::map (RB-tree) node = key string + LangEntry value + ~32 B overhead
+            bytes += sizeof(std::string) + sizeof(LangEntry) + 32;
+            bytes += emote_str_heap(kv.first)
+                   + emote_str_heap(kv.second.command) + emote_str_heap(kv.second.name);
+            bytes += kv.second.aliases.capacity() * sizeof(std::string);
+            for (const auto& a : kv.second.aliases) bytes += emote_str_heap(a);
+        }
+    }
+}
+
+void BundledUnlockIndexStats(size_t& count, size_t& bytes) {
+    count = 0; bytes = 0;
+    if (!s_unlockBuilt) return;
+    count = s_unlockInfo.unlockableIds.size() + s_unlockInfo.normKeyToId.size();
+    // unordered_set<string>: node = string + next-ptr + cached hash.
+    bytes += s_unlockInfo.unlockableIds.size() * (sizeof(std::string) + 2 * sizeof(void*))
+           + s_unlockInfo.unlockableIds.bucket_count() * sizeof(void*);
+    for (const auto& k : s_unlockInfo.unlockableIds) bytes += emote_str_heap(k);
+    // unordered_map<string,string>: node = key + value + next-ptr + cached hash.
+    bytes += s_unlockInfo.normKeyToId.size() * (2 * sizeof(std::string) + 2 * sizeof(void*))
+           + s_unlockInfo.normKeyToId.bucket_count() * sizeof(void*);
+    for (const auto& kv : s_unlockInfo.normKeyToId)
+        bytes += emote_str_heap(kv.first) + emote_str_heap(kv.second);
 }
 
 bool LoadEmotesJson(const std::string& path) {
@@ -359,6 +496,10 @@ bool LoadEmotesJson(const std::string& path) {
     // entry, normalized a command, derived a name, fixed the language). When set,
     // we re-save at the end so the on-disk file heals.
     bool changed = false;
+
+    // Stored schema version drives the one-time v1->v2 migration below (missing =
+    // v1 baseline). Stamped to kEmotesSchemaVersion by SerializeEmotesJson on save.
+    const int fromVersion = jsonutil::GetInt(j, "version", 1);
 
     std::string lang = jsonutil::GetString(j, "emote_language", std::string());
     if (!lang.empty()) {
@@ -397,6 +538,8 @@ bool LoadEmotesJson(const std::string& path) {
         e.IsCore       = jsonutil::GetBool  (item, "is_core",    false);
         e.IsMadKing    = jsonutil::GetBool  (item, "mad_king",   false);
         e.UserKeybind  = jsonutil::GetBool  (item, "keybind",    false);
+        e.UnlockItem   = jsonutil::GetInt   (item, "unlock_item", 0);
+        e.WikiSlug     = jsonutil::GetString(item, "wiki_slug",  std::string());
 
         // Every command ingress runs the same normalization (leading '/' etc.)
         // so the send path's "skip index 0" assumption always holds.
@@ -408,6 +551,9 @@ bool LoadEmotesJson(const std::string& path) {
         // A valid emote with no display name gets one derived from its command
         // stem, mirroring the seed path (so a blank "name" never renders empty).
         if (e.Name.empty()) { e.Name = DeriveName(e.Command); changed = true; }
+
+        // (unlock_item/wiki_slug are no longer backfilled per-load; the one-time
+        // v1->v2 migration below fills them - see RunEmoteCatalogMigrations.)
 
         // Optional aliases (alternate commands). Normalized like Command; drop
         // empties, the primary command itself, and duplicates. Missing key is
@@ -423,12 +569,35 @@ bool LoadEmotesJson(const std::string& path) {
             }
         }
 
+        // Optional auto-mote chat triggers (v1.5). Lowercased + trimmed at
+        // ingress (KeywordMatches expects them pre-lowercased); empties dropped,
+        // dedup first-wins. Distinct from aliases — these are chat-line triggers,
+        // not slash-command variants. Missing key is fine (the common case).
+        {
+            const json& kws = jsonutil::GetArray(item, "auto_keywords");
+            for (const auto& k : kws) {
+                if (!k.is_string()) continue;
+                std::string kw = ToLower(TrimWhitespace(k.get<std::string>()));
+                if (kw.empty()) { changed = true; continue; }
+                if (std::find(e.AutoKeywords.begin(), e.AutoKeywords.end(), kw) == e.AutoKeywords.end())
+                    e.AutoKeywords.push_back(std::move(kw));
+                else
+                    changed = true;
+            }
+        }
+
         bool dup = false;
         for (const auto& p : parsed)
             if (p.Id == e.Id) { dup = true; break; }
         if (!dup) parsed.push_back(std::move(e));
         else { changed = true; LOG_WARNING("emotes.json: dropped duplicate emote id \"%s\"", e.Id.c_str()); }
     }
+
+    // One-time schema migration (v1 -> v2): adopt current bundle defaults for the
+    // fields a user never customized (matched by id, in the seed language).
+    // Replaces the former always-on unlock/wiki backfill; the file is stamped v2 on
+    // the re-save below and never auto-migrates again.
+    if (emot3::migrations::RunEmoteCatalogMigrations(parsed, fromVersion, lang)) changed = true;
 
     int coreCount = 0, unlockCount = 0;
     {
@@ -485,7 +654,7 @@ std::string SerializeEmotesJson() {
     auto B = [](bool v) { return v ? "true" : "false"; };
 
     f << "{\n";
-    f << "  \"version\": 1,\n";
+    f << "  \"version\": " << kEmotesSchemaVersion << ",\n";
     f << "  \"emote_language\": " << quoted(g_EmoteLanguage) << ",\n";
     f << "  \"emotes\": [";
 
@@ -503,6 +672,13 @@ std::string SerializeEmotesJson() {
             f << "      \"mad_king\": "   << B(e.IsMadKing)     << ",\n";
             f << "      \"keybind\": "    << B(e.UserKeybind)   << ",\n";
             f << "      \"icon\": "       << quoted(e.IconPath);
+            // Unlock provenance - omitted when 0/empty (core + user-added emotes),
+            // so only the bundled unlockables carry them. Same omit-when-empty
+            // convention as aliases/auto_keywords below.
+            if (e.UnlockItem != 0)
+                f << ",\n      \"unlock_item\": " << e.UnlockItem;
+            if (!e.WikiSlug.empty())
+                f << ",\n      \"wiki_slug\": " << quoted(e.WikiSlug);
             // aliases omitted entirely when empty (matches prior behaviour);
             // when present, written inline so the file stays compact.
             if (!e.Aliases.empty()) {
@@ -510,6 +686,16 @@ std::string SerializeEmotesJson() {
                 for (size_t k = 0; k < e.Aliases.size(); ++k) {
                     if (k) f << ", ";
                     f << quoted(e.Aliases[k]);
+                }
+                f << "]";
+            }
+            // auto-mote chat triggers — inline, omitted entirely when empty (the
+            // common case), so a catalog without auto-motes stays unchanged.
+            if (!e.AutoKeywords.empty()) {
+                f << ",\n      \"auto_keywords\": [";
+                for (size_t k = 0; k < e.AutoKeywords.size(); ++k) {
+                    if (k) f << ", ";
+                    f << quoted(e.AutoKeywords[k]);
                 }
                 f << "]";
             }

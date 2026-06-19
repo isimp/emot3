@@ -2,12 +2,15 @@
 #include "Globals.h"
 #include "Logging.h"
 #include "I18n.h"
+#include "OptionsCommon.h"  // InputFieldWithHint (shared text-field standard)
 #include "Settings.h"
 #include "SaveScheduler.h"  // RequestSave / PumpSaves (debounced, off-thread saves)
 #include "EmoteData.h"
+#include "CatalogView.h"   // GetCatalogView (shared cached index + favorited sets + /me-mote map)
 #include "MeMotes.h"           // /me-motes Library section + favorites mixing
 #include "EmoteAction.h"
 #include "CharacterState.h" // TickCharacterState (per-frame falling check)
+#include "ChatWatch.h"      // DrainAutoMotes (per-frame auto-mote fire drain)
 #include "UnlockScan.h"   // DrainUnlockSync (drives auto-sync + applies results)
 #include "UpdateCheck.h"  // DrainUpdateCheck (Plus update hint; no-op stub otherwise)
 #include "Favorites.h"
@@ -545,6 +548,10 @@ void AddonRender() {
     // velocity). Before the visibility early-returns below so the Quickbar's
     // grey/hide sees a fresh value even when the main window is hidden.
     TickCharacterState();
+    // Auto-motes: fire any emote queued by the chat watch (core/ChatWatch) since
+    // last frame, through the normal send gate. Before the visibility early-returns
+    // below so it works even when the Library window is hidden. No-op when idle.
+    DrainAutoMotes();
     // Plus-only: tick the "newer release available" check (no-op stub otherwise).
     DrainUpdateCheck();
     // Auto-hide while the fullscreen world map is open. It covers the screen,
@@ -729,9 +736,12 @@ void AddonRender() {
     // hint were removed - the palette filters from the first keystroke and
     // the two surfaces should feel the same).
     const float clearW = 24.f;
-    ImGui::SetNextItemWidth(-(clearW + ImGui::GetStyle().ItemSpacing.x));
-    ImGui::InputTextWithHint("##search", L("mp.search_hint"),
-                             g_SearchBuf, sizeof(g_SearchBuf));
+    {
+        InputFieldOpts o;   // explicit width leaves room for the trailing X button
+        o.width = ImGui::GetContentRegionAvail().x - clearW - ImGui::GetStyle().ItemSpacing.x;
+        if (o.width < 60.f) o.width = 60.f;
+        InputFieldWithHint("##search", "mp.search_hint", g_SearchBuf, sizeof(g_SearchBuf), o);
+    }
     if (ImGui::IsItemHovered())
         TooltipText("mp.search_tooltip");
     ImGui::SameLine();
@@ -754,15 +764,16 @@ void AddonRender() {
     // empty-state-message lambdas further down.
     const bool searchActive = !search.empty();
 
-    // Per-frame lookup tables, populated once under the lock below. Building
-    // these turns the list-build from O(N^2 log N) - it used to call the
-    // linear-scan FindEmote (via IsEmoteUnlocked) per emote, per favorite, and
-    // O(N log N) times inside the unlockables sort - into O(N + M + favs).
-    // They're rebuilt every frame (no cross-frame caching, so nothing to
-    // invalidate when the catalog mutates).
-    CatalogIndex idx;                              // byId + unlockedIds, filled below
-    std::unordered_set<std::string> favoritedIds;        // every Emote Id sitting in any category
-    std::unordered_set<std::string> favoritedMeMoteIds;  // every /me-mote Id sitting in any category
+    // Shared cached lookup tables (idx + favorited-id sets + /me-mote map), rebuilt
+    // only on catalog / favorites / unlock change - NOT per frame (this was the
+    // mp.frame allocation peak). Aliased so the lambdas + build below read exactly as
+    // they did with the old per-frame locals. Fetched before the locks below:
+    // GetCatalogView() takes the catalog mutexes itself during its (rare) rebuild.
+    const CatalogView&  cv                 = GetCatalogView();
+    const CatalogIndex& idx                = cv.idx;
+    const auto&         favoritedIds       = cv.favoritedIds;
+    const auto&         favoritedMeMoteIds = cv.favoritedMeMoteIds;
+    const auto&         meMotesById        = cv.meMotesById;
 
     auto isUnlk = [&](const Emote& e) { return idx.unlocked(e); };
 
@@ -829,36 +840,15 @@ void AddonRender() {
     int coreTotal = 0, unlockTotal = 0;
     int meMoteTotal = 0;
 
-    // Snapshot a /me-mote Id -> ptr map under g_MeMotesMutex so we don't have
-    // to nest with g_EmotesMutex below. Pointers stay stable while no one is
-    // mutating g_MeMotes (the editor runs on the same render thread).
-    // meMoteTotal is set later, after the half-filled-entry filter, so it
-    // represents renderable /me-motes (not raw catalog size).
-    std::unordered_map<std::string, const MeMote*> meMotesById;
-    {
-        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-        meMotesById.reserve(g_MeMotes.size());
-        for (const auto& m : g_MeMotes) meMotesById[m.Id] = &m;
-    }
+    // idx / favoritedIds / favoritedMeMoteIds / meMotesById all come from the shared
+    // cached view (GetCatalogView, fetched above) - no per-frame rebuild. /me-mote
+    // pointers are dereferenced under g_EmotesMutex below as before (no g_MeMotesMutex
+    // nesting); they stay valid because any /me-mote change bumps g_MeMotesVersion,
+    // which forces a view rebuild before the next read.
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
 
         { PROFILE_SCOPE("mp.build");  // dev perf overlay
-        // Populate the per-frame lookup tables (rebuilt each frame, never cached).
-        BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
-        // favoritedIds tracks which Emote IDs are currently favorited (drives
-        // the "skip favorited" logic for the Core / Unlockable sections so the
-        // same emote doesn't appear in both the favorites section and the
-        // built-in one). favoritedMeMoteIds does the same for the /me-motes
-        // section. The two are NOT merged: an Emote and a /me-mote can share
-        // an Id (the catalogs are namespace-distinct), so the per-type sets
-        // keep the skip-check unambiguous.
-        for (const auto& c : g_Settings.FavoriteCategories) {
-            for (const auto& r : c.Refs) {
-                if (r.Type == EFavoriteRefType::Emote)       favoritedIds.insert(r.Id);
-                else if (r.Type == EFavoriteRefType::MeMote) favoritedMeMoteIds.insert(r.Id);
-            }
-        }
 
         // One filtered list per favorites category, preserving user order.
         // Each Ref is resolved to its catalog by Type — Emote-typed refs go
@@ -963,17 +953,17 @@ void AddonRender() {
         bool        newCatInvalid = !trimmedNewCat.empty() &&
                                     CategoryNameExists(trimmedNewCat);
 
-        ImGui::SetNextItemWidth(180.f);
-        if (newCatInvalid) PushInvalidInputStyle();
-        bool addPressed = ImGui::InputText("##newcat_main", newCatBuf,
-                                            sizeof(newCatBuf),
-                                            ImGuiInputTextFlags_EnterReturnsTrue);
-        if (newCatInvalid) {
-            PopInvalidInputStyle();
-            DrawInvalidInputBorder();
-        }
-        if (newCatInvalid && ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(L("mp.cat_exists"), trimmedNewCat.c_str());
+        bool addPressed = false;
+        {
+            InputFieldOpts o; o.width = 180.f; o.invalid = newCatInvalid;
+            o.flags = ImGuiInputTextFlags_EnterReturnsTrue;
+            bool hov = false;
+            addPressed = InputFieldWithHint("##newcat_main", nullptr, newCatBuf,
+                                            sizeof(newCatBuf), o, nullptr, &hov);
+            if (newCatInvalid && hov) {
+                char m[160]; std::snprintf(m, sizeof m, L("mp.cat_exists"), trimmedNewCat.c_str());
+                TooltipTextRaw(m);
+            }
         }
 
         // X clear button next to the input.
@@ -1076,7 +1066,9 @@ void AddonRender() {
                 // the two paths look and behave identically.
                 ImVec2 textStart = ImGui::GetCursorPos();
                 float  availW    = ImGui::GetContentRegionAvail().x;
+                ImGui::PushTextWrapPos(0.0f);   // keep the placeholder inside the panel
                 ImGui::TextDisabled("%s", catEmptyMsg(catTotal[ci]));
+                ImGui::PopTextWrapPos();
                 ImVec2 afterText = ImGui::GetCursorPos();
 
                 ImGui::SetCursorPos(textStart);

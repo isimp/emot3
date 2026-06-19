@@ -94,6 +94,7 @@ add_custom_target(emot3_codegen DEPENDS ${EMOT3_GEN_RC} ${EMOT3_GEN_CPP})
 add_library(emot3 SHARED
   src/core/AirborneDetect.cpp
   src/core/CharacterState.cpp
+  src/core/ChatWatch.cpp
   src/core/UnlockScan.cpp
   src/plus/UpdateCheck.cpp
   src/plus/PlusSettings.cpp
@@ -124,10 +125,15 @@ add_library(emot3 SHARED
   src/data/MeMotes.cpp
   src/data/QuickbarPresets.cpp
   src/data/Settings.cpp
+  src/data/migrations/SettingsMigrations.cpp
+  src/data/migrations/M001_NormalizeLegacyKeys.cpp
+  src/data/migrations/M002_UnusableSplit.cpp
+  src/data/migrations/EmoteCatalogMigration.cpp
   src/data/Usage.cpp
   src/data/RadialExports.cpp
   ${EMOT3_GEN_CPP}
   src/resources/Resources.cpp
+  src/ui/CatalogView.cpp
   src/ui/Cells.cpp
   src/ui/IconBrowse.cpp
   src/ui/IconPicker.cpp
@@ -139,6 +145,7 @@ add_library(emot3 SHARED
   src/ui/NexusShortcut.cpp
   src/ui/Palette.cpp
   src/ui/Options.cpp
+  src/ui/OptionsAutoMotes.cpp
   src/ui/OptionsCommon.cpp
   src/ui/OptionsGeneral.cpp
   src/ui/OptionsPalette.cpp

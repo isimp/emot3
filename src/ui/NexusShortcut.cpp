@@ -96,6 +96,17 @@ void ShortcutContextMenu() {
                   IsPaletteOpen() ? "opened" : "closed");
     }
 
+    // Auto-motes quick toggle — checkable, always enabled. The Events: Chat
+    // dependency is advisory (firing no-ops when it's absent), matching the
+    // General checkbox; a real settings change, so it persists (debounced).
+    if (ImGui::MenuItem(L("shortcut.automotes"), nullptr,
+                        /*selected=*/g_Settings.AutoMotesEnabled)) {
+        g_Settings.AutoMotesEnabled = !g_Settings.AutoMotesEnabled;
+        LOG_DEBUG("Shortcut menu > auto-motes %s",
+                  g_Settings.AutoMotesEnabled ? "enabled" : "disabled");
+        RequestSave(SaveKind::Settings);
+    }
+
     // Quickbar presets submenu — apply one by name. The active preset (the one
     // whose settings + geometry currently match) gets a check mark. Applying
     // mirrors the Options "Apply" button: copy into g_Settings, re-register the

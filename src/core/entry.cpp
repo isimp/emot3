@@ -11,6 +11,7 @@
 
 #include "Globals.h"
 #include "CharacterState.h" // RTAPI integration + can't-emote/combat state
+#include "ChatWatch.h"       // auto-motes: optional Events:Chat subscription (v1.5)
 #include "EmoteAction.h"     // NoteKeyEvent/Clear/Reseed held-key tracking (WndProc-fed gate)
 #include "UnlockScan.h"      // GW2-API emote-unlock sync (Hoard & Seek / own key)
 #include "UpdateCheck.h"     // Plus-only "update available" check (no-op stub otherwise)
@@ -55,7 +56,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID) {
 
 extern "C" __declspec(dllexport) AddonDefinition* GetAddonDef() {
     AddonDef.APIVersion  = NEXUS_API_VERSION;
-    AddonDef.Version     = { 1, 4, 1, 0 };
+    AddonDef.Version     = { 1, 5, 0, 3 };
     AddonDef.Author      = "Morlaed";
     AddonDef.Description = "Clickable emote panel with unlock tracking.";
     AddonDef.Load        = AddonLoad;
@@ -188,6 +189,11 @@ void AddonLoad(AddonAPI* aApi) {
     // load/unload so precise can't-emote detection (swimming/gliding/downed/...)
     // works when that addon is present and degrades to mounted-only when it isn't.
     InitCharacterState();
+
+    // Auto-motes: subscribe to the optional "Events: Chat" addon so the user's
+    // own chat lines can fire catalog emotes. Inert (no crash) when that addon
+    // isn't installed; the rules themselves are loaded later in this function.
+    InitChatWatch();
 
     // Subscribe to the optional Hoard & Seek proxy's response event for the
     // GW2-API emote-unlock sync. Inert when H&S isn't installed / API mode off.
@@ -357,6 +363,20 @@ void AddonLoad(AddonAPI* aApi) {
     // ids are kept so re-seeding the catalog restores them.
     ReconcileFavoritesWithCatalog();
 
+    // Resident-DLL reload safety. Nexus keeps the DLL in the process across a
+    // disable -> enable (see the g_Unloading note at the top of AddonLoad), so the
+    // catalog-version atomics AND the ui/CatalogView cache statics (s_builtEmote /
+    // s_view) persist from the previous session. We just REPLACED g_Emotes / g_MeMotes
+    // (ClearEmotes + LoadEmotesJson / ClearMeMotes + LoadMeMotesJson above) with fresh
+    // buffers WITHOUT bumping any version, so GetCatalogView() would short-circuit on
+    // the stale versions and hand out dangling Emote*/MeMote* into the freed old buffers
+    // -> use-after-free on the first render after a reload. Bump all three epochs
+    // unconditionally now so every version-keyed cache (CatalogView + the lazy texture
+    // cache + TextCache) rebuilds fresh against the just-loaded catalogs.
+    MarkEmotesDirty();
+    MarkMeMotesDirty();
+    MarkUiViewDirty();
+
     // Usage log (Recently/Frequently used). Load after both catalogs so PruneDead
     // can drop refs that no longer resolve (re-entrant-safe; statics re-init in
     // Load). Prune is per-type catalog-empty-guarded inside UsageRefLive.
@@ -372,11 +392,11 @@ void AddonLoad(AddonAPI* aApi) {
     // Compact one-line snapshot of the effective high-signal settings, so a
     // shared log opens with the user's actual config (mirrors the dev-state
     // inspector's "Settings (key flags)"). TRACE: diagnostic, off by default.
-    LOG_TRACE("settings: window=%d quickbar=%d send_on_click=%d grey=%d precise=%d "
-              "unusable_behavior=%d qb_cat_idx=%d autosync=%d key_source=%d ui_lang=%s",
+    LOG_TRACE("settings: window=%d quickbar=%d send_on_click=%d block=%d precise=%d "
+              "unusable_display=%d qb_cat_idx=%d autosync=%d key_source=%d ui_lang=%s",
               g_Settings.ShowWindow, g_Settings.ShowQuickbar, g_Settings.SendOnClick,
-              g_Settings.QuickbarGreyUnusable, g_Settings.QuickbarPreciseStateDetection,
-              (int)g_Settings.QuickbarUnusableBehavior, g_Settings.QuickbarCategoryIdx,
+              g_Settings.BlockUnusableEmotes, g_Settings.PreciseStateDetection,
+              (int)g_Settings.QuickbarUnusableDisplay, g_Settings.QuickbarCategoryIdx,
               g_Settings.UnlockAutoSync, g_Settings.UnlockApiKeySource,
               g_Settings.UiLanguage.c_str());
 
@@ -457,6 +477,7 @@ void AddonUnload() {
     APIDefs->Renderer.Deregister(AddonOptions);
     ResetPalette();  // a Nexus reload must not resurrect a stale palette
     ShutdownCharacterState();  // unsubscribe the RTAPI addon load/unload events
+    ShutdownChatWatch();       // unsubscribe the Events:Chat + addon load/unload events
     ShutdownUnlockScan();      // unsubscribe the Hoard & Seek response event
 #ifdef EMOT3_DEVTOOLS
     APIDefs->Renderer.Deregister(RenderDevToolOverlays);  // dev-tools framework

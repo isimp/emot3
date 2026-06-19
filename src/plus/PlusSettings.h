@@ -28,6 +28,15 @@ struct PlusSettings {
     // feature (see SendSuppress.h). Default OFF: the safe refuse-when-unsafe
     // gate (ShouldSkipEmoteSend) that ships in the base build.
     bool SwallowInputOnSend = false;
+
+    // Let the Plus update notifier consider preview / beta builds (prereleases),
+    // not just stable releases. The base build gets this from Nexus' own per-addon
+    // "AllowPrereleases" toggle; Plus is Provider=None, which Nexus neither
+    // auto-updates nor exposes that toggle for, so this is Plus' equivalent. When
+    // on, UpdateCheck queries /releases (incl. prereleases) instead of
+    // /releases/latest, so a beta tester is badged when a newer beta ships.
+    // Default OFF - stable users are never nudged toward a beta. See UpdateCheck.h.
+    bool NotifyPrereleases = false;
 };
 
 extern PlusSettings g_PlusSettings;

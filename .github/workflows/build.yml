@@ -9,14 +9,25 @@
 #   push: main -> `build` job, FULL: all four configs + the public static-CRT
 #       import guard + uploads the emot3-public-builds artifact. THIS is the
 #       release gate. It does NOT publish.
-#   push: v* tag -> `publish` job ONLY (no compile): downloads the
-#       emot3-public-builds artifact that the main build produced FOR THIS EXACT
-#       COMMIT and attaches emot3.dll + emot3_plus-<tag>.zip to the Release. So a
-#       tag ships the byte-for-byte artifacts the main build already validated,
-#       and a tag can never trigger a red build.
-#       >>> TAG ONLY AFTER THE MAIN BUILD IS GREEN <<< the publish job needs that
-#       build's artifact; tagging before it finishes = no artifact = failed
-#       publish (recoverable: re-push the tag once the main build is green).
+#   push: v* tag -> a `classify` job sorts it by SEGMENT COUNT, then exactly one
+#       publish job runs (see the classify job for why count, not a suffix):
+#     - stable / GA tag = 3 segments (vX.Y.Z, e.g. v1.5.0) -> `publish` ONLY (no
+#         compile): downloads the emot3-public-builds artifact the main build
+#         produced FOR THIS EXACT COMMIT and attaches emot3.dll +
+#         emot3_plus-<tag>.zip to the Release (prerelease:false). Byte-for-byte
+#         the artifacts the main build already validated; a tag never builds.
+#         >>> TAG ONLY AFTER THE MAIN BUILD IS GREEN <<< the publish job needs
+#         that artifact; tagging early = no artifact = failed publish (recover by
+#         re-pushing the tag once the main build is green).
+#     - beta / preview tag = 4 segments (vX.Y.Z.N, e.g. v1.5.0.1) -> `publish-beta`
+#         ONLY: a beta is cut off a release branch main hasn't built, so it is
+#         SELF-CONTAINED - compiles Distribution + Plus from the tagged commit,
+#         runs the import guard, and publishes flagged `prerelease:true`. Nexus
+#         only offers a prerelease to users who opted into AllowPrereleases, so
+#         stable users never receive it. Betas iterate via the Version Revision
+#         (4th field, v1.5.0.2, ...) so each out-ranks the last and Nexus
+#         re-pushes it. Tags stay PURE NUMERIC: Nexus' tag parser rejects any
+#         suffix (a `-beta` tag parses to 0.0.0.0 and is never offered).
 #
 # In parallel, `cross-mingw` (Linux) cross-compiles the PlusDevTools flavor (the
 # maximal-code superset) with MinGW-w64 and runs the import guard in --mingw mode.
@@ -185,12 +196,45 @@ jobs:
       - name: Import gate (--mingw mode, static CRT + no MinGW runtimes)
         run: python3 tools/check_imports.py --mingw build-mingw/emot3_plusdevtools.dll
 
-  # Publish-only. Runs on a v* tag, never compiles: it ships the exact
-  # emot3-public-builds artifact the main `build` produced for this commit. A red
-  # build therefore can never reach a release, and the published bytes are
+  # Classify a v* tag as stable or beta by SEGMENT COUNT, and route the two
+  # publish jobs off the result. Why segment count and not a `-beta` suffix:
+  # Nexus' updater parses the tag with an ANCHORED regex (vN.N.N or vN.N.N.N) and
+  # silently turns ANY suffix into version 0.0.0.0 - so a `v1.5.0.1-beta` tag is
+  # never offered. Beta tags must therefore be pure-numeric too, and we tell them
+  # apart from stable purely by how many numbers they carry:
+  #   3 segments  vX.Y.Z      -> stable / GA   (prerelease:false, ships main's artifact)
+  #   4 segments  vX.Y.Z.N    -> beta / preview (prerelease:true, self-builds)
+  # The GitHub "prerelease" flag (set by publish-beta) is what gates the build
+  # behind each user's Nexus AllowPrereleases toggle; the tag stays clean numeric
+  # so Nexus can parse and rank it. (Don't mix a 3- and 4-segment tag within one
+  # version line: Nexus parses a 3-segment Revision as -1, which is incomparable
+  # with a 4-segment .0/.N - see AddonVersion.cpp.)
+  classify:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      is_beta: ${{ steps.seg.outputs.is_beta }}
+    steps:
+      - name: Count version segments
+        id: seg
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"        # strip leading v
+          dots="${tag//[^.]/}"              # keep only the dots
+          if [ "${#dots}" -eq 3 ]; then     # 3 dots = 4 segments = beta
+            echo "is_beta=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_beta=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$GITHUB_REF_NAME dots=${#dots} is_beta -> see output"
+
+  # Publish-only (STABLE / GA tags = 3 segments). Never compiles: it ships the
+  # exact emot3-public-builds artifact the main `build` produced for this commit.
+  # A red build therefore can never reach a release, and the published bytes are
   # identical to the validated ones.
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: classify
+    if: needs.classify.outputs.is_beta == 'false'
     runs-on: ubuntu-latest
 
     steps:
@@ -230,6 +274,63 @@ jobs:
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
+          files: |
+            emot3.dll
+            emot3_plus-${{ github.ref_name }}.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+  # Publish-only (BETA / preview tags = 4 segments, e.g. v1.5.0.1). Unlike
+  # `publish`, the stable path, this job is SELF-CONTAINED: a beta is cut off a
+  # release branch that main has not built, so there is no pre-validated artifact
+  # to download - it compiles the Distribution + Plus shapes from the tagged
+  # commit, runs the same Wine static-CRT import guard, and publishes the result
+  # flagged `prerelease: true`.
+  #
+  # The prerelease flag is the safety mechanism: Nexus pulls the full /releases
+  # list but skips prereleases unless the user turned on the per-addon
+  # "AllowPrereleases" toggle, so stable users never receive it. The tag itself is
+  # pure-numeric (no suffix) so Nexus can parse + rank it. The loose emot3.dll is
+  # the single auto-update asset; Plus ships only inside its zip (Nexus' .dll
+  # updater ignores zips). Betas iterate by bumping the Version Revision (the 4th
+  # field, e.g. v1.5.0.2) so each tag out-ranks the prior one and Nexus re-pushes
+  # it to channel testers - see entry.cpp.
+  #
+  # A red beta build only fails to publish the beta; it cannot touch stable users
+  # or the GA `publish` path.
+  publish-beta:
+    needs: classify
+    if: needs.classify.outputs.is_beta == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out (at the tag)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure (CMake, MSVC x64)
+        run: cmake -B build-vs -A x64
+
+      - name: Build Distribution (emot3.dll)
+        run: cmake --build build-vs --config Distribution --parallel
+      - name: Build Plus (emot3_plus.dll)
+        run: cmake --build build-vs --config Plus --parallel
+
+      - name: Check imports (Wine static-CRT guard)
+        run: py -3 tools/check_imports.py build-vs/Distribution/emot3.dll build-vs/Plus/emot3_plus.dll
+
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          Copy-Item build-vs/Distribution/emot3.dll emot3.dll
+          # Zip Nexus' .dll updater ignores -> manual Plus download; name carries the tag.
+          Compress-Archive -Path build-vs/Plus/emot3_plus.dll -DestinationPath "emot3_plus-${{ github.ref_name }}.zip" -Force
+
+      - name: Publish prerelease assets
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
           files: |
             emot3.dll
             emot3_plus-${{ github.ref_name }}.zip

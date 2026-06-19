@@ -3,7 +3,6 @@
 #ifdef EMOT3_DEVTOOLS
 
 #include "Profiling.h"          // prof::Enabled / RenderProfilerOverlay
-#include "QuickbarDebug.h"      // qbdbg::Enabled / RenderQbSizingOverlay
 #include "DevStateInspector.h"  // devstate::Enabled / devstate::Render
 #include "Simulators.h"         // simdbg::Enabled / RenderSimulators (notifier + update-check)
 #include "MemoryMonitor.h"      // memmon::Enabled / RenderMemoryMonitor
@@ -42,8 +41,8 @@ void RegisterBuiltinDevTools() {
                       &memmon::Enabled(),   RenderMemoryMonitor });
     RegisterDevTool({ "state",    "Runtime state inspector", DevCat::Inspect,
                       &devstate::Enabled(), devstate::Render });
-    RegisterDevTool({ "qbsizing", "Quickbar", DevCat::Inspect,
-                      &qbdbg::Enabled(),    RenderQbSizingOverlay });
+    // (The Quickbar sizing readout is now a section INSIDE the runtime inspector -
+    // see the DevStateRegistrar in Quickbar.cpp - not its own overlay window.)
     // --- Tune (runtime knobs) ---
     RegisterDevTool({ "airborne", "Airborne tuner", DevCat::Tune,
                       &airtuner::Enabled(), RenderAirborneTuner });

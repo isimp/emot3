@@ -3,6 +3,7 @@
 #include "QuickbarGeometry.h"  // g_QbStep* / g_QbMaxScroll* / ... (grid layout)
 #include "QbHitRects.h"        // g_QbIconRects (register cell hit-rects)
 #include "I18n.h"
+#include "OptionsCommon.h"  // InputFieldWithHint (shared text-field standard)
 #include "Settings.h"
 #include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "EmoteData.h"
@@ -173,46 +174,22 @@ void ApplyEmoteDrop(const EmoteDragPayload& src, int dstCat, int gap) {
     // favorites moves keep the moved ref's existing type intact (the type
     // doesn't change on reorder).
     if (src.categoryIdx < 0) {
-        // Built-in catalog source: insert the ref, nothing to erase. Locked
-        // emotes can't be favorited (already blocked at the source, guarded
-        // again here; /me-motes always carry isLocked=false so they pass).
-        // Skip if already present in this category.
+        // Built-in catalog source: a NEW favorite. Locked emotes can't be
+        // favorited (blocked at the source, guarded again here; /me-motes carry
+        // isLocked=false). InsertRefAt dedups within dstCat, saves, and bumps the
+        // cached catalog view (the favorited-id union grew).
         if (src.isLocked) return;
-        auto& d = g_Settings.FavoriteCategories[dstCat].Refs;
-        FavoriteRef ref{ src.type, std::string(src.id) };
-        if (std::find_if(d.begin(), d.end(), [&](const FavoriteRef& r) {
-                return r.Type == ref.Type && r.Id == ref.Id;
-            }) != d.end()) return;
-        int ins = std::max(0, std::min(gap, (int)d.size()));
-        d.insert(d.begin() + ins, std::move(ref));
+        InsertRefAt(dstCat, gap, src.type, std::string(src.id));
     } else {
         int srcCat = src.categoryIdx, srcIdx = src.emoteIdx;
         // Locked emotes can reorder within their category but not move across.
         bool blocked = src.isLocked && srcCat != dstCat;
         if (blocked || srcCat < 0 || srcCat >= N) return;
-
-        if (srcCat == dstCat) {
-            auto& v = g_Settings.FavoriteCategories[srcCat].Refs;
-            if (srcIdx < 0 || srcIdx >= (int)v.size()) return;
-            FavoriteRef moved = v[srcIdx];
-            v.erase(v.begin() + srcIdx);
-            // The erase shifts every slot after srcIdx down by one, so a gap
-            // past the removed item lands one slot earlier than its index.
-            int ins = (gap > srcIdx) ? gap - 1 : gap;
-            ins = std::max(0, std::min(ins, (int)v.size()));
-            v.insert(v.begin() + ins, std::move(moved));
-        } else {
-            auto& s = g_Settings.FavoriteCategories[srcCat].Refs;
-            auto& d = g_Settings.FavoriteCategories[dstCat].Refs;
-            if (srcIdx < 0 || srcIdx >= (int)s.size()) return;
-            FavoriteRef moved = s[srcIdx];
-            s.erase(s.begin() + srcIdx);
-            // d is a different vector than s, so the erase doesn't shift gap.
-            int ins = std::max(0, std::min(gap, (int)d.size()));
-            d.insert(d.begin() + ins, std::move(moved));
-        }
+        // A move keeps the id favorited (union unchanged): the helpers save but do
+        // NOT bump the view; the per-category ORDER is read live by the build.
+        if (srcCat == dstCat) MoveRefWithinCategory(srcCat, srcIdx, gap);
+        else                  MoveRefAcrossCategories(srcCat, srcIdx, dstCat, gap);
     }
-    RequestSave(SaveKind::Settings);
 }
 
 // Accept a hovering FAV_DRAG emote drop into category `dstCat` at a fixed `gap`,
@@ -487,11 +464,10 @@ static void RenderMeMoteCellBody(const CellInfo& ci, int sectionRow,
     bool suppressTip = isQuickbar && !g_Settings.ShowQuickbarTooltips;
     if (!suppressTip &&
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        if (!ci.searchNote.empty())
-            ImGui::SetTooltip("%s\n%s\n%s", m.Name.c_str(),
-                              ci.searchNote.c_str(), L("cells.rightclick"));
-        else
-            ImGui::SetTooltip("%s\n%s", m.Name.c_str(), L("cells.rightclick"));
+        std::string t = m.Name;
+        if (!ci.searchNote.empty()) { t += '\n'; t += ci.searchNote; }
+        t += '\n'; t += L("cells.rightclick");
+        TooltipTextRaw(t.c_str());
     }
 
     if (dimmed) ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
@@ -768,6 +744,14 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
                 } else {
                     if (ImGui::MenuItem(L("cells.mark_unlocked"))) MarkEmoteUnlocked(e.Id);
                 }
+                // Wiki link to the emote's unlock (tome / unlock-item) page, from the
+                // emote's OWN WikiSlug (not derived by id). Clipboard only -
+                // deliberately no ShellExecute, which can minimise an
+                // exclusive-fullscreen client (same rule as the update link).
+                if (!e.WikiSlug.empty() && ImGui::MenuItem(L("cells.copy_wiki"))) {
+                    ImGui::SetClipboardText(WikiUrl(e.WikiSlug).c_str());
+                    ShowFeedback(L("cells.wiki_copied"));
+                }
                 ImGui::Separator();
             }
 
@@ -837,15 +821,25 @@ void RenderEmoteCell(const CellInfo& ci, int sectionRow,
     if (!suppressTip &&
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         const char* lockTag = isLocked ? L("cells.locked_tag") : "";
+        // Built up line-by-line so optional rows (search-match note, auto-mote
+        // triggers) slot in cleanly between the command and the right-click hint.
+        std::string tip = e.Command;
+        tip += lockTag;
         // ci.searchNote (main-panel search only) explains a non-obvious match -
-        // e.g. an alias hit, which shows nowhere else - so a result you can't
-        // otherwise account for makes sense. Slots between the command and the hint.
-        if (!ci.searchNote.empty())
-            ImGui::SetTooltip("%s%s\n%s\n%s", e.Command.c_str(), lockTag,
-                              ci.searchNote.c_str(), L("cells.rightclick"));
-        else
-            ImGui::SetTooltip("%s%s\n%s",
-                              e.Command.c_str(), lockTag, L("cells.rightclick"));
+        // e.g. an alias hit, which shows nowhere else.
+        if (!ci.searchNote.empty()) { tip += '\n'; tip += ci.searchNote; }
+        // Auto-mote chat triggers, when set — surfaces the wiring where you see
+        // the emote (neutral wording: describes the config, not a promise it's on).
+        if (!e.AutoKeywords.empty()) {
+            std::string words;
+            for (size_t i = 0; i < e.AutoKeywords.size(); ++i) {
+                if (i) words += ", ";
+                words += e.AutoKeywords[i];
+            }
+            tip += '\n'; tip += L("cells.auto_triggers"); tip += ' '; tip += words;
+        }
+        tip += '\n'; tip += L("cells.rightclick");
+        TooltipTextRaw(tip.c_str());
     }
     // Re-apply the dim alpha for the label drawn below the button (Full mode)
     // and balance the PopStyleVar at the end of the function.
@@ -1393,15 +1387,22 @@ bool RenderCategoryHeader(int categoryIdx, const char* name, bool searchActive) 
         bool empty   = trimmed.empty();
         bool dup     = !empty && CategoryNameExists(trimmed, categoryIdx);
         bool invalid = empty || dup;
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (invalid) PushInvalidInputStyle();
-        bool enter = ImGui::InputText("##catrename", s_catRenameBuf, sizeof(s_catRenameBuf),
-                                      ImGuiInputTextFlags_EnterReturnsTrue);
-        bool active = ImGui::IsItemActive();
-        if (invalid) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
-        if (invalid && ImGui::IsItemHovered()) {
-            if (dup) ImGui::SetTooltip(L("mp.cat_exists"), trimmed.c_str());
-            else     TooltipText("common.name_empty");
+        bool enter = false, active = false;
+        {
+            InputFieldOpts o; o.invalid = invalid;   // width 0 = fill
+            o.flags = ImGuiInputTextFlags_EnterReturnsTrue;
+            bool hov = false;
+            enter  = InputFieldWithHint("##catrename", nullptr, s_catRenameBuf,
+                                        sizeof(s_catRenameBuf), o, nullptr, &hov);
+            active = ImGui::IsItemActive();   // last item = the InputText
+            if (invalid && hov) {
+                if (dup) {
+                    char m[160]; std::snprintf(m, sizeof m, L("mp.cat_exists"), trimmed.c_str());
+                    TooltipTextRaw(m);
+                } else {
+                    TooltipText("common.name_empty");
+                }
+            }
         }
         auto commit = [&]() {
             std::string oldName = cats[categoryIdx].Name;

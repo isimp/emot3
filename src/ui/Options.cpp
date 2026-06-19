@@ -65,29 +65,44 @@ void AddonOptions() {
         // "label###stableid" - the visible label is translated, but the
         // ID after ### stays fixed, so switching UI language doesn't make
         // ImGui lose track of which tab is open and jump to another one.
-        std::string tGeneral  = std::string(L("opt.tab.general"))  + "###tab_general";
-        std::string tQuickbar = std::string(L("opt.tab.quickbar")) + "###tab_quickbar";
-        std::string tPalette  = std::string(L("opt.tab.palette"))  + "###tab_palette";
-        std::string tEmotes   = std::string(L("opt.tab.emotes"))   + "###tab_emotes";
-        std::string tMeMotes  = std::string(L("opt.tab.me_motes")) + "###tab_me_motes";
-        std::string tRadial   = std::string(L("opt.tab.radial"))   + "###tab_radial";
-        std::string tUnlocks  = std::string(L("opt.tab.unlocks"))  + "###tab_unlocks";
+        std::string tGeneral  = std::string(L("opt.tab.general"))   + "###tab_general";
+        std::string tUnlocks  = std::string(L("opt.tab.unlocks"))   + "###tab_unlocks";
+        std::string tQuickbar = std::string(L("opt.tab.quickbar"))  + "###tab_quickbar";
+        std::string tPalette  = std::string(L("opt.tab.palette"))   + "###tab_palette";
+        std::string tRadial   = std::string(L("opt.tab.radial"))    + "###tab_radial";
+        std::string tAutoMote = std::string(L("opt.tab.automotes")) + "###tab_automotes";
+        std::string tEmotes   = std::string(L("opt.tab.emotes"))    + "###tab_emotes";
+        std::string tMeMotes  = std::string(L("opt.tab.me_motes"))  + "###tab_me_motes";
+        // Tab order (v1.5): General, Unlocks, then the send surfaces (Quickbar,
+        // Palette, RadialMenus), then Auto-motes, then the editors (Catalog,
+        // /me-motes).
         if (ImGui::BeginTabItem(tGeneral.c_str())) {
             RenderGeneralOptionsTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(tUnlocks.c_str())) {
+            RenderUnlocksTab();
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem(tQuickbar.c_str())) {
             RenderQuickbarOptionsTab();
             ImGui::EndTabItem();
         }
-        // Palette — its own tab (started as a General section and outgrew
-        // it). Sits next to Quickbar: both are send-surface windows.
+        // Palette — its own tab (started as a General section and outgrew it). Sits
+        // next to Quickbar: both are send-surface windows.
         if (ImGui::BeginTabItem(tPalette.c_str())) {
             RenderPaletteOptionsTab();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem(tUnlocks.c_str())) {
-            RenderUnlocksTab();
+        // RadialMenus — export favorites categories as wheels. See ui/OptionsRadial.cpp.
+        if (ImGui::BeginTabItem(tRadial.c_str())) {
+            RenderRadialTab();
+            ImGui::EndTabItem();
+        }
+        // Auto-motes — chat-keyword auto-fire (was a General section). See
+        // RenderAutoMotesTab in ui/OptionsAutoMotes.cpp.
+        if (ImGui::BeginTabItem(tAutoMote.c_str())) {
+            RenderAutoMotesTab();
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem(tEmotes.c_str())) {
@@ -98,11 +113,6 @@ void AddonOptions() {
         // ui/OptionsMeMotes.cpp + data/MeMotes.h.
         if (ImGui::BeginTabItem(tMeMotes.c_str())) {
             RenderMeMotesTab();
-            ImGui::EndTabItem();
-        }
-        // RadialMenus — export favorites categories as wheels. See ui/OptionsRadial.cpp.
-        if (ImGui::BeginTabItem(tRadial.c_str())) {
-            RenderRadialTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

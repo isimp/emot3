@@ -9,7 +9,8 @@
 #include "imgui/imgui.h"
 
 #ifdef EMOT3_PLUS
-#include "UpdateCheck.h"  // custom update check + dev hooks (+plus builds)
+#include "UpdateCheck.h"   // custom update check + dev hooks (+plus builds)
+#include "PlusSettings.h"  // g_PlusSettings.NotifyPrereleases (channel readout)
 #endif
 
 // The addon definition (Name / Version / Signature / Provider / UpdateLink) is a
@@ -37,9 +38,17 @@ void RenderUpdateCheckBody() {
             std::string latest = PlusLatestVersion();
             DevStateRow("latest", "%s", latest.empty() ? "(none)" : latest.c_str());
         }
+        DevStateRow("notify prereleases", "%s",
+                    g_PlusSettings.NotifyPrereleases ? "on (/releases)" : "off (/releases/latest)");
         if (ImGui::Button("Run check now")) {
-            RunUpdateCheckNow();
+            RunUpdateCheckNow();   // uses the live NotifyPrereleases channel
             LOG_INFO("updcheck[dev]: manual GitHub check kicked");
+        }
+        // Force the prerelease channel for one run regardless of the setting -
+        // exercises the new /releases array path + prerelease ranking end-to-end.
+        if (ImGui::Button("Run check (incl. prereleases)")) {
+            RunUpdateCheckNowChannel(/*prereleases=*/true);
+            LOG_INFO("updcheck[dev]: manual GitHub check kicked (prereleases forced)");
         }
         if (ImGui::Button("Force available (sample)")) {
             ForceUpdateAvailable("9.9.9");

@@ -59,14 +59,14 @@ std::atomic<int> s_heldPrintable{ 0 };
 bool ShouldSkipEmoteSend(const char** outKey, bool checkHeldKeys, bool ignoreTextbox = false) {
     // 0. Competitive modes (PvP / WvW): a hard compliance lockout. emot3 injects input
     //    to send emotes, so that stays fully disabled in competitive with NO user
-    //    override - this sits ABOVE CurrentEmoteBlock()/QuickbarGreyUnusable. GW2's own
+    //    override - this sits ABOVE CurrentEmoteBlock()/BlockUnusableEmotes. GW2's own
     //    MumbleLink IsCompetitive bit; covers every surface (clicks, keybinds, radial).
     if (InCompetitiveMode()) { *outKey = "cells.blocked_competitive"; return true; }
 
     // 1. Can't-emote game state: GW2 plays no emote while mounted/downed/swimming/
     //    underwater/gliding/flying, so the send is a silent no-op - refuse with a
     //    toast naming the reason. CurrentEmoteBlock() is the single gate shared with
-    //    the Quickbar (core/CharacterState), gated on QuickbarGreyUnusable, covering
+    //    the Quickbar (core/CharacterState), gated on BlockUnusableEmotes, covering
     //    mounted via MumbleLink and the rest via the optional RealTime API. Extends
     //    the block to *every* send surface - the main panel + the right-click
     //    Send/@/* variants, not just the Quickbar cells. AIRBORNE is held back to
@@ -96,9 +96,10 @@ bool ShouldSkipEmoteSend(const char** outKey, bool checkHeldKeys, bool ignoreTex
     //         tense "Emote skipped ..." wording (the greyed cell uses present
     //         tense - see Quickbar.cpp).
     switch (CurrentSendBusy(checkHeldKeys, ignoreTextbox)) {
-        case SendBusy::Typing:   *outKey = "send.skip.typing";    return true;
-        case SendBusy::KeysHeld: *outKey = "send.skip.keys_held"; return true;
-        case SendBusy::None:     break;
+        case SendBusy::Typing:    *outKey = "send.skip.typing";    return true;
+        case SendBusy::KeysHeld:  *outKey = "send.skip.keys_held"; return true;
+        case SendBusy::Throttled: *outKey = "send.skip.too_fast";  return true;
+        case SendBusy::None:      break;
     }
 
     // 5. Airborne (jump / fall) - the fallback, only when no definite state, chat
@@ -158,6 +159,32 @@ bool EmoteSendSwallowActive() {
 #endif
 }
 
+// Global send throttle (anti-spam): the timestamp of the last DISPATCHED send,
+// shared across every surface (click / keybind / radial / auto-mote) so the
+// min-interval is uniform. Atomic since the auto-mote drain and a click can't be
+// assumed perfectly serialized. Stamped on a successful dispatch only (a gate
+// refusal never starts the clock). Defined here, above CurrentSendBusy, because
+// the throttle is now a SendBusy reason it returns.
+static std::atomic<uint64_t> s_lastSendMs{ 0 };
+
+// True if a send right now would be inside g_Settings.SendMinIntervalMs of the
+// last dispatched one. Read-only — the caller stamps on commit.
+static bool SendWithinMinInterval() {
+    const uint64_t last = s_lastSendMs.load(std::memory_order_relaxed);
+    if (last == 0) return false;
+    return (GetTickCount64() - last) < (uint64_t)g_Settings.SendMinIntervalMs;
+}
+
+void StampSendNow() { s_lastSendMs.store(GetTickCount64(), std::memory_order_relaxed); }
+
+unsigned SendThrottleRemainingMs() {
+    const uint64_t last = s_lastSendMs.load(std::memory_order_relaxed);
+    if (last == 0) return 0;
+    const uint64_t elapsed = GetTickCount64() - last;
+    const uint64_t iv      = (uint64_t)g_Settings.SendMinIntervalMs;
+    return (elapsed < iv) ? (unsigned)(iv - elapsed) : 0u;
+}
+
 SendBusy CurrentSendBusy(bool checkHeldKeys, bool ignoreTextbox) {
     // GW2 textbox focused (chat half-typed, mail, TP search, ...). Single bit GW2
     //    maintains in the Mumble Link. ignoreTextbox skips it for the "close chat
@@ -192,6 +219,13 @@ SendBusy CurrentSendBusy(bool checkHeldKeys, bool ignoreTextbox) {
         (GetAsyncKeyState(VK_LBUTTON) & 0x8000) &&
         (GetAsyncKeyState(VK_RBUTTON) & 0x8000))
         return SendBusy::KeysHeld;
+
+    // Global anti-spam throttle — within the min-interval since the last dispatched
+    // send. Lowest-priority transient (a typing / moving reason is more actionable,
+    // so it's reported first), checked independent of checkHeldKeys/ignoreTextbox.
+    // Returning it here is what makes the gate refuse AND the Quickbar grey from one
+    // source, so the throttle's "disabled" look matches the click-time refusal.
+    if (SendWithinMinInterval()) return SendBusy::Throttled;
     return SendBusy::None;
 }
 
@@ -208,6 +242,10 @@ const char* PickQbBlockReason(EmoteBlock block, bool greying, SendBusy busy,
     if (busy == SendBusy::Typing)                     return "cells.blocked_typing";
     if (busy == SendBusy::KeysHeld && heldLongEnough) return "cells.blocked_moving";
     if (block == EmoteBlock::Airborne)                return "cells.blocked_airborne";
+    // NOTE: SendBusy::Throttled is deliberately NOT handled here. The throttle
+    // greys the Quickbar via an INDEPENDENT fallback in QuickbarRender, so a
+    // not-yet-debounced KeysHeld can't mask it (which would flicker the cooldown).
+    // The gate (ShouldSkipEmoteSend) still consumes SendBusy::Throttled to refuse.
     return nullptr;
 }
 
@@ -425,6 +463,7 @@ void InjectChatCommand(std::string cmd, bool autoSend, bool closeChat,
 // (a bind / RadialMenus wheel Invoke, where emot3's window is usually closed so the
 // overlay wouldn't be seen). Falls back to ShowFeedback if SendAlert is unavailable.
 static void EmitSendRefusal(const char* key, EFeedbackSink sink) {
+    if (sink == EFeedbackSink::Silent) return;  // auto-fires: no human, no feedback
     if (sink == EFeedbackSink::Alert && APIDefs && APIDefs->UI.SendAlert)
         APIDefs->UI.SendAlert(L(key));
     else
@@ -478,6 +517,10 @@ bool SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink
         return false;
     }
 
+    // (The global anti-spam throttle is part of the gate above now — it returns
+    // SendBusy::Throttled / "send.skip.too_fast", so the same check also greys the
+    // Quickbar. We just stamp the clock on dispatch below.)
+
     // Real send/fill (gate passed) — record for Recently / Frequently used.
     // Locked emotes (non-core + not in ManuallyUnlocked) are excluded: the game
     // won't play them, so they shouldn't seed the usage categories. Checked
@@ -491,6 +534,7 @@ bool SendOrFillEmote(const Emote& e, bool useTarget, bool useSync, EFeedbackSink
     }
 
     LOG_DEBUG("%s emote: %s", send ? "Sending" : "Filling", cmd.c_str());
+    StampSendNow();  // start the throttle clock on actual dispatch
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
     return true;
 }
@@ -539,10 +583,14 @@ bool SendOrFillMeMote(const MeMote& m, EMeMoteVariant variant, EFeedbackSink sin
         return false;
     }
 
+    // (The global anti-spam throttle is part of the gate above now — see
+    // SendOrFillEmote. We just stamp the clock on dispatch below.)
+
     // Real send/fill (gate passed) — record for Recently / Frequently used.
     usage::Record(EFavoriteRefType::MeMote, m.Id);
 
     LOG_DEBUG("%s /me-mote: %s", send ? "Sending" : "Filling", cmd.c_str());
+    StampSendNow();  // start the throttle clock on actual dispatch
     InjectChatCommand(std::move(cmd), send, closeChat, swallowMode);
     return true;
 }
@@ -563,6 +611,7 @@ void MarkEmoteUnlocked(const std::string& id) {
     g_Settings.ManuallyUnlocked.push_back(id);
     LOG_DEBUG("Marked %s as unlocked", id.c_str());
     RequestSave(SaveKind::Settings);
+    MarkUiViewDirty();  // unlockedIds set changed -> cached catalog view rebuilds
 }
 
 void MarkEmoteLocked(const std::string& id) {
@@ -585,5 +634,26 @@ void MarkEmoteLocked(const std::string& id) {
         LOG_DEBUG("Marked %s as locked (evicted from %d favorite slot(s))",
                   id.c_str(), evicted);
         RequestSave(SaveKind::Settings);
+        MarkUiViewDirty();  // unlockedIds shrank + favorites evicted -> rebuild view
     }
 }
+
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+// Runtime-inspector section: the shared send gate, consolidated - a single
+// "why won't it send?" view (competitive lockout + transient busy + throttle +
+// held keys) instead of hunting across the Game-state / Auto-motes sections.
+static DevStateRegistrar s_sendGateSection(DevStateCat::GameSignals, "Send gate", [] {
+    SendBusy b = CurrentSendBusy(/*checkHeldKeys=*/true);
+    const char* busy = b == SendBusy::Typing   ? "typing"
+                     : b == SendBusy::KeysHeld  ? "keys held"
+                     : b == SendBusy::Throttled ? "throttled"
+                                                : "none";
+    DevStateRow("competitive",     "%s", InCompetitiveMode() ? "LOCKED (PvP/WvW)" : "no");
+    DevStateRow("transient busy",  "%s", busy);
+    DevStateRow("throttle left",   "%u ms", SendThrottleRemainingMs());
+    DevStateRow("min interval",    "%u ms", g_Settings.SendMinIntervalMs);
+    DevStateRow("held printables", "%d", HeldPrintableCount());
+    DevStateRow("swallow (+plus)", "%s", EmoteSendSwallowActive() ? "on" : "off");
+});
+#endif  // EMOT3_DEVTOOLS

@@ -5,6 +5,7 @@
 #include "I18n.h"
 #include "Settings.h"
 #include "EmoteData.h"
+#include "CatalogView.h"   // GetCatalogView (shared cached index + /me-mote map)
 #include "MeMotes.h"          // /me-motes Quickbar category + favorites mixing
 #include "Usage.h"            // Recently / Frequently used synthetic categories
 #include "CharacterState.h" // CurrentEmoteBlock / InCombatNow / g_QbBlockReason / g_QbUnusableKey
@@ -25,6 +26,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstring>   // std::strcmp (throttle-reason check)
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -35,6 +37,14 @@
 // click-through hit-rects. Lives in the ui/ layer so its ImVec2 type doesn't
 // pull imgui into core/Globals.h.
 std::vector<std::pair<ImVec2, ImVec2>> g_QbIconRects;
+
+#ifdef EMOT3_DEVTOOLS
+// Quickbar sizing readout, registered as a runtime-inspector section under
+// "Content & catalogs". The rows are drawn by EmitQuickbarSection (QuickbarDebug.h)
+// from a snapshot captured each Quickbar render (below) - no separate overlay.
+static DevStateRegistrar s_qbStateSection(DevStateCat::Content, "Quickbar",
+                                          []{ EmitQuickbarSection(); });
+#endif
 
 namespace {
 // Drag-snap metrics for the Quickbar window (experimental QuickbarSnapWindow).
@@ -112,8 +122,8 @@ void QuickbarRender() {
 
     // Competitive modes (PvP / WvW): hard-hide the bar, unconditionally (no setting).
     // emot3 injects input to send emotes; in competitive that stays fully disabled (the
-    // send gate refuses every surface too). Sits ABOVE the QuickbarGreyUnusable /
-    // QuickbarUnusableBehavior machinery so the grey/hide preference can't weaken it.
+    // send gate refuses every surface too). Sits ABOVE the BlockUnusableEmotes /
+    // QuickbarUnusableDisplay machinery so the grey/hide preference can't weaken it.
     // GW2's own MumbleLink IsCompetitive bit.
     if (InCompetitiveMode()) return;
 
@@ -134,12 +144,12 @@ void QuickbarRender() {
     g_QbBlockReason = CurrentEmoteBlock();
 
     // Unified "why this Quickbar emote can't be used this frame" reason, with ONE
-    // interaction (QuickbarUnusableBehavior) applied. Whenever greying/hiding is
-    // active (QuickbarGreyUnusable), it covers BOTH the game-state block (mounted /
+    // presentation (QuickbarUnusableDisplay: grey / hide / normal) applied. Whenever
+    // blocking is active (BlockUnusableEmotes), it covers BOTH the game-state block (mounted /
     // RTAPI states / airborne) AND the transient send refusals - a GW2 text box
     // focused, or moving / a printable key held. The transient cases used to be
     // separate opt-ins, but they're robust + cheap now, so they just ride the master
-    // setting. Same detector as the send gate (CurrentSendBusy) so greying and
+    // setting. Same detector as the send gate (CurrentSendBusy) so blocking and
     // refusal can't drift; mapped to the present-tense cells.blocked_* wording. Two
     // settings carve out their own case: "send while moving" (+plus swallow) drops
     // the movement source (a held key no longer refuses), and "close chat on send"
@@ -158,9 +168,9 @@ void QuickbarRender() {
         // velocity flag - no per-frame key polling. Evaluated even while a game-state
         // block (mounted) masks the reason, so the movement debounce tracks the REAL
         // hold duration and survives the block (no unmount-while-moving flicker).
-        const bool greying       = g_Settings.QuickbarGreyUnusable;
-        const bool checkMovement = greying && !EmoteSendSwallowActive();  // swallow handles held keys
-        const SendBusy busy = greying
+        const bool blocking       = g_Settings.BlockUnusableEmotes;
+        const bool checkMovement = blocking && !EmoteSendSwallowActive();  // swallow handles held keys
+        const SendBusy busy = blocking
             ? CurrentSendBusy(checkMovement, /*ignoreTextbox=*/g_Settings.CloseChatOnSend)
             : SendBusy::None;
         if (busy == SendBusy::KeysHeld) {
@@ -175,23 +185,61 @@ void QuickbarRender() {
         // airborne) lives in PickQbBlockReason (core/EmoteAction).
         const bool heldLongEnough = (busy == SendBusy::KeysHeld && s_heldSince >= 0.0 &&
                                      now - s_heldSince >= kHeldGreyDelay);
-        reason = PickQbBlockReason(g_QbBlockReason, greying, busy, heldLongEnough);
+        reason = PickQbBlockReason(g_QbBlockReason, blocking, busy, heldLongEnough);
 
         // The quick-send palette is itself a send surface: while it's open the
         // bar steps back, riding the same master setting + interaction (grey /
         // hide / untouched) as every other unusable source. Lowest priority -
         // a real reason (mounted, typing, moving) still owns the explainer.
-        if (!reason && greying && IsPaletteOpen())
+        if (!reason && blocking && IsPaletteOpen())
             reason = "cells.blocked_palette";
+
+        // Send throttle - an INDEPENDENT low-priority blocking source, NOT a
+        // CurrentSendBusy value. It must not ride the busy single-value priority:
+        // a movement key TAPPED during the cooldown makes busy==KeysHeld, which
+        // (until the 0.25s debounce elapses) yields no reason - and if the throttle
+        // were a busy value it'd be masked away, briefly un-blocking the bar and
+        // looking like the cooldown cleared. As a separate fallback it just fills
+        // the gap: still throttled + nothing else greyed => stay greyed.
+        if (!reason && blocking && SendThrottleRemainingMs() > 0)
+            reason = "cells.blocked_too_fast";
     }
+
+    // Hide-mode exemption for the send-throttle window. While the throttle is
+    // active (we just sent), the bar GREYS in place instead of hiding for the two
+    // reasons that are a consequence of that very send: the throttle itself
+    // ("too fast"), AND the transient "textbox focused" (Typing) that our OWN emote
+    // injection raises while it briefly opens chat to type the command. Without
+    // this, a click under Hide mode FLICKERS: the injection's chat-open reads as
+    // Typing and hides the bar, which then pops back greyed once the throttle
+    // reason takes over. The throttle window always brackets the injection, so
+    // exempting these two for its duration keeps the bar steady (visible + greyed)
+    // from click through cooldown. A genuine state (mounted / moving) still hides
+    // normally - "Typing while throttled" is the only one we attribute to ourselves
+    // (a user can't open chat in the sub-second between their click and our inject).
+    const bool throttleActive = SendThrottleRemainingMs() > 0;
+    const bool selfSendReason  = reason &&
+        (std::strcmp(reason, "cells.blocked_too_fast") == 0 ||
+         std::strcmp(reason, "cells.blocked_typing")   == 0);
+    const bool exemptFromHide  = throttleActive && selfSendReason;
 
     // One interaction applies to whichever source fired: Hide pulls the whole bar
     // (was game-state only; now any enabled source, since the debounce tamed the
-    // transient cases); Grey dims + blocks the cells in place further down.
-    if (reason && g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide) {
+    // transient cases); Grey dims + blocks the cells in place further down. The
+    // self-send reasons opt out of Hide (above) and fall through to the grey path.
+    if (reason && !exemptFromHide &&
+        g_Settings.QuickbarUnusableDisplay == EUnusableBehavior::Hide) {
         g_QbUnusableKey = nullptr;
         return;
     }
+    // "Show normally": an unusable / transient block doesn't change THIS bar's
+    // appearance at all - the buttons stay lit and a click still refuses with a
+    // reason at the send gate (CharacterState/EmoteAction, independent of this
+    // setting). Drop the reason so it neither hides (above) nor greys (below).
+    // Combat dimming is a SEPARATE setting (QuickbarCombatBehavior) and still
+    // applies via the combat-grey path below.
+    if (reason && g_Settings.QuickbarUnusableDisplay == EUnusableBehavior::Normal)
+        reason = nullptr;
     // Combat-grey is the lowest-priority source: a real can't-emote reason
     // (mounted etc.) owns the cell's explainer when both apply. (Combat-hide
     // already returned above.)
@@ -657,7 +705,7 @@ void QuickbarRender() {
                                        ImGui::GetItemRectMax());
             // Full active name on hover when the preview was truncated.
             if (previewClip && ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", cats[active].name.c_str());
+                TooltipTextRaw(cats[active].name.c_str());
         } else {
             // Tab-style buttons — active one highlighted blue. Wrap onto a
             // new line when the next button wouldn't fit horizontally.
@@ -713,7 +761,7 @@ void QuickbarRender() {
                 bool showTip = clipped && ImGui::IsItemHovered();
                 ImGui::PopID();
                 if (isActive) ImGui::PopStyleColor(3);
-                if (showTip) ImGui::SetTooltip("%s", cats[i].name.c_str());
+                if (showTip) TooltipTextRaw(cats[i].name.c_str());
             }
         }
         // Capture the bottom of the bar — use the cursor's Y position
@@ -729,32 +777,19 @@ void QuickbarRender() {
     // Build cell list for the active category (no filter/search in the QB).
     const QbCat& activeCat = cats[active];
     std::vector<CellInfo> items;
+    // Shared cached index + /me-mote map (rebuilt only on catalog / favorites /
+    // unlock change, not per frame). Aliased so the build code below reads exactly
+    // as it did with the old per-frame locals. Fetched OUTSIDE the lock below since
+    // GetCatalogView() takes the catalog mutexes itself during its (rare) rebuild.
+    const CatalogView&  cv          = GetCatalogView();
+    const CatalogIndex& idx         = cv.idx;
+    const auto&         meMotesById = cv.meMotesById;
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
         PROFILE_SCOPE("qb.build");  // dev perf overlay
-        // Index the catalog once (O(N)) so resolving a favorites category's
-        // ids is O(1) each instead of FindEmote's linear scan - the cost the
-        // user hit with a category holding many favorites. unlocked() is
-        // precomputed per cell so RenderEmoteCell doesn't re-derive it. Same
-        // per-frame, no-caching approach the main panel uses (shared helper).
-        CatalogIndex idx;
-        BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
-
-        // /me-motes snapshot for favorites mixing + the dedicated category.
-        // Built under g_MeMotesMutex once so the cell loop can dereference
-        // freely without nesting locks. Only the Favorite and dedicated
-        // /me-motes categories consume it; the built-in Emote categories
-        // (Core/Unlocked/Mad King) never read it, and the QB only shows one
-        // category per frame — so skip the lock + populate for those.
-        std::unordered_map<std::string, const MeMote*> meMotesById;
-        if (activeCat.kind == QbCatKind::MeMotes ||
-            activeCat.kind == QbCatKind::Favorite ||
-            activeCat.kind == QbCatKind::RecentlyUsed ||
-            activeCat.kind == QbCatKind::Frequent) {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            meMotesById.reserve(g_MeMotes.size());
-            for (const auto& mm : g_MeMotes) meMotesById[mm.Id] = &mm;
-        }
+        // idx + meMotesById come from the shared cached view above. /me-mote
+        // pointers are dereferenced under g_EmotesMutex (no g_MeMotesMutex nesting),
+        // valid because any /me-mote change bumps g_MeMotesVersion -> view rebuild.
 
         // Resolve a usage/favorite ref to a read-only (favIdx -1) cell, routing
         // by Type to the right catalog. Shared by the Recently/Frequently used
@@ -1174,7 +1209,9 @@ void QuickbarRender() {
     // Dev sizing readout: snapshot the real numbers so the fit/snap math can
     // be diagnosed from actual values (see QuickbarDebug.h). Gated by
     // EMOT3_DEVTOOLS (the dev tools axis), not EMOT3_PLUS (the swallow axis).
-    if (qbdbg::Enabled()) {
+    // Captured every render (cheap - just stores ~25 floats) so the runtime
+    // inspector's Quickbar section always shows fresh values.
+    {
         const ImGuiStyle& st = ImGui::GetStyle();
         float topPad = EmoteGridTopPad(g_Settings.QuickbarViewMode);
         qbdbg::QbMetrics& dm = qbdbg::M();

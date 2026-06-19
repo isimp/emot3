@@ -90,8 +90,8 @@ static void RenderQuickbarPresetsSection() {
         RequestSave(SaveKind::Settings);
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", hasSel ? L("opt.qb.preset.apply_tooltip")
-                                       : L("opt.qb.preset.select_first"));
+        TooltipTextRaw(hasSel ? L("opt.qb.preset.apply_tooltip")
+                              : L("opt.qb.preset.select_first"));
     if (modified) {
         ImGui::SameLine();
         ImGui::TextDisabled("%s", L("opt.qb.preset.modified"));
@@ -110,9 +110,9 @@ static void RenderQuickbarPresetsSection() {
         WriteQuickbarPreset(g_QuickbarPresets[s_sel]);
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", !hasSel ? L("opt.qb.preset.select_first")
-                                : !modified ? L("opt.qb.preset.update_clean")
-                                            : L("opt.qb.preset.update_tooltip"));
+        TooltipTextRaw(!hasSel ? L("opt.qb.preset.select_first")
+                       : !modified ? L("opt.qb.preset.update_clean")
+                                   : L("opt.qb.preset.update_tooltip"));
 
     ImGui::SameLine();
     if (actionButton(L("opt.qb.preset.rename"), hasSel)) {
@@ -121,16 +121,16 @@ static void RenderQuickbarPresetsSection() {
                  g_QuickbarPresets[s_sel].Name.c_str());
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", hasSel ? L("opt.qb.preset.rename_tooltip")
-                                       : L("opt.qb.preset.select_first"));
+        TooltipTextRaw(hasSel ? L("opt.qb.preset.rename_tooltip")
+                              : L("opt.qb.preset.select_first"));
 
     ImGui::SameLine();
     if (actionButton(L("common.delete"), hasSel)) {
         s_confirmDelete = true; s_mode = 0;
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", hasSel ? L("opt.qb.preset.delete_tooltip")
-                                       : L("opt.qb.preset.select_first"));
+        TooltipTextRaw(hasSel ? L("opt.qb.preset.delete_tooltip")
+                              : L("opt.qb.preset.select_first"));
 
     // --- Inline name entry (New / Rename) ---
     if (s_mode != 0) {
@@ -142,14 +142,21 @@ static void RenderQuickbarPresetsSection() {
         // matching every other validated input - no muted hint written below.
         bool invalid = empty || dup;
 
-        ImGui::SetNextItemWidth(200.f);
-        if (invalid) PushInvalidInputStyle();
-        bool enter = ImGui::InputText("##presetname", s_nameBuf, sizeof(s_nameBuf),
-                                       ImGuiInputTextFlags_EnterReturnsTrue);
-        if (invalid) { PopInvalidInputStyle(); DrawInvalidInputBorder(); }
-        if (invalid && ImGui::IsItemHovered()) {
-            if (dup) ImGui::SetTooltip(L("opt.qb.preset.name_dup"), trimmed.c_str());
-            else     TooltipText("common.name_empty");
+        bool enter = false;
+        {
+            InputFieldOpts o; o.width = 200.f; o.invalid = invalid;
+            o.flags = ImGuiInputTextFlags_EnterReturnsTrue;
+            bool hov = false;
+            enter = InputFieldWithHint("##presetname", nullptr, s_nameBuf, sizeof(s_nameBuf),
+                                       o, nullptr, &hov);
+            if (invalid && hov) {
+                if (dup) {
+                    char m[160]; std::snprintf(m, sizeof m, L("opt.qb.preset.name_dup"), trimmed.c_str());
+                    TooltipTextRaw(m);
+                } else {
+                    TooltipText("common.name_empty");
+                }
+            }
         }
 
         ImGui::SameLine();
@@ -221,7 +228,33 @@ void RenderQuickbarOptionsTab() {
                                                       : L("opt.currently_hidden"));
     ImGui::Spacing();
 
-    // ===== Presets ===== (top of the tab; the controls below are its editor)
+    // ===== Quickbar categories =====
+    // Which built-in (synthetic) categories the category bar offers alongside
+    // your favorites categories. (Keys stay opt.gen.* / settings.json
+    // general.quickbar_categories for back-compat - these controls used to live
+    // on the General tab.) See Quickbar.cpp.
+    OptionsSection(L("opt.sec.qb_categories"));
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_favorites", &g_Settings.QuickbarShowFavoriteCategories, /*defaultIsOn=*/true);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_core", &g_Settings.QuickbarShowCoreCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_mad_king", &g_Settings.QuickbarShowMadKingCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked", &g_Settings.QuickbarShowUnlockedCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked_all", &g_Settings.QuickbarShowUnlockedAllCategory, /*defaultIsOn=*/true);
+
+    // /me-motes - opt-in like the other built-in categories.
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_me_motes", &g_Settings.QuickbarShowMeMotesCategory, /*defaultIsOn=*/false);
+
+    // Synthetic usage categories (data/Usage.h) - derived from the usage log,
+    // not editable, so they live only in the Quickbar (no Library section).
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_recently_used", &g_Settings.QuickbarShowRecentlyUsedCategory, /*defaultIsOn=*/false);
+
+    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_frequent", &g_Settings.QuickbarShowFrequentCategory, /*defaultIsOn=*/false);
+
+    // ===== Presets =====
     RenderQuickbarPresetsSection();
 
     // ===== Layout =====
@@ -431,6 +464,41 @@ void RenderQuickbarOptionsTab() {
 
     // ===== Look =====
     OptionsSection(L("opt.sec.look"));
+
+    // How THIS Quickbar presents an emote that can't be used right now: grey the
+    // buttons (default), hide the whole bar, or show them normally (a click still
+    // refuses with a toast). Per-preset - travels with Quickbar presets. Only acts
+    // while the global "Block emotes that can't be used" is on (General > Sending);
+    // greyed + hinted otherwise so it's clear where the master lives.
+    {
+        const bool blocking = g_Settings.BlockUnusableEmotes;
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(L("opt.qb.unusable_display"));
+        ImGui::SameLine();
+        int didx = (int)g_Settings.QuickbarUnusableDisplay;  // 0 grey / 1 hide / 2 normal
+        const char* dItems[] = { L("opt.qb.unusable_grey"), L("opt.qb.unusable_hide"),
+                                 L("opt.qb.unusable_normal") };
+        ImGui::SetNextItemWidth(160.f);
+        if (!blocking) {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+        }
+        if (ImGui::Combo("##qbunusable", &didx, dItems, IM_ARRAYSIZE(dItems))) {
+            g_Settings.QuickbarUnusableDisplay = NormalizeUnusableBehavior(didx);
+            LOG_TRACE("setting quickbar.unusable_display: %d", didx);
+            RequestSave(SaveKind::Settings);
+        }
+        if (!blocking) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
+        if (blocking && ImGui::IsItemHovered()) {
+            static const TooltipOption kUnusableOpts[] = {
+                { "opt.qb.unusable_grey",   "opt.qb.unusable_grey.desc",   true  },
+                { "opt.qb.unusable_hide",   "opt.qb.unusable_hide.desc",   false },
+                { "opt.qb.unusable_normal", "opt.qb.unusable_normal.desc", false },
+            };
+            TooltipOptions("opt.qb.unusable_intro", kUnusableOpts, IM_ARRAYSIZE(kUnusableOpts));
+        }
+        if (!blocking) ImGui::TextDisabled("%s", L("opt.qb.unusable_needs_block"));
+    }
 
     CheckboxWithSaveAndTooltip("opt.qb.high_contrast", &g_Settings.QuickbarHighContrast, /*defaultIsOn=*/false);
 

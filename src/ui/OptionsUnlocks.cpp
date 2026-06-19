@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "SaveScheduler.h"  // RequestSave (debounced, off-thread settings writes)
 #include "EmoteData.h"     // CatalogIndex / BuildCatalogIndex (live count)
+#include "CatalogView.h"   // GetCatalogView (shared cached index)
 #include "UnlockScan.h"    // StartUnlockSync / status
 #include "Profiling.h"     // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 
@@ -23,14 +24,13 @@ void SaveNow() { RequestSave(SaveKind::Settings); }
 // unlocked). Same shared index helper the render builds use.
 void DrawLiveCount() {
     int unlockedCount = 0, lockedCount = 0;
+    const CatalogView& cv = GetCatalogView();   // shared cached index (no per-frame rebuild)
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        CatalogIndex idx;
-        BuildCatalogIndex(g_Settings.ManuallyUnlocked, idx);
         for (const auto& e : g_Emotes) {
             if (e.IsCore) continue;
-            if (idx.unlocked(e)) ++unlockedCount;
-            else                 ++lockedCount;
+            if (cv.idx.unlocked(e)) ++unlockedCount;
+            else                    ++lockedCount;
         }
     }
     ImGui::TextDisabled(L("opt.gen.unlocks_count"), unlockedCount, lockedCount);
@@ -86,10 +86,10 @@ void DrawApiSync() {
     if (g_Settings.UnlockApiKeySource == 1) {
         char buf[256];
         strncpy_s(buf, sizeof(buf), g_Settings.Gw2ApiKey.c_str(), _TRUNCATE);
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputTextWithHint("##gw2apikey", L("opt.unl.key_hint"), buf,
-                                     sizeof(buf), ImGuiInputTextFlags_Password)) {
-            g_Settings.Gw2ApiKey = buf;
+        {
+            InputFieldOpts o; o.flags = ImGuiInputTextFlags_Password;  // width 0 = fill
+            if (InputFieldWithHint("##gw2apikey", "opt.unl.key_hint", buf, sizeof(buf), o))
+                g_Settings.Gw2ApiKey = buf;
         }
         if (ImGui::IsItemDeactivatedAfterEdit()) SaveNow();
         ImGui::TextWrapped("%s", L("opt.unl.key_help"));
@@ -131,7 +131,6 @@ void DrawApiSync() {
 void RenderUnlocksTab() {
     PROFILE_SCOPE("opt.unlocks");  // dev perf overlay
 
-    OptionsSection(L("opt.sec.unlocks"));
     // Plain intro: how unlock state is managed (manual + optional API sync).
     ImGui::TextWrapped("%s", L("opt.unl.intro"));
     ImGui::Spacing();

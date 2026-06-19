@@ -38,6 +38,52 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+// Does the user's icons/ folder (addons/emot3/icons) hold at least one file?
+// Gates the "Rescan icons" button - there's nothing to re-pick-up otherwise.
+// Throttled to ~once/sec AND mtime-gated: each tick we only stat the directory's
+// last-write-time (cheap) and re-enumerate its entries (the costlier part) only when
+// that time actually changed. A dir's write-time bumps on entry ADD / REMOVE / RENAME
+// - precisely the events that flip "holds >=1 file" (in-place content edits touch the
+// file's time, not the dir's, and correctly don't change the answer). So a freshly
+// dropped first icon still enables the button within a second, but a steady folder
+// costs just one stat instead of a full enumeration every poll.
+static bool FolderHasIcons() {
+    static unsigned long long lastMs    = 0;
+    static unsigned long long lastWrite = 0;      // dir FILETIME at last enumeration
+    static bool               cached    = false;
+    static bool               primed    = false;  // have we enumerated at least once?
+
+    const unsigned long long now = GetTickCount64();
+    if (lastMs != 0 && now - lastMs < 1000) return cached;  // throttle the disk touch
+    lastMs = now;
+
+    if (g_IconsDir.empty()) { cached = false; primed = true; lastWrite = 0; return cached; }
+
+    // Cheap stat: read just the directory's last-write-time.
+    WIN32_FILE_ATTRIBUTE_DATA fad{};
+    if (!GetFileAttributesExA(g_IconsDir.c_str(), GetFileExInfoStandard, &fad)) {
+        cached = false; primed = true; lastWrite = 0; return cached;  // folder missing
+    }
+    const unsigned long long mtime =
+        ((unsigned long long)fad.ftLastWriteTime.dwHighDateTime << 32) |
+         (unsigned long long)fad.ftLastWriteTime.dwLowDateTime;
+    if (primed && mtime == lastWrite) return cached;  // membership unchanged - reuse
+    lastWrite = mtime;
+    primed    = true;
+
+    // Membership changed (or first sighting): the one enumeration we actually need.
+    cached = false;
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((g_IconsDir + "\\*").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) { cached = true; break; }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    return cached;
+}
+
 // ---- Emotes editor state ----------------------------------
 
 // Persistent per-row edit buffer for the Emotes editor. Carries the row's
@@ -56,6 +102,9 @@ struct RowBuffer {
     std::string name;
     std::string command;   // editable localized command (was read-only before)
     std::string aliases;   // alternate commands, space-separated edit buffer
+    std::string autoKeywords;  // auto-mote chat triggers, space-separated edit buffer
+    std::string wikiSlug;      // wiki page URL path slug edit buffer
+    std::string unlockItem;    // unlock item id edit buffer (digits; empty = none)
     bool        initialized = false;
 };
 
@@ -175,101 +224,11 @@ void RenderEmotesTab() {
         ImGui::Unindent();
     }
 
-    // ---- "Add to catalog" inline input ----
-    //
-    // The everyday action (add one emote), above the list. Mirrors the
-    // "+ Category" UX in MainPanel: a slash-prefixed command with live
-    // validation. The stable Id is derived from the command stem
-    // (lowercased, no slash) and is the uniqueness constraint - the red
-    // border / hard block fires on an Id collision. A command that
-    // duplicates another emote's is allowed (Id is the key), surfaced
-    // only as a soft note.
-    OptionsSection(L("opt.sec.add_emote"));
-    static char newCmdBuf[64] = {};
+    // (Auto-motes master enable + watched channels live in Options > General now;
+    // this tab only carries the per-emote "Chat triggers" field in each row.)
 
-    // Normalize via the shared helper (trim, force leading slash, lowercase) so
-    // every command ingress - here, the per-row edit below, and emotes.json
-    // load - is identical; derive the stable id from the normalized stem.
-    std::string rawNew = newCmdBuf;
-    std::string trimmedNew = TrimWhitespace(rawNew);
-    std::string normalizedNew = NormalizeEmoteCommand(trimmedNew);
-    std::string newId = normalizedNew.size() > 1 ? normalizedNew.substr(1)
-                                                 : std::string();
-
-    bool newHasInput = !trimmedNew.empty();
-    bool newIdDup = false, newCmdDup = false;
-    {
-        std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        if (newHasInput && !newId.empty()) {
-            newIdDup  = IdCollidesWith(newId, nullptr);
-            newCmdDup = CommandCollidesWith(normalizedNew, nullptr);
-        }
-    }
-    // Hard-invalid (blocks add): empty stem or Id collision.
-    bool newInvalid = newHasInput && (newId.empty() || newIdDup);
-
-    ImGui::SetNextItemWidth(180.f);
-    if (newInvalid) PushInvalidInputStyle();
-    ImGui::InputTextWithHint("##newcmd", L("opt.em.cmd_hint"),
-                             newCmdBuf, sizeof(newCmdBuf));
-    if (newInvalid) {
-        PopInvalidInputStyle();
-        DrawInvalidInputBorder();
-    }
-    if (newInvalid && ImGui::IsItemHovered()) {
-        if (newId.empty())
-            TooltipText("opt.em.cmd_min");
-        else
-            ImGui::SetTooltip(L("opt.em.id_exists"), newId.c_str());
-    }
-
-    ImGui::SameLine();
-    bool addEnabled = newHasInput && !newInvalid;
-    if (!addEnabled) {
-        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
-                             ImGui::GetStyle().Alpha * 0.45f);
-    }
-    bool addPressed = ImGui::Button(L("opt.em.add_button"));
-    if (!addEnabled) {
-        ImGui::PopStyleVar();
-        ImGui::PopItemFlag();
-    }
-    // Soft, non-blocking note: another emote already sends this command.
-    if (addEnabled && newCmdDup) {
-        ImGui::TextDisabled(L("opt.em.shared_note"), normalizedNew.c_str());
-    }
-    if (addPressed && addEnabled) {
-        // Default display name is the stem title-cased; de-duped against
-        // existing names with a " 2"/" 3" suffix so a new row never ships
-        // with a duplicate display name.
-        std::string baseName = TitleCaseStem(normalizedNew);
-        std::string finalName = baseName;
-        {
-            std::lock_guard<std::mutex> lk(g_EmotesMutex);
-            for (int n = 2; n < 1000; ++n) {
-                bool dup = false;
-                for (const auto& other : g_Emotes) {
-                    if (other.Name == finalName) { dup = true; break; }
-                }
-                if (!dup) break;
-                finalName = baseName + " " + std::to_string(n);
-            }
-            Emote e;
-            e.Id           = newId;
-            e.Command      = normalizedNew;
-            e.Name         = finalName;
-            e.IsCore       = false;
-            e.IsTargetable = false;
-            e.IsMadKing    = false;  // user emotes aren't part of the bundled set
-            g_Emotes.push_back(std::move(e));
-        }
-        LOG_INFO("Added emote id=%s command=%s (\"%s\")",
-                 newId.c_str(), normalizedNew.c_str(), finalName.c_str());
-        RequestSave(SaveKind::Emotes);
-        MarkEmotesDirty();
-        newCmdBuf[0] = '\0';  // Clear input on commit.
-    }
+    // ("Add to catalog" renders BELOW the list now - see the add section after
+    //  EndChild, so the everyday list isn't pushed down by the add input.)
 
     // Persistent per-row edit buffers keyed by Id (stable). New rows
     // initialize lazily.
@@ -332,41 +291,110 @@ void RenderEmotesTab() {
         float total     = wRescan + wExpand + wCollapse + st.ItemSpacing.x * 2.f;
         ImGui::SameLine();
         RightAlignCursor(total);
+        const bool canRescan = FolderHasIcons();
+        if (!canRescan) BeginDisabledCompat();
         if (ImGui::SmallButton(L("opt.icon.rescan"))) {
             s_iconStatus.clear();   // every row re-stats its icon status next render
             MarkEmotesDirty();      // every visible cell re-resolves (memo drops on the epoch)
             LOG_INFO("Rescan icons: cleared the icon-status cache + bumped the catalog epoch");
         }
-        if (ImGui::IsItemHovered())
-            TooltipText("opt.icon.rescan_tooltip");
+        if (!canRescan) EndDisabledCompat();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            TooltipText(canRescan ? "opt.icon.rescan_tooltip" : "opt.icon.rescan_disabled_tip");
         ImGui::SameLine();
         if (ImGui::SmallButton(L("opt.em.expand_all")))   s_setAllOpen =  1;
         ImGui::SameLine();
         if (ImGui::SmallButton(L("opt.em.collapse_all"))) s_setAllOpen = -1;
     }
 
+    // Filter + sort, pinned above the scrolling list. Both read COMMITTED values and
+    // only rebuild the (cached) display order on change, so rows never jump while you
+    // type into a field - see the view cache inside the child below.
+    static char s_filter[64] = {};
+    static int  s_sortMode   = 0;   // 0 Id, 1 Name, 2 Command
+    {
+        const ImGuiStyle& st = ImGui::GetStyle();
+        const float sortW   = 150.f;
+        const float clearW  = ImGui::GetFrameHeight();   // square X, full height
+        float       filterW = ImGui::GetContentRegionAvail().x - clearW - sortW
+                              - st.ItemSpacing.x * 2.f;
+        if (filterW < 100.f) filterW = 100.f;
+        InputFieldOpts fo; fo.width = filterW;
+        InputFieldWithHint("##catfilter", "opt.cat.filter_hint",
+                           s_filter, sizeof(s_filter), fo);
+        // Clear (X) - greyed when empty, mirrors the icon-picker search clear.
+        ImGui::SameLine(0, st.ItemSpacing.x);
+        const bool hasFilter = (s_filter[0] != '\0');
+        if (!hasFilter) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, st.Alpha * 0.30f);
+        if (ImGui::Button("X##catclr", ImVec2(clearW, 0.f)) && hasFilter) s_filter[0] = '\0';
+        if (!hasFilter) ImGui::PopStyleVar();
+        if (hasFilter && ImGui::IsItemHovered()) TooltipText("opt.pick.clear_search");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(sortW);
+        const char* sortItems[] = { L("opt.cat.sort_id"), L("opt.cat.sort_name"),
+                                    L("opt.cat.sort_command") };
+        ImGui::Combo("##catsort", &s_sortMode, sortItems, 3);
+        if (ImGui::IsItemHovered()) TooltipText("opt.cat.sort_tip");
+    }
+
     ImGui::BeginChild("##emotelist", ImVec2(0, 320.f), true);
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
 
-        // Sort indices alphabetically by Id so the visible order is
-        // stable regardless of insertion order. g_Emotes itself stays in
-        // its on-disk order — only the display walks via this index list.
-        std::vector<size_t> order;
-        order.reserve(g_Emotes.size());
-        for (size_t i = 0; i < g_Emotes.size(); ++i) {
-            order.push_back(i);  // every emote shows now — IsCore is editable
+        // Display order = a FILTERED + SORTED index list into g_Emotes, cached and
+        // rebuilt ONLY when the filter text, sort mode, or catalog version changes -
+        // never per frame, never on an in-progress field edit. Sort keys read
+        // COMMITTED values (g_Emotes), so a row never jumps while you type; it
+        // re-sorts after you defocus (which bumps the version via MarkEmotesDirty).
+        // Indices stay valid between rebuilds because add/delete bump the version too.
+        static struct {
+            uint64_t            ver  = (uint64_t)-1;
+            int                 sort = -1;
+            std::string         filt;
+            std::vector<size_t> idx;
+        } s_view;
+        const uint64_t curVer = g_EmoteCatalogVersion.load(std::memory_order_relaxed);
+        if (s_view.ver != curVer || s_view.sort != s_sortMode || s_view.filt != s_filter) {
+            s_view.ver = curVer; s_view.sort = s_sortMode; s_view.filt = s_filter;
+            const std::string needle = ToLower(s_filter);
+            s_view.idx.clear();
+            s_view.idx.reserve(g_Emotes.size());
+            for (size_t i = 0; i < g_Emotes.size(); ++i) {
+                if (!needle.empty()) {
+                    const Emote& e = g_Emotes[i];
+                    bool hit = ToLower(e.Id + " " + e.Name + " " + e.Command)
+                                   .find(needle) != std::string::npos;
+                    if (!hit)
+                        for (const auto& a : e.Aliases)
+                            if (ToLower(a).find(needle) != std::string::npos) { hit = true; break; }
+                    if (!hit) continue;
+                }
+                s_view.idx.push_back(i);
+            }
+            const int sm = s_sortMode;
+            std::stable_sort(s_view.idx.begin(), s_view.idx.end(), [sm](size_t a, size_t b) {
+                const Emote& ea = g_Emotes[a]; const Emote& eb = g_Emotes[b];
+                if (sm == 1) { std::string na = ToLower(ea.Name), nb = ToLower(eb.Name);
+                               if (na != nb) return na < nb; return ea.Id < eb.Id; }
+                if (sm == 2) { if (ea.Command != eb.Command) return ea.Command < eb.Command;
+                               return ea.Id < eb.Id; }
+                return ea.Id < eb.Id;
+            });
         }
-        std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
-            return g_Emotes[a].Id < g_Emotes[b].Id;
-        });
+        const std::vector<size_t>& order = s_view.idx;
+
+        // Per-id off-screen row culling: only rows in the visible scroll band do
+        // their per-frame widget/string work. State (edit buffers, expand, icon
+        // status) is Id-keyed and untouched by culling, so nothing is lost.
+        static RowCuller s_cull;
+        s_cull.Begin();
 
         // Gold matches the user-category headers in MainPanel — pulls the
         // Id into the same "this is the identifier" visual language the
         // user is already used to.
         const ImVec4 kCmdColor(0.92f, 0.78f, 0.32f, 1.f);
 
-        // Per-frame collision counts over the stored commands/names. The
+        // Collision counts over the stored commands/names (cached - see below). The
         // per-row "another emote shares this command/name" checks used to call
         // CommandCollidesWith / NameCollidesWith, each an O(N) scan of
         // g_Emotes - O(N^2) once many rows are expanded. Counting once is O(N)
@@ -380,13 +408,36 @@ void RenderEmotesTab() {
         // commit sites update these counts (--old, ++new) before mutating the
         // emote, so a later row this frame sees the change just as the scan
         // would have.
-        std::unordered_map<std::string, int> cmdCounts, nameCounts;
-        cmdCounts.reserve(g_Emotes.size());
-        nameCounts.reserve(g_Emotes.size());
-        for (const auto& em : g_Emotes) {
-            ++cmdCounts[em.Command];
-            ++nameCounts[em.Name];
+        // Cached: rebuilt only when the catalog version changes, NOT per frame.
+        // Rebuilding three string-keyed hash maps every frame was O(N) heap churn
+        // even with every row collapsed - a periodic allocator spike. A mid-loop
+        // commit bumps the version (MarkEmotesDirty) so the fresh rebuild lands next
+        // frame; the commit sites still live-adjust the counts below for the rest of
+        // THIS frame, exactly as the per-frame rebuild used to be observed.
+        static std::unordered_map<std::string, int> cmdCounts, nameCounts, kwOwners;
+        static uint64_t s_countsVer = (uint64_t)-1;
+        const bool rebuildCounts = (s_countsVer != curVer);
+        if (rebuildCounts) {
+            s_countsVer = curVer;
+            cmdCounts.clear(); nameCounts.clear(); kwOwners.clear();
+            cmdCounts.reserve(g_Emotes.size());
+            nameCounts.reserve(g_Emotes.size());
+            for (const auto& em : g_Emotes) {
+                ++cmdCounts[em.Command];
+                ++nameCounts[em.Name];
+            }
         }
+
+        // How many emotes use each auto-mote trigger word, for the per-row
+        // "shared with another emote" note. Only ONE emote fires per chat line
+        // (the first in catalog storage order — see core/ChatWatch), so a word on
+        // two emotes silently shadows the later one; this surfaces that. Built once
+        // (read-only; a mid-loop trigger edit is reflected next frame — fine for a
+        // soft note, unlike the cmd/name counts that drive validation).
+        if (rebuildCounts)
+            for (const auto& em : g_Emotes)
+                for (const auto& kw : em.AutoKeywords)
+                    ++kwOwners[kw];
         auto sharesValue = [](const std::unordered_map<std::string, int>& counts,
                               const std::string& value, bool selfCounted) {
             auto it = counts.find(value);
@@ -400,14 +451,21 @@ void RenderEmotesTab() {
         // inputs scale with the panel and can't overflow its right edge.
         float labelColW = 0.f;
         for (const char* k : { "opt.em.lbl_command", "opt.em.lbl_name",
-                               "opt.em.lbl_aliases", "opt.em.lbl_flags",
-                               "opt.em.lbl_icon" })
+                               "opt.em.lbl_aliases", "opt.am.lbl_keywords",
+                               "opt.em.lbl_flags", "opt.em.lbl_icon" })
             labelColW = std::max(labelColW, ImGui::CalcTextSize(L(k)).x);
         labelColW += ImGui::GetStyle().FramePadding.x * 2.f;
 
         for (size_t idx : order) {
             Emote& e = g_Emotes[idx];
             const std::string rowKey = e.Id;
+
+            // Expand/Collapse all must reach EVERY row, even ones about to be culled.
+            if (s_setAllOpen != 0) s_rowOpen[rowKey] = (s_setAllOpen > 0);
+            // Cull off-screen rows: skip all per-row work (a spacer keeps the scroll
+            // height). The actively-edited row is never culled (see EndRow below).
+            if (!s_cull.BeginRow(rowKey)) continue;
+            bool rowActive = false;   // set from the body's field-active flags
 
             RowBuffer& rb = s_rowBufs[rowKey];
             if (!rb.initialized) {
@@ -418,6 +476,13 @@ void RenderEmotesTab() {
                     if (!rb.aliases.empty()) rb.aliases += ' ';
                     rb.aliases += a;
                 }
+                rb.autoKeywords.clear();  // join the emote's chat triggers, space-separated
+                for (const auto& k : e.AutoKeywords) {
+                    if (!rb.autoKeywords.empty()) rb.autoKeywords += ' ';
+                    rb.autoKeywords += k;
+                }
+                rb.wikiSlug   = e.WikiSlug;
+                rb.unlockItem = e.UnlockItem ? std::to_string(e.UnlockItem) : std::string();
                 rb.initialized = true;
             }
 
@@ -504,13 +569,12 @@ void RenderEmotesTab() {
                 bool cmdDirty = (trimmedCmd != e.Command);
                 char cmdBuf[64];
                 strncpy_s(cmdBuf, sizeof(cmdBuf), rb.command.c_str(), _TRUNCATE);
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                if (ImGui::InputTextWithHint("##command", L("opt.em.cmd_hint"),
-                                              cmdBuf, sizeof(cmdBuf))) {
+                bool cmdActive = false, cmdHovered = false;
+                if (InputFieldWithHint("##command", "opt.em.cmd_hint",
+                                       cmdBuf, sizeof(cmdBuf), {}, &cmdActive, &cmdHovered)) {
                     rb.command = cmdBuf;
                 }
-                bool cmdActive = ImGui::IsItemActive();
-                if (ImGui::IsItemHovered())
+                if (cmdHovered)
                     TooltipText("opt.em.cmd_field_tooltip");
                 if (cmdDirty && !trimmedCmd.empty() && !cmdActive) {
                     // Normalize on commit (leading '/' etc.) so an edited command
@@ -545,22 +609,20 @@ void RenderEmotesTab() {
                                                              e.Name == trimmedName));
                 char nameBuf[64];
                 strncpy_s(nameBuf, sizeof(nameBuf), rb.name.c_str(), _TRUNCATE);
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                if (nameInvalid) PushInvalidInputStyle();
-                if (ImGui::InputTextWithHint("##name", L("opt.em.name_hint"),
-                                              nameBuf, sizeof(nameBuf))) {
-                    rb.name = nameBuf;
+                bool nameActive = false, nameHovered = false;
+                {
+                    InputFieldOpts o; o.invalid = nameInvalid;
+                    if (InputFieldWithHint("##name", "opt.em.name_hint",
+                                           nameBuf, sizeof(nameBuf), o, &nameActive, &nameHovered)) {
+                        rb.name = nameBuf;
+                    }
                 }
-                bool nameActive = ImGui::IsItemActive();
-                if (nameInvalid) {
-                    PopInvalidInputStyle();
-                    DrawInvalidInputBorder();
-                }
-                if (nameInvalid && ImGui::IsItemHovered()) {
+                if (nameInvalid && nameHovered) {
                     if (trimmedName.empty()) {
                         TooltipText("common.name_empty");
                     } else {
-                        ImGui::SetTooltip(L("opt.em.name_dup"), trimmedName.c_str());
+                        char m[160]; std::snprintf(m, sizeof m, L("opt.em.name_dup"), trimmedName.c_str());
+                        TooltipTextRaw(m);
                     }
                 }
                 // Auto-commit: dirty + valid + not currently being edited.
@@ -583,14 +645,14 @@ void RenderEmotesTab() {
                 {
                     char aliasBuf[256];
                     strncpy_s(aliasBuf, sizeof(aliasBuf), rb.aliases.c_str(), _TRUNCATE);
-                    ImGui::SetNextItemWidth(-FLT_MIN);
-                    if (ImGui::InputTextWithHint("##aliases", L("opt.em.aliases_hint"),
-                                                 aliasBuf, sizeof(aliasBuf))) {
+                    bool aliasActive = false, aliasHovered = false;
+                    if (InputFieldWithHint("##aliases", "opt.em.aliases_hint",
+                                           aliasBuf, sizeof(aliasBuf), {}, &aliasActive, &aliasHovered)) {
                         rb.aliases = aliasBuf;
                     }
-                    bool aliasActive = ImGui::IsItemActive();
-                    if (ImGui::IsItemHovered())
+                    if (aliasHovered)
                         TooltipText("opt.em.aliases_tooltip");
+                    if (aliasActive) rowActive = true;
                     // Commit when not actively editing: parse the buffer into a
                     // normalized, deduped list (drop empties + the primary command)
                     // and canonicalize the buffer back to the parsed form.
@@ -617,6 +679,88 @@ void RenderEmotesTab() {
                             joined += a;
                         }
                         rb.aliases = joined;
+                    }
+                }
+
+                // ---- Chat triggers (auto-motes) ----
+                // Whole-word, case-insensitive words that auto-fire THIS emote when
+                // they appear in one of your OWN sent chat lines. Space/comma-
+                // separated; lowercased + deduped on commit. Empty = never auto-
+                // fires. Distinct from Aliases (search/unlock slash variants). The
+                // master enable + watched channels live in Options > General; this
+                // field is greyed until auto-motes is enabled there.
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(L("opt.am.lbl_keywords"));
+                ImGui::TableSetColumnIndex(1);
+                {
+                    const bool amOn = g_Settings.AutoMotesEnabled;
+                    if (!amOn) {
+                        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+                        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+                    }
+                    char kwBuf[256];
+                    strncpy_s(kwBuf, sizeof(kwBuf), rb.autoKeywords.c_str(), _TRUNCATE);
+                    bool kwActive = false, kwHovered = false;
+                    {
+                        InputFieldOpts o; o.enabled = amOn;
+                        if (InputFieldWithHint("##autokeywords", "opt.am.keywords_hint",
+                                               kwBuf, sizeof(kwBuf), o, &kwActive, &kwHovered)) {
+                            rb.autoKeywords = kwBuf;
+                        }
+                    }
+                    if (amOn && kwHovered)
+                        TooltipText("opt.am.keywords_tooltip");
+                    if (kwActive) rowActive = true;
+                    // Commit when not actively editing: lowercase + trim each token,
+                    // drop empties, dedupe (first-wins), canonicalize the buffer. A
+                    // no-op while disabled (the input can't change).
+                    if (!kwActive) {
+                        std::vector<std::string> parsed;
+                        std::string tok;
+                        auto flush = [&]() {
+                            std::string t = TrimWhitespace(tok);
+                            tok.clear();
+                            if (t.empty()) return;
+                            std::transform(t.begin(), t.end(), t.begin(),
+                                           [](unsigned char c){ return (char)std::tolower(c); });
+                            if (std::find(parsed.begin(), parsed.end(), t) == parsed.end())
+                                parsed.push_back(std::move(t));
+                        };
+                        for (char ch : rb.autoKeywords) {
+                            if (ch == ' ' || ch == '\t' || ch == ',') flush();
+                            else tok += ch;
+                        }
+                        flush();
+                        if (parsed != e.AutoKeywords) { e.AutoKeywords = parsed; emoteEdited = true; }
+                        std::string joined;
+                        for (const auto& k : parsed) {
+                            if (!joined.empty()) joined += ' ';
+                            joined += k;
+                        }
+                        rb.autoKeywords = joined;
+                    }
+                    if (!amOn) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
+
+                    // Shared-trigger note: any of this emote's words also set on
+                    // another emote. Only one emote fires per chat line (the first
+                    // in catalog storage order — core/ChatWatch), so a shared word
+                    // silently shadows the later emote. Surfaced as a soft note,
+                    // same idiom as the "shared command" hint above. Shown
+                    // regardless of the toggle — it's a data correctness hint.
+                    std::string shared;
+                    for (const auto& kw : e.AutoKeywords) {
+                        auto it = kwOwners.find(kw);
+                        if (it != kwOwners.end() && it->second > 1) {
+                            if (!shared.empty()) shared += ", ";
+                            shared += kw;
+                        }
+                    }
+                    if (!shared.empty()) {
+                        ImGui::TextDisabled(L("opt.am.shared_trigger"), shared.c_str());
+                        if (ImGui::IsItemHovered())
+                            TooltipText("opt.am.shared_trigger_tooltip");
                     }
                 }
 
@@ -715,7 +859,7 @@ void RenderEmotesTab() {
                     std::string statusFit = Ellipsize(ics.text, availW);
                     ImGui::TextDisabled("%s", statusFit.c_str());
                     if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", ics.text.c_str());
+                        TooltipTextRaw(ics.text.c_str());
                 }
                 // In-app icon picker (visual grid). The OS "From file..." dialog
                 // was removed once the picker landed: it pulls from every bundled
@@ -759,6 +903,74 @@ void RenderEmotesTab() {
                         TooltipText("opt.em.clear_icon_tooltip");
                 }
 
+                // ---- Wiki slug ----
+                // URL path segment of the emote's wiki page (powers the "Copy wiki
+                // link" cell menu; appended to the GW2 wiki /wiki/ base). Seeded for
+                // bundled unlockables; editable for any emote. Sanitized on commit:
+                // trim + drop a pasted "<host>/wiki/" prefix and leading slash.
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(L("opt.em.lbl_wiki_slug"));
+                ImGui::TableSetColumnIndex(1);
+                {
+                    char slugBuf[256];
+                    strncpy_s(slugBuf, sizeof(slugBuf), rb.wikiSlug.c_str(), _TRUNCATE);
+                    bool slugActive = false, slugHovered = false;
+                    if (InputFieldWithHint("##wikislug", "opt.em.wiki_slug_hint",
+                                           slugBuf, sizeof(slugBuf), {}, &slugActive, &slugHovered)) {
+                        rb.wikiSlug = slugBuf;
+                    }
+                    if (slugHovered) TooltipText("opt.em.wiki_slug_tooltip");
+                    if (slugActive) rowActive = true;
+                    if (!slugActive) {
+                        std::string s = TrimWhitespace(rb.wikiSlug);
+                        size_t w = s.rfind("/wiki/");          // strip a pasted full URL
+                        if (w != std::string::npos) s = s.substr(w + 6);
+                        while (!s.empty() && s.front() == '/') s.erase(0, 1);
+                        if (s != e.WikiSlug) { e.WikiSlug = s; emoteEdited = true; }
+                        rb.wikiSlug = s;
+                    }
+                }
+
+                // ---- Unlock item ----
+                // GW2 API item id of the unlock tome (reference data; 0 = none).
+                // Digits only (<=9); empty clears to 0.
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(L("opt.em.lbl_unlock_item"));
+                ImGui::TableSetColumnIndex(1);
+                {
+                    std::string trimmed = TrimWhitespace(rb.unlockItem);
+                    bool invalid = !trimmed.empty() &&
+                                   (trimmed.find_first_not_of("0123456789") != std::string::npos ||
+                                    trimmed.size() > 9);
+                    char idBuf[16];
+                    strncpy_s(idBuf, sizeof(idBuf), rb.unlockItem.c_str(), _TRUNCATE);
+                    bool idActive = false, idHovered = false;
+                    {
+                        InputFieldOpts o; o.invalid = invalid;
+                        if (InputFieldWithHint("##unlockitem", "opt.em.unlock_item_hint",
+                                               idBuf, sizeof(idBuf), o, &idActive, &idHovered)) {
+                            rb.unlockItem = idBuf;
+                        }
+                    }
+                    if (idHovered)
+                        TooltipText(invalid ? "opt.em.unlock_item_invalid"
+                                            : "opt.em.unlock_item_tooltip");
+                    if (idActive) rowActive = true;
+                    if (!idActive && !invalid) {
+                        int val = trimmed.empty() ? 0 : std::stoi(trimmed);
+                        if (val != e.UnlockItem) { e.UnlockItem = val; emoteEdited = true; }
+                        rb.unlockItem = val ? std::to_string(val) : std::string();
+                    }
+                }
+
+                // (rowActive was OR'd from each field's active flag where it's in
+                // scope, above — command/name here, aliases/triggers in their blocks.)
+                rowActive = rowActive || cmdActive || nameActive;
+
                 ImGui::EndTable();
             }
 
@@ -771,6 +983,7 @@ void RenderEmotesTab() {
             ImGui::Separator();
             ImGui::Spacing();
             ImGui::PopID();
+            s_cull.EndRow(rowKey, rowActive);   // measure height; flag active edit
         }
     }
     ImGui::EndChild();
@@ -787,30 +1000,38 @@ void RenderEmotesTab() {
                                      // stays if a staged radial wheel still refs it)
     }
 
-    // Prune buffers whose emote no longer exists. Bounded scan; map is small.
-    // Keyed by Id, and covers every emote (core included) so an in-progress
-    // edit isn't pruned out from under the user.
+    // Prune UI state (edit buffers / icon status / expand flags) for emotes that no
+    // longer exist. Keyed by Id, and covers every emote (core included) so an
+    // in-progress edit isn't pruned out from under the user. Gated on the catalog
+    // version: ids only appear/vanish on add/delete/reload, each of which bumps it,
+    // so an unchanged catalog skips the whole O(N) live-set build + three map walks
+    // (that ran every frame before - a periodic allocator spike even when idle).
     {
         std::lock_guard<std::mutex> lk(g_EmotesMutex);
-        std::set<std::string> live;
-        for (const auto& e : g_Emotes) live.insert(e.Id);
-        for (auto it = s_rowBufs.begin(); it != s_rowBufs.end(); ) {
-            if (live.find(it->first) == live.end())
-                it = s_rowBufs.erase(it);
-            else
-                ++it;
-        }
-        for (auto it = s_iconStatus.begin(); it != s_iconStatus.end(); ) {
-            if (live.find(it->first) == live.end())
-                it = s_iconStatus.erase(it);
-            else
-                ++it;
-        }
-        for (auto it = s_rowOpen.begin(); it != s_rowOpen.end(); ) {
-            if (live.find(it->first) == live.end())
-                it = s_rowOpen.erase(it);
-            else
-                ++it;
+        static uint64_t s_prunedVer = (uint64_t)-1;
+        const uint64_t curV = g_EmoteCatalogVersion.load(std::memory_order_relaxed);
+        if (s_prunedVer != curV) {
+            s_prunedVer = curV;
+            std::set<std::string> live;
+            for (const auto& e : g_Emotes) live.insert(e.Id);
+            for (auto it = s_rowBufs.begin(); it != s_rowBufs.end(); ) {
+                if (live.find(it->first) == live.end())
+                    it = s_rowBufs.erase(it);
+                else
+                    ++it;
+            }
+            for (auto it = s_iconStatus.begin(); it != s_iconStatus.end(); ) {
+                if (live.find(it->first) == live.end())
+                    it = s_iconStatus.erase(it);
+                else
+                    ++it;
+            }
+            for (auto it = s_rowOpen.begin(); it != s_rowOpen.end(); ) {
+                if (live.find(it->first) == live.end())
+                    it = s_rowOpen.erase(it);
+                else
+                    ++it;
+            }
         }
     }
 
@@ -819,6 +1040,112 @@ void RenderEmotesTab() {
         MarkEmotesDirty();
     }
     if (keybindEdited) SyncEmoteBinds();  // register/deregister the toggled bind
+
+    // ---- "Add to catalog" inline input (BELOW the list, to declutter it) ----
+    //
+    // The everyday action (add one emote). Mirrors the "+ Category" UX in
+    // MainPanel: a slash-prefixed command with live validation. The stable Id is
+    // derived from the command stem (lowercased, no slash) and is the uniqueness
+    // constraint - the red border / hard block fires on an Id collision. A command
+    // that duplicates another emote's is allowed (Id is the key), soft note only.
+    OptionsSection(L("opt.sec.add_emote"));
+    {
+        static char newIdBuf[64]  = {};
+        static char newCmdBuf[64] = {};
+
+        // The Id is the stable catalog key (favorites, unlock state, icon/texture
+        // keys), so it's the primary input now - sanitized to [a-z0-9_]. The
+        // Command (what's sent) is separate and optional: blank -> "/<id>".
+        std::string id = NormalizeEmoteId(std::string(newIdBuf));
+        bool hasId = !id.empty();
+        bool idDup = false, idReserved = false;
+        if (hasId) {
+            idReserved = IsBundledEmoteId(id);   // can't shadow a built-in emote
+            std::lock_guard<std::mutex> lk(g_EmotesMutex);
+            idDup = IdCollidesWith(id, nullptr);
+        }
+        bool idInvalid = hasId && (idDup || idReserved);
+
+        std::string cmdRaw  = TrimWhitespace(std::string(newCmdBuf));
+        std::string command = cmdRaw.empty() ? (hasId ? "/" + id : std::string())
+                                             : NormalizeEmoteCommand(cmdRaw);
+        bool cmdDup = false;
+        if (hasId && !command.empty()) {
+            std::lock_guard<std::mutex> lk(g_EmotesMutex);
+            cmdDup = CommandCollidesWith(command, nullptr);
+        }
+
+        // --- Id (required) ---
+        bool idHovered = false;
+        {
+            InputFieldOpts o; o.invalid = idInvalid; o.width = 180.f;
+            InputFieldWithHint("##newid", "opt.em.id_hint",
+                               newIdBuf, sizeof(newIdBuf), o, nullptr, &idHovered);
+        }
+        if (idHovered) {
+            if (idReserved) {
+                char m[200]; std::snprintf(m, sizeof m, L("opt.em.id_reserved"), id.c_str());
+                TooltipTextRaw(m);
+            } else if (idDup) {
+                char m[160]; std::snprintf(m, sizeof m, L("opt.em.id_exists"), id.c_str());
+                TooltipTextRaw(m);
+            } else {
+                TooltipText("opt.em.id_tooltip");
+            }
+        }
+
+        // --- Command (optional; defaults to /<id>) ---
+        bool cmdHovered = false;
+        {
+            InputFieldOpts o; o.width = 180.f;
+            InputFieldWithHint("##newcmd", "opt.em.newcmd_hint",
+                               newCmdBuf, sizeof(newCmdBuf), o, nullptr, &cmdHovered);
+        }
+        if (cmdHovered) TooltipText("opt.em.newcmd_tooltip");
+
+        ImGui::SameLine();
+        bool addEnabled = hasId && !idInvalid;
+        if (!addEnabled) {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.45f);
+        }
+        bool addPressed = ImGui::Button(L("opt.em.add_button"));
+        if (!addEnabled) {
+            ImGui::PopStyleVar();
+            ImGui::PopItemFlag();
+        }
+        if (addEnabled && cmdDup) {
+            ImGui::TextDisabled(L("opt.em.shared_note"), command.c_str());
+        }
+        if (addPressed && addEnabled) {
+            std::string baseName = TitleCaseStem(command);
+            std::string finalName = baseName;
+            {
+                std::lock_guard<std::mutex> lk(g_EmotesMutex);
+                for (int n = 2; n < 1000; ++n) {
+                    bool dup = false;
+                    for (const auto& other : g_Emotes)
+                        if (other.Name == finalName) { dup = true; break; }
+                    if (!dup) break;
+                    finalName = baseName + " " + std::to_string(n);
+                }
+                Emote e;
+                e.Id           = id;
+                e.Command      = command;
+                e.Name         = finalName;
+                e.IsCore       = false;
+                e.IsTargetable = false;
+                e.IsMadKing    = false;
+                g_Emotes.push_back(std::move(e));
+            }
+            LOG_INFO("Added emote id=%s command=%s (\"%s\")",
+                     id.c_str(), command.c_str(), finalName.c_str());
+            RequestSave(SaveKind::Emotes);
+            MarkEmotesDirty();
+            newIdBuf[0] = '\0';
+            newCmdBuf[0] = '\0';
+        }
+    }
 
     // ===== Bundled emotes (uncommon: reseed) =====
     // Bottom of the tab, next to Clear catalog: both are catalog-wide

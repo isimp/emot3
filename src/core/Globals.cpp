@@ -17,6 +17,7 @@ std::string g_RadialsDir;
 
 std::atomic<uint64_t> g_EmoteCatalogVersion { 0 };
 std::atomic<uint64_t> g_MeMotesVersion      { 0 };
+std::atomic<uint64_t> g_UiViewRevision      { 0 };
 
 bool                     g_PromptNewBundledEmotes = false;
 std::vector<std::string> g_NewBundledEmoteIds;

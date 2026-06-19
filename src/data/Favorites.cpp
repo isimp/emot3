@@ -60,6 +60,7 @@ void AddRefToCategory(int catIdx, EFavoriteRefType type, const std::string& id,
     }
     g_Settings.FavoriteCategories[catIdx].Refs.push_back(FavoriteRef{ type, id });
     RequestSave(SaveKind::Settings);
+    if (curr < 0) MarkUiViewDirty();   // a genuine NEW favorite (a move leaves the union intact)
 }
 
 void RemoveRefFromCategories(EFavoriteRefType type, const std::string& id) {
@@ -73,7 +74,52 @@ void RemoveRefFromCategories(EFavoriteRefType type, const std::string& id) {
                        cat.Refs.end());
         if (cat.Refs.size() != before) changed = true;
     }
-    if (changed) RequestSave(SaveKind::Settings);
+    if (changed) { RequestSave(SaveKind::Settings); MarkUiViewDirty(); }
+}
+
+// ---- Positional ref helpers (back the Library drag-drop) -------------------
+// Keep ALL favorites mutation in this file so the UI-view bump + the Settings
+// save live in one place per operation (the drag-drop used to edit .Refs directly
+// in ui/Cells.cpp, bypassing both - the bypass that made the bump count fragile).
+
+void InsertRefAt(int catIdx, int pos, EFavoriteRefType type, const std::string& id) {
+    if (catIdx < 0 || catIdx >= (int)g_Settings.FavoriteCategories.size()) return;
+    auto& d = g_Settings.FavoriteCategories[catIdx].Refs;
+    for (const auto& r : d) if (RefEquals(r, type, id)) return;   // already present here
+    int ins = std::max(0, std::min(pos, (int)d.size()));
+    d.insert(d.begin() + ins, FavoriteRef{ type, id });
+    LOG_DEBUG("favorites: inserted %s %s into \"%s\" at %d", TypeTag(type), id.c_str(),
+              g_Settings.FavoriteCategories[catIdx].Name.c_str(), ins);
+    RequestSave(SaveKind::Settings);
+    MarkUiViewDirty();   // a NEW favorite -> the favorited-id union grew
+}
+
+void MoveRefWithinCategory(int catIdx, int fromIdx, int toPos) {
+    if (catIdx < 0 || catIdx >= (int)g_Settings.FavoriteCategories.size()) return;
+    auto& v = g_Settings.FavoriteCategories[catIdx].Refs;
+    if (fromIdx < 0 || fromIdx >= (int)v.size()) return;
+    FavoriteRef moved = v[fromIdx];
+    v.erase(v.begin() + fromIdx);
+    // The erase shifts every slot after fromIdx down by one, so a gap past the
+    // removed item lands one slot earlier than its raw index.
+    int ins = (toPos > fromIdx) ? toPos - 1 : toPos;
+    ins = std::max(0, std::min(ins, (int)v.size()));
+    v.insert(v.begin() + ins, std::move(moved));
+    RequestSave(SaveKind::Settings);   // union unchanged -> no MarkUiViewDirty
+}
+
+void MoveRefAcrossCategories(int srcCat, int srcIdx, int dstCat, int toPos) {
+    auto& cats = g_Settings.FavoriteCategories;
+    int n = (int)cats.size();
+    if (srcCat < 0 || srcCat >= n || dstCat < 0 || dstCat >= n) return;
+    auto& s = cats[srcCat].Refs;
+    if (srcIdx < 0 || srcIdx >= (int)s.size()) return;
+    FavoriteRef moved = s[srcIdx];
+    s.erase(s.begin() + srcIdx);
+    auto& d = cats[dstCat].Refs;   // distinct vector; the erase doesn't shift toPos
+    int ins = std::max(0, std::min(toPos, (int)d.size()));
+    d.insert(d.begin() + ins, std::move(moved));
+    RequestSave(SaveKind::Settings);   // id stays favorited -> no MarkUiViewDirty
 }
 
 bool CategoryNameExists(const std::string& name, int excludeIdx) {
@@ -103,6 +149,7 @@ void DeleteFavoriteCategory(int idx) {
         LOG_DEBUG("favorites: quickbar active category index %d -> %d (after delete)",
                   prevActive, active);
     RequestSave(SaveKind::Settings);
+    if (count > 0) MarkUiViewDirty();   // dropped refs -> the favorited-id union shrank
 }
 
 void MoveFavoriteCategory(int from, int to) {
@@ -190,5 +237,19 @@ void ReconcileFavoritesWithCatalog() {
     if (stale > 0)
         LOG_INFO("Catalog reconcile: %d stale id(s) logged, none removed", stale);
 }
+
+#ifdef EMOT3_DEVTOOLS
+#include "DevStateInspector.h"
+// Runtime-inspector section: favorites categories + ref tallies (emote vs /me-mote).
+static DevStateRegistrar s_favSection(DevStateCat::Content, "Favorites", [] {
+    int emoteRefs = 0, meRefs = 0;
+    for (const auto& c : g_Settings.FavoriteCategories)
+        for (const auto& r : c.Refs)
+            (r.Type == EFavoriteRefType::Emote ? emoteRefs : meRefs)++;
+    DevStateRow("categories",      "%d", (int)g_Settings.FavoriteCategories.size());
+    DevStateRow("refs",            "%d  (%d emote, %d /me-mote)", emoteRefs + meRefs, emoteRefs, meRefs);
+    DevStateRow("active category", "%d", g_Settings.QuickbarCategoryIdx);
+});
+#endif  // EMOT3_DEVTOOLS
 
 

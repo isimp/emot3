@@ -21,7 +21,7 @@
 
 // Why the player currently can't emote. None = usable. Mounted comes from MumbleLink;
 // Airborne (jumps + falls) is MumbleLink-derived (height velocity) under its own
-// QuickbarAirborneDetection opt-in; the rest require RTAPI + the precise-detection opt-in.
+// BlockWhileAirborne opt-in; the rest require RTAPI + the precise-detection opt-in.
 enum class EmoteBlock {
     None = 0,
     Mounted,
@@ -40,11 +40,12 @@ extern EmoteBlock g_QbBlockReason;
 
 // The unified "why this Quickbar emote can't be used this frame" i18n key, or
 // nullptr when usable. Written by QuickbarRender, read by RenderEmoteCell for the
-// grey + dim + right-click hint + click feedback. Covers all sources when greying
-// is active (QuickbarGreyUnusable): the game-state blocks (mounted / airborne /
+// grey + dim + right-click hint + click feedback. Covers all sources when blocking
+// is active (BlockUnusableEmotes): the game-state blocks (mounted / airborne /
 // RTAPI states) plus the transient send refusals (text box focused, or moving / a
-// key held, via CurrentSendBusy). The chosen interaction (QuickbarUnusableBehavior grey/hide) applies to whichever
-// fired. One key for every consumer = no scattered reason logic.
+// key held, via CurrentSendBusy). The chosen presentation (QuickbarUnusableDisplay
+// grey/hide/normal) applies to whichever fired. One key for every consumer = no
+// scattered reason logic.
 extern const char* g_QbUnusableKey;
 
 // Resolve the RTAPI DataLink + subscribe to addon load/unload so the pointer
@@ -66,9 +67,9 @@ bool RTApiConnected();
 // the RTAPI plumbing (which stays here).
 uint32_t RTApiCharacterStateBits();
 
-// The current can't-emote reason, honoring settings: None unless QuickbarGreyUnusable is
-// on; Mounted whenever mounted; the RTAPI states only when QuickbarPreciseStateDetection
-// is on AND RTAPI is connected; Airborne (jumps + falls) when QuickbarAirborneDetection is
+// The current can't-emote reason, honoring settings: None unless BlockUnusableEmotes is
+// on; Mounted whenever mounted; the RTAPI states only when PreciseStateDetection
+// is on AND RTAPI is connected; Airborne (jumps + falls) when BlockWhileAirborne is
 // on (its own toggle, MumbleLink-derived, RTAPI not required), reported only when no
 // more-specific RTAPI state applies.
 EmoteBlock CurrentEmoteBlock();

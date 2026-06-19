@@ -14,7 +14,6 @@
 #include "Profiling.h"       // PROFILE_SCOPE macro (no-op without EMOT3_DEVTOOLS)
 
 #include "imgui/imgui.h"
-#include "imgui/imgui_internal.h"  // PushItemFlag / ImGuiItemFlags_Disabled
 
 #include <algorithm>   // std::max (reset-usage modal button sizing)
 #include <string>
@@ -23,23 +22,6 @@
 
 void RenderGeneralOptionsTab() {
     PROFILE_SCOPE("opt.general");  // dev perf overlay
-
-    // Plus-only: a newer release is available. The public build auto-updates via
-    // Nexus; the Plus build is manual, so surface a banner with the releases link +
-    // a "copy link" button (we copy rather than open a browser - keeps the player
-    // in-game). PlusUpdateAvailable() is a false stub in non-Plus builds, so this
-    // whole block compiles away there.
-    if (PlusUpdateAvailable()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
-        ImGui::TextWrapped(L("opt.gen.update_available"), PlusLatestVersion().c_str());
-        ImGui::PopStyleColor();
-        ImGui::TextDisabled("%s", ReleasesUrl());
-        if (ImGui::Button(L("opt.gen.update_copy")))
-            ImGui::SetClipboardText(ReleasesUrl());
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-    }
 
     // Primary visibility toggle at the top of the tab - same
     // affordance as the Quickbar tab's main toggle, same primary-
@@ -64,6 +46,35 @@ void RenderGeneralOptionsTab() {
     ImGui::TextDisabled("%s", g_Settings.ShowWindow ? L("opt.currently_visible")
                                                     : L("opt.currently_hidden"));
     ImGui::Spacing();
+
+#ifdef EMOT3_PLUS
+    // ===== Updates (Plus only) =====
+    // The base build auto-updates through Nexus (incl. its per-addon
+    // AllowPrereleases channel); Plus is Provider=None, so it runs its own
+    // notifier (UpdateCheck) and carries its own preview-build opt-in, which
+    // Nexus' toggle can't reach. Kept right under the visibility toggle so the
+    // "update available" banner and the opt-in that governs it sit together near
+    // the top. Compiles away entirely in base builds (the whole block is gated,
+    // and the calls are stubs there).
+    OptionsSection(L("opt.sec.updates"));
+    // A newer release was found: surface the releases link + a "copy link" button
+    // (we copy rather than open a browser - keeps the player in-game).
+    if (PlusUpdateAvailable()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 0.35f, 1.0f));
+        ImGui::TextWrapped(L("opt.gen.update_available"), PlusLatestVersion().c_str());
+        ImGui::PopStyleColor();
+        ImGui::TextDisabled("%s", ReleasesUrl());
+        if (ImGui::Button(L("opt.gen.update_copy")))
+            ImGui::SetClipboardText(ReleasesUrl());
+        ImGui::Spacing();
+    }
+    // Opt into being notified about preview / beta prereleases too. Toggling
+    // re-arms the check so a pending beta surfaces without a reload.
+    if (PlusCheckbox("opt.gen.notify_prereleases", &g_PlusSettings.NotifyPrereleases,
+                     /*defaultIsOn=*/false)) {
+        InitUpdateCheck();  // re-check against the newly selected channel
+    }
+#endif
 
     // ===== Language =====
     OptionsSection(L("opt.sec.language"));
@@ -174,6 +185,25 @@ void RenderGeneralOptionsTab() {
     // ===== Sending =====
     OptionsSection(L("opt.sec.sending"));
 
+    // Global minimum interval between any two sends (anti-spam) - top of the
+    // section. Shown in SECONDS (stored as ms); applies to EVERY surface (clicks,
+    // keybinds, radial, auto-motes) via the shared send gate. Label behind the
+    // slider, saves on release, right-click resets - matching the other sliders.
+    {
+        const float lo = kSendMinIntervalFloorMs / 1000.0f;
+        const float hi = kSendMinIntervalCeilMs  / 1000.0f;
+        float sec = g_Settings.SendMinIntervalMs / 1000.0f;
+        ImGui::SetNextItemWidth(200.f);
+        if (ImGui::SliderFloat(L("opt.gen.send_interval"), &sec, lo, hi, "%.2f s"))
+            g_Settings.SendMinIntervalMs = (uint32_t)(sec * 1000.0f + 0.5f);  // round to ms
+        if (ImGui::IsItemDeactivatedAfterEdit()) RequestSave(SaveKind::Settings);
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+            g_Settings.SendMinIntervalMs = kSendMinIntervalDefaultMs;
+            RequestSave(SaveKind::Settings);
+        }
+        if (ImGui::IsItemHovered()) TooltipText("opt.gen.send_interval_tip");
+    }
+
     CheckboxWithSaveAndTooltip("opt.gen.send_on_click", &g_Settings.SendOnClick, /*defaultIsOn=*/true);
 
     // Independent of SendOnClick — /me-motes commit free-form text to chat,
@@ -206,6 +236,34 @@ void RenderGeneralOptionsTab() {
                  /*defaultIsOn=*/false);
 #endif
 
+    // Block emotes that can't be used right now (mounted, airborne, and - with the
+    // RealTime API - swimming / downed / gliding / ...): refuses the send with a
+    // toast on EVERY surface (panel, right-click, keybind, radial). GLOBAL master.
+    // How the Quickbar PRESENTS a blocked emote (grey / hide / show normally) is a
+    // per-preset setting on the Quickbar tab. Two detection sub-toggles below
+    // extend what counts as "can't be used".
+    CheckboxWithSaveAndTooltip("opt.gen.block_unusable", &g_Settings.BlockUnusableEmotes, /*defaultIsOn=*/true);
+    if (g_Settings.BlockUnusableEmotes) {
+        ImGui::Indent();
+
+        // Airborne (jumps + falls) - its own toggle, MumbleLink-derived (no addon).
+        CheckboxWithSaveAndTooltip("opt.gen.airborne", &g_Settings.BlockWhileAirborne, /*defaultIsOn=*/true);
+
+        CheckboxWithSaveAndTooltip("opt.gen.precise_state", &g_Settings.PreciseStateDetection, /*defaultIsOn=*/true);
+        // Live status: precise detection is a no-op without the RealTime API addon.
+        if (RTApiConnected())
+            ImGui::TextColored(ImVec4(0.45f, 0.80f, 0.45f, 1.f), "%s", L("opt.gen.rtapi_connected"));
+        else
+            ImGui::TextDisabled("%s", L("opt.gen.rtapi_missing"));
+#ifdef EMOT3_DEVTOOLS
+        // Dev-tool raw probe so a "not found" report can be diagnosed in place.
+        // A diagnostic, so it's on the dev-tools axis (EMOT3_DEVTOOLS): present
+        // in Dev/Debug, absent from the public emot3.dll AND emot3_plus.dll.
+        ImGui::TextDisabled("%s", RTApiDebugInfo());
+#endif
+        ImGui::Unindent();
+    }
+
     // ===== Icons =====
     OptionsSection(L("opt.sec.icons"));
 
@@ -226,107 +284,38 @@ void RenderGeneralOptionsTab() {
     // top-right corner — never co-occur, /me-motes are never targetable).
     CheckboxWithSaveAndTooltip("opt.gen.show_me_mote_indicator", &g_Settings.ShowMeMoteIndicator, /*defaultIsOn=*/true);
 
-    // How unusable emotes present on the Quickbar - one dropdown over the two
-    // settings: Grey out / Hide / Do nothing. "Do nothing" is the off state
-    // (QuickbarGreyUnusable=false), which also stops the send gate refusing
-    // game-state blocks, matching the former master toggle. Display order
-    // grey/hide/off; synth index maps to (QuickbarGreyUnusable, behaviour).
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(L("opt.gen.unusable_behavior"));
-    ImGui::SameLine();
-    int uidx = !g_Settings.QuickbarGreyUnusable ? 2
-             : (g_Settings.QuickbarUnusableBehavior == EUnusableBehavior::Hide ? 1 : 0);
-    const char* uItems[] = { L("opt.gen.unusable_grey"), L("opt.gen.unusable_hide"),
-                             L("opt.gen.unusable_off") };
-    ImGui::SetNextItemWidth(160.f);
-    if (ImGui::Combo("##unusable", &uidx, uItems, IM_ARRAYSIZE(uItems))) {
-        g_Settings.QuickbarGreyUnusable = (uidx != 2);
-        if (uidx == 0)      g_Settings.QuickbarUnusableBehavior = EUnusableBehavior::Grey;
-        else if (uidx == 1) g_Settings.QuickbarUnusableBehavior = EUnusableBehavior::Hide;
-        LOG_TRACE("setting general.unusable: grey=%d behavior=%d",
-                  g_Settings.QuickbarGreyUnusable, (int)g_Settings.QuickbarUnusableBehavior);
-        RequestSave(SaveKind::Settings);
-    }
-    if (ImGui::IsItemHovered()) {
-        static const TooltipOption kUnusableOpts[] = {
-            { "opt.gen.unusable_grey", "opt.gen.unusable_grey.desc", true  },
-            { "opt.gen.unusable_hide", "opt.gen.unusable_hide.desc", false },
-            { "opt.gen.unusable_off",  "opt.gen.unusable_off.desc",  false },
-        };
-        TooltipOptions("opt.gen.unusable_intro", kUnusableOpts, IM_ARRAYSIZE(kUnusableOpts));
-    }
-
-    // Detection + the extra sources only matter while the interaction isn't "off";
-    // indent them under it so the grouping reads at a glance.
-    if (g_Settings.QuickbarGreyUnusable) {
-        ImGui::Indent();
-
-        // Airborne (jumps + falls) - its own toggle, MumbleLink-derived (no addon).
-        CheckboxWithSaveAndTooltip("opt.gen.airborne", &g_Settings.QuickbarAirborneDetection, /*defaultIsOn=*/true);
-
-        CheckboxWithSaveAndTooltip("opt.gen.precise_state", &g_Settings.QuickbarPreciseStateDetection, /*defaultIsOn=*/true);
-        // Live status: precise detection is a no-op without the RealTime API addon.
-        if (RTApiConnected())
-            ImGui::TextColored(ImVec4(0.45f, 0.80f, 0.45f, 1.f), "%s", L("opt.gen.rtapi_connected"));
-        else
-            ImGui::TextDisabled("%s", L("opt.gen.rtapi_missing"));
-#ifdef EMOT3_DEVTOOLS
-        // Dev-tool raw probe so a "not found" report can be diagnosed in place.
-        // A diagnostic, so it's on the dev-tools axis (EMOT3_DEVTOOLS): present
-        // in Dev/Debug, absent from the public emot3.dll AND emot3_plus.dll.
-        ImGui::TextDisabled("%s", RTApiDebugInfo());
-#endif
-        // The transient refusals (text box focused, moving / key held) now ride
-        // this same grey/hide automatically - no separate opt-in (see Quickbar.cpp
-        // qb.busy). "Send while moving" (+plus) and "close chat on send" carve out
-        // the movement / textbox cases respectively.
-
-        ImGui::Unindent();
-    }
-
     // (The Unlocks section moved to its own "Unlocks" tab — see OptionsUnlocks.cpp.)
 
-    // ===== Quickbar categories =====
-    // Built-in (synthetic) categories the Quickbar's category bar offers
-    // alongside the user's favorites categories. See Quickbar.cpp.
-    OptionsSection(L("opt.sec.qb_categories"));
+    // Auto-motes (chat triggers) live in their own Options tab now - see
+    // RenderAutoMotesTab below.
 
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_favorites", &g_Settings.QuickbarShowFavoriteCategories, /*defaultIsOn=*/true);
-
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_core", &g_Settings.QuickbarShowCoreCategory, /*defaultIsOn=*/false);
-
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_mad_king", &g_Settings.QuickbarShowMadKingCategory, /*defaultIsOn=*/false);
-
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked", &g_Settings.QuickbarShowUnlockedCategory, /*defaultIsOn=*/false);
-
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_unlocked_all", &g_Settings.QuickbarShowUnlockedAllCategory, /*defaultIsOn=*/true);
-
-    // /me-motes — opt-in like the other built-in categories. Inert until the
-    // Quickbar's category-build code surfaces the /me-mote category (next
-    // checkpoint), but the toggle persists either way.
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_me_motes", &g_Settings.QuickbarShowMeMotesCategory, /*defaultIsOn=*/false);
-
-    // Synthetic usage categories (data/Usage.h) — derived from the usage log,
-    // not editable, so they live only in the Quickbar (no Library section).
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_recently_used", &g_Settings.QuickbarShowRecentlyUsedCategory, /*defaultIsOn=*/false);
-
-    CheckboxWithSaveAndTooltip("opt.gen.qb_cat_frequent", &g_Settings.QuickbarShowFrequentCategory, /*defaultIsOn=*/false);
-
-    // Reset the usage history that feeds the two categories above. Its own section
-    // (like the Catalog tab's "Clear catalog") so the destructive action reads as
-    // separate from the category toggles. Modeled on Clear catalog (destructive
-    // button + centered confirm modal) but a MILDER red - clearing usage is
-    // recoverable (it re-accrues as you use emotes), not the catalog-wipe it rhymes
-    // with.
+    // Reset the usage history that feeds the recently/frequently-used Quickbar
+    // categories (the toggles now live on the Quickbar tab). Its own section (like
+    // the Catalog tab's "Clear catalog") so the destructive action reads as
+    // separate. Modeled on Clear catalog (destructive button + centered confirm
+    // modal) but a MILDER red - clearing usage is recoverable (it re-accrues).
     OptionsSection(L("opt.sec.usage"));
     {
+        // What the usage log drives: the Recently/Frequently used Quickbar categories
+        // + the Palette's zero-query list. Short intro so the filter + reset read in
+        // context.
+        ImGui::TextWrapped("%s", L("opt.gen.usage_intro"));
+        ImGui::Spacing();
+
+        // Filter: exclude /me-motes from the Recently/Frequently used lists. Read-time
+        // filter (usage::RecentlyUsed/Frequent skip them) - immediate + reversible; the
+        // log still records them, so toggling back re-includes them.
+        CheckboxWithSaveAndTooltip("opt.gen.ignore_memotes_usage",
+                                   &g_Settings.IgnoreMeMotesFromUsage, /*defaultIsOn=*/false);
+        ImGui::Spacing();
+
         ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.42f, 0.22f, 0.22f, 0.40f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.58f, 0.28f, 0.28f, 0.70f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.68f, 0.32f, 0.32f, 0.90f));
         if (ImGui::Button(L("opt.gen.reset_usage")))
             ImGui::OpenPopup("###resetusage");
         ImGui::PopStyleColor(3);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", L("opt.gen.reset_usage.tip"));
+        if (ImGui::IsItemHovered()) TooltipText("opt.gen.reset_usage.tip");
 
         std::string resetTitle = std::string(L("opt.gen.reset_usage.title")) + "###resetusage";
         ImVec2 ds = ImGui::GetIO().DisplaySize;

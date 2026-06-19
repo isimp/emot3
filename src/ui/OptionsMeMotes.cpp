@@ -103,6 +103,11 @@ struct MmIconStatus {
 };
 std::unordered_map<std::string, MmIconStatus> s_mmIconStatus;
 
+// Set true by FieldRow / the alias field when their input is focused this frame;
+// the row loop reads it (then resets) to tell the RowCuller this row is being
+// edited, so it's never culled mid-type. File scope so FieldRow can reach it.
+bool s_mmRowActive = false;
+
 // Seed the per-row buffer from the live MeMote. Aliases re-joined with single
 // spaces (matches the catalog's display form).
 void Seed(RowBuffer& rb, const MeMote& m) {
@@ -201,87 +206,25 @@ bool FieldRow(const char* labelKey, const char* hintKey, const char* idSuffix,
     std::memcpy(scratch, buf.data(), copyN);
     scratch[copyN] = 0;
 
-    const ImGuiStyle& st = ImGui::GetStyle();
-
-    // In-field char counter (charBudget > 0): reserve a fixed-width zone on the
-    // right, sized to the worst case so the input edge doesn't jitter, and draw
-    // the count INSIDE the frame there. To keep the field ONE visual element
-    // (uniform hover/active, no seam between input and zone) we draw the frame
-    // background ourselves at full width and render the InputText with a
-    // transparent frame on top. charBudget == 0 fields just get an empty zone.
-    char   countBuf[24] = {0};
-    ImVec4 countColor;
-    bool   over  = false;
-    float  zoneW = 0.f;
-    if (charBudget > 0) {
-        const int n      = (int)buf.size();
-        const int warnAt = (charBudget * 80) / 100;   // 156 for 195
-        over = (n > charBudget);
-        std::snprintf(countBuf, sizeof countBuf, "%d / %d", n, charBudget);
-        if      (n <= warnAt) countColor = st.Colors[ImGuiCol_TextDisabled]; // informational
-        else if (!over)       countColor = ImVec4(0.92f, 0.78f, 0.32f, 1.0f); // amber — getting close
-        else                  countColor = ImVec4(1.0f, 0.45f, 0.40f, 1.0f);  // red   — over the cap
-        char worst[24];
-        std::snprintf(worst, sizeof worst, "%d / %d", charBudget, charBudget);
-        zoneW = ImGui::CalcTextSize(worst).x + st.FramePadding.x * 2.f;
-    }
-
-    const std::string inputId  = std::string("##") + idSuffix;
-    const float       fullW    = ImGui::GetContentRegionAvail().x;
-    const ImVec2      framePos = ImGui::GetCursorScreenPos();
-    const float       frameH   = ImGui::GetFrameHeight();
-    const ImVec2      frameMax(framePos.x + fullW, framePos.y + frameH);
-
-    // One unified frame bg under the whole field. fieldActive tracks live focus,
-    // fieldHovered the WHOLE rect (so the reserved zone lights up with the input,
-    // not just the input half). IsMouseHoveringRect clips to the visible region by
-    // default, so a row scrolled partly out of view won't false-hover.
-    const bool fieldActive  = (ImGui::GetActiveID() == ImGui::GetID(inputId.c_str()));
-    const bool fieldHovered = ImGui::IsMouseHoveringRect(framePos, frameMax);
-    ImU32 frameBg;
-    if (invalid) {   // matches PushInvalidInputStyle (Layout.cpp) by state
-        frameBg = ImGui::ColorConvertFloat4ToU32(
-            fieldActive  ? ImVec4(0.70f, 0.16f, 0.16f, 1.f)
-          : fieldHovered ? ImVec4(0.65f, 0.14f, 0.14f, 1.f)
-                         : ImVec4(0.55f, 0.10f, 0.10f, 1.f));
-    } else {
-        frameBg = ImGui::GetColorU32(fieldActive  ? ImGuiCol_FrameBgActive
-                                   : fieldHovered ? ImGuiCol_FrameBgHovered
-                                                  : ImGuiCol_FrameBg);
-    }
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(framePos, frameMax, frameBg, st.FrameRounding, ImDrawCornerFlags_All);
-
-    // Input on top, transparent-framed so only our unified bg shows; narrowed by
-    // the zone so typed text never reaches the counter.
-    ImGui::PushStyleColor(ImGuiCol_FrameBg,        IM_COL32(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, IM_COL32(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive,  IM_COL32(0, 0, 0, 0));
-    ImGui::SetNextItemWidth(charBudget > 0 ? (fullW - zoneW) : -FLT_MIN);
-    const char* hint = hintKey ? L(hintKey) : "";
-    if (ImGui::InputTextWithHint(inputId.c_str(), hint, scratch, sizeof(scratch)))
+    // Render through the shared field helper so the catalog and /me-mote editors
+    // look identical (unified frame, hover/active, invalid red+border, in-frame
+    // char counter). The helper reports active/hovered over the WHOLE frame for
+    // the commit-on-defocus + hover tooltips below.
+    const std::string inputId = std::string("##") + idSuffix;
+    InputFieldOpts o;
+    o.invalid    = invalid;
+    o.charBudget = charBudget;
+    bool active = false, hovered = false;
+    if (InputFieldWithHint(inputId.c_str(), hintKey, scratch, sizeof scratch, o,
+                           &active, &hovered))
         buf = scratch;
-    ImGui::PopStyleColor(3);
-    const bool active = ImGui::IsItemActive();
+    if (active) s_mmRowActive = true;   // exempt this row from culling while typing
 
-    // Count, right-aligned inside the reserved zone, vertically centered.
-    if (charBudget > 0) {
-        const ImVec2 tsz = ImGui::CalcTextSize(countBuf);
-        dl->AddText(ImVec2(frameMax.x - st.FramePadding.x - tsz.x,
-                           framePos.y + (frameH - tsz.y) * 0.5f),
-                    ImGui::ColorConvertFloat4ToU32(countColor), countBuf);
-    }
-
-    // Invalid: red border around the full field + explanatory tooltip on hover.
-    if (invalid)
-        dl->AddRect(framePos, frameMax, IM_COL32(255, 80, 80, 255),
-                    st.FrameRounding, ImDrawCornerFlags_All, 2.0f);
-    if (invalid && invalidTooltipKey && fieldHovered)
+    // Invalid: explanatory tooltip on hover (the red border is drawn by the helper).
+    if (invalid && invalidTooltipKey && hovered)
         TooltipText(invalidTooltipKey);
-
-    // Over budget: count is already red; the verbose "will be cut off" note is a
-    // hover hint rather than a reclaimed line.
-    if (charBudget > 0 && over && fieldHovered && !invalid)
+    // Over budget: the counter is already red; the "will be cut off" note is a hover hint.
+    if (charBudget > 0 && (int)buf.size() > charBudget && hovered && !invalid)
         TooltipText("opt.mm.body_truncate_warn");
 
     bool committed = false;
@@ -314,96 +257,68 @@ void RenderMeMotesTab() {
     }
     ImGui::Spacing();
 
-    // ---- "Add to /me-motes" section: inline Id input + Add button -----
-    // Mirrors OptionsEmotes' "Add to catalog" Add input exactly: an
-    // OptionsSection heading, an InputTextWithHint width 180 px, then the
-    // Add button on SameLine. Validation states (empty / collision) paint
-    // the invalid input style + red border + tooltip; Add is disabled
-    // until valid.
-    OptionsSection(L("opt.sec.add_me_mote"));
+    // ("Add to /me-motes" renders BELOW the list now - see the add section after
+    //  EndChild, so the list isn't pushed down by the add input.)
 
-    static char s_newIdBuf[64] = {};
-    std::string rawNew   = s_newIdBuf;
-    std::string normNew  = NormalizeMeMoteId(rawNew);
-    bool newHasInput = !TrimWhitespace(rawNew).empty();
+    // Filter + sort state (declared before the cached view that consumes them).
+    static char s_filter[64] = {};
+    static int  s_sortMode   = 0;   // 0 Id, 1 Name
 
-    bool newIdDup = false;
-    if (newHasInput && !normNew.empty()) {
-        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-        newIdDup = (FindMeMote(normNew) != nullptr);
-    }
-    bool newInvalid = newHasInput && (normNew.empty() || newIdDup);
-
-    ImGui::SetNextItemWidth(180.f);
-    if (newInvalid) PushInvalidInputStyle();
-    ImGui::InputTextWithHint("##new_me_mote_id", L("opt.mm.new_id_hint"),
-                             s_newIdBuf, sizeof(s_newIdBuf));
-    if (newInvalid) {
-        PopInvalidInputStyle();
-        DrawInvalidInputBorder();
-    }
-    if (newInvalid && ImGui::IsItemHovered()) {
-        if (normNew.empty())
-            TooltipText("opt.mm.id_min");
-        else
-            ImGui::SetTooltip(L("opt.mm.id_exists"), normNew.c_str());
-    }
-
-    ImGui::SameLine();
-    bool addEnabled = newHasInput && !newInvalid;
-    if (!addEnabled) {
-        ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha,
-                            ImGui::GetStyle().Alpha * 0.45f);
-    }
-    bool addPressed = ImGui::Button(L("opt.mm.add_button"));
-    if (!addEnabled) {
-        ImGui::PopStyleVar();
-        ImGui::PopItemFlag();
-    }
-    if (addPressed && addEnabled) {
-        std::string newId = normNew;
+    // Cached display view: a filtered + sorted snapshot of {Id, Name, IconPath},
+    // built in ONE mutex pass and rebuilt only on filter / sort / catalog-version
+    // change. The row loop reads this snapshot - no per-row FindMeMote + lock (the
+    // old O(N^2)). All per-row edit/expand/icon state is Id-keyed, so reordering,
+    // filtering, or culling a row never touches it. Sort keys read COMMITTED values,
+    // so a row never jumps while you type (it re-sorts after a defocus bumps ver).
+    struct MmEntry { std::string id, name, iconPath; };
+    static struct {
+        uint64_t             ver   = (uint64_t)-1;
+        int                  sort  = -1;
+        std::string          filt;
+        size_t               total = 0;
+        std::vector<MmEntry> rows;
+    } s_view;
+    const uint64_t curVer    = g_MeMotesVersion.load(std::memory_order_relaxed);
+    const bool     verChanged = (s_view.ver != curVer);
+    if (verChanged || s_view.sort != s_sortMode || s_view.filt != s_filter) {
+        s_view.ver = curVer; s_view.sort = s_sortMode; s_view.filt = s_filter;
+        const std::string needle = ToLower(s_filter);
+        std::unordered_set<std::string> liveAll;
+        s_view.rows.clear();
         {
             std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            MeMote m;
-            m.Id = newId;
-            g_MeMotes.push_back(std::move(m));
+            s_view.total = g_MeMotes.size();
+            liveAll.reserve(g_MeMotes.size());
+            s_view.rows.reserve(g_MeMotes.size());
+            for (const auto& m : g_MeMotes) {
+                liveAll.insert(m.Id);
+                if (!needle.empty()) {
+                    bool hit = ToLower(m.Id + " " + m.Name).find(needle) != std::string::npos;
+                    if (!hit)
+                        for (const auto& a : m.Aliases)
+                            if (ToLower(a).find(needle) != std::string::npos) { hit = true; break; }
+                    if (!hit) continue;
+                }
+                s_view.rows.push_back({ m.Id, m.Name, m.IconPath });
+            }
         }
-        s_rowOpen[newId] = true;     // open the new row for immediate editing
-        LOG_DEBUG("/me-mote added (id=%s)", newId.c_str());
-        Persist();                    // outside the lock
-        s_newIdBuf[0] = '\0';         // clear input on commit
-    }
-
-    // Snapshot Ids under the mutex so per-row work doesn't hold it across
-    // ImGui draws. Sort by Id for stable display order (matches catalog).
-    std::vector<std::string> ids;
-    {
-        std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-        ids.reserve(g_MeMotes.size());
-        for (const auto& m : g_MeMotes) ids.push_back(m.Id);
-    }
-    std::sort(ids.begin(), ids.end());
-
-    // Prune per-row UI state for /me-motes that no longer exist, mirroring
-    // OptionsEmotes' prune pass. Today the Delete button is the only removal
-    // path and it erases both maps, but this keeps them robust against any
-    // future bulk-removal path AND forces a fresh re-Seed after a reload that
-    // repopulated g_MeMotes from disk (otherwise a surviving, initialized
-    // buffer could commit stale text over the freshly-loaded value).
-    {
-        std::unordered_set<std::string> live(ids.begin(), ids.end());
-        for (auto it = s_rowOpen.begin(); it != s_rowOpen.end(); ) {
-            if (live.count(it->first)) ++it;
-            else                       it = s_rowOpen.erase(it);
-        }
-        for (auto it = s_rowBufs.begin(); it != s_rowBufs.end(); ) {
-            if (live.count(it->first)) ++it;
-            else                       it = s_rowBufs.erase(it);
-        }
-        for (auto it = s_mmIconStatus.begin(); it != s_mmIconStatus.end(); ) {
-            if (live.count(it->first)) ++it;
-            else                       it = s_mmIconStatus.erase(it);
+        const int sm = s_sortMode;
+        std::stable_sort(s_view.rows.begin(), s_view.rows.end(),
+            [sm](const MmEntry& a, const MmEntry& b) {
+                if (sm == 1) { std::string na = ToLower(a.name), nb = ToLower(b.name);
+                               if (na != nb) return na < nb; return a.id < b.id; }
+                return a.id < b.id;
+            });
+        // Prune per-row UI state only when the catalog actually changed (delete /
+        // reload), and against ALL ids - never the filtered view.
+        if (verChanged) {
+            auto prune = [&](auto& mp) {
+                for (auto it = mp.begin(); it != mp.end(); ) {
+                    if (liveAll.count(it->first)) ++it;
+                    else                          it = mp.erase(it);
+                }
+            };
+            prune(s_rowOpen); prune(s_rowBufs); prune(s_mmIconStatus);
         }
     }
 
@@ -411,7 +326,7 @@ void RenderMeMotesTab() {
     static int s_setAllOpen = 0;
     {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled(L("opt.mm.count"), (int)ids.size());
+        ImGui::TextDisabled(L("opt.mm.count"), (int)s_view.total);
 
         // Rescan / Expand all / Collapse all, right-aligned together (same as the
         // Emote tab). Rescan re-stats every row so a PNG dropped at icons/<id>.png
@@ -437,6 +352,30 @@ void RenderMeMotesTab() {
         if (ImGui::SmallButton(L("opt.em.collapse_all"))) s_setAllOpen = -1;
     }
 
+    // Filter + sort, pinned above the list (same toolbar as the Emote tab).
+    {
+        const ImGuiStyle& st = ImGui::GetStyle();
+        const float sortW   = 150.f;
+        const float clearW  = ImGui::GetFrameHeight();
+        float       filterW = ImGui::GetContentRegionAvail().x - clearW - sortW
+                              - st.ItemSpacing.x * 2.f;
+        if (filterW < 100.f) filterW = 100.f;
+        InputFieldOpts fo; fo.width = filterW;
+        InputFieldWithHint("##mmfilter", "opt.cat.filter_hint",
+                           s_filter, sizeof(s_filter), fo);
+        ImGui::SameLine(0, st.ItemSpacing.x);
+        const bool hasFilter = (s_filter[0] != '\0');
+        if (!hasFilter) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, st.Alpha * 0.30f);
+        if (ImGui::Button("X##mmclr", ImVec2(clearW, 0.f)) && hasFilter) s_filter[0] = '\0';
+        if (!hasFilter) ImGui::PopStyleVar();
+        if (hasFilter && ImGui::IsItemHovered()) TooltipText("opt.pick.clear_search");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(sortW);
+        const char* sortItems[] = { L("opt.cat.sort_id"), L("opt.cat.sort_name") };
+        ImGui::Combo("##mmsort", &s_sortMode, sortItems, 2);
+        if (ImGui::IsItemHovered()) TooltipText("opt.cat.sort_tip");
+    }
+
     // Width of the shared label column — max of every field-label width so
     // inputs across rows align (matches OptionsEmotes' labelColW pre-calc).
     float labelColW = 0.f;
@@ -453,32 +392,31 @@ void RenderMeMotesTab() {
     // ---- Scrollable bordered fixed-height list -----------------------
     ImGui::BeginChild("##memotelist", ImVec2(0, 320.f), true);
 
-    if (ids.empty()) {
-        ImGui::TextDisabled("%s", L("opt.mm.empty"));
+    if (s_view.rows.empty()) {
+        ImGui::TextDisabled("%s", L(s_view.total == 0 ? "opt.mm.empty"
+                                                      : "opt.cat.no_filter_match"));
         ImGui::EndChild();
         s_setAllOpen = 0;
         return;
     }
 
-    for (const std::string& id : ids) {
-        bool exists = false;
-        std::string displayName;
-        std::string iconPathSnapshot;
-        {
-            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
-            if (const MeMote* m = FindMeMote(id)) {
-                exists = true;
-                displayName       = m->Name.empty() ? id : m->Name;
-                iconPathSnapshot  = m->IconPath;
-            }
-        }
-        if (!exists) continue;
+    static RowCuller s_cull;
+    s_cull.Begin();
+    for (const MmEntry& ent : s_view.rows) {
+        const std::string& id              = ent.id;
+        const std::string& displayName     = ent.name.empty() ? id : ent.name;
+        const std::string& iconPathSnapshot = ent.iconPath;
+
+        // Expand/Collapse all must reach every row, even ones about to be culled.
+        if (s_setAllOpen != 0) s_rowOpen[id] = (s_setAllOpen > 0);
+        // Cull off-screen rows (a spacer keeps the scroll height). The actively-
+        // edited row is never culled - see s_mmRowActive / EndRow below.
+        if (!s_cull.BeginRow(id)) continue;
 
         ImGui::PushID(id.c_str());
+        s_mmRowActive = false;   // FieldRow / the alias field OR into this
 
-        // Apply queued Expand-all / Collapse-all before reading state.
         bool& rowOpen = s_rowOpen[id];
-        if (s_setAllOpen != 0) rowOpen = (s_setAllOpen > 0);
 
         // ---- Row header: ArrowButton + colored Id + Delete -----------
         if (ImGui::ArrowButton("##expand", rowOpen ? ImGuiDir_Down : ImGuiDir_Right))
@@ -508,6 +446,7 @@ void RenderMeMotesTab() {
             ImGui::Separator();
             ImGui::Spacing();
             ImGui::PopID();
+            s_cull.EndRow(id, false);   // collapsed: measure height, not active
             continue;
         }
 
@@ -639,7 +578,7 @@ void RenderMeMotesTab() {
                 std::string fit = Ellipsize(ics.text, availW);
                 ImGui::TextDisabled("%s", fit.c_str());
                 if (ImGui::IsItemHovered() && !iconPathSnapshot.empty())
-                    ImGui::SetTooltip("%s", iconPathSnapshot.c_str());
+                    TooltipTextRaw(iconPathSnapshot.c_str());
 
                 // In-app icon picker (visual grid). The OS "From file..." dialog
                 // was removed once the picker landed: it pulls from every bundled
@@ -703,13 +642,12 @@ void RenderMeMotesTab() {
                 if (copyN >= sizeof(aliasBuf)) copyN = sizeof(aliasBuf) - 1;
                 std::memcpy(aliasBuf, rb.aliases.data(), copyN);
                 aliasBuf[copyN] = 0;
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                if (ImGui::InputTextWithHint("##mm_aliases",
-                                             L("opt.mm.aliases_hint"),
-                                             aliasBuf, sizeof(aliasBuf))) {
+                bool aliasActive = false;
+                if (InputFieldWithHint("##mm_aliases", "opt.mm.aliases_hint",
+                                       aliasBuf, sizeof(aliasBuf), {}, &aliasActive)) {
                     rb.aliases = aliasBuf;
                 }
-                bool aliasActive = ImGui::IsItemActive();
+                if (aliasActive) s_mmRowActive = true;
                 if (!aliasActive) {
                     std::vector<std::string> parsed = ParseAliases(rb.aliases);
                     std::lock_guard<std::mutex> lk(g_MeMotesMutex);
@@ -869,6 +807,7 @@ void RenderMeMotesTab() {
         ImGui::Separator();
         ImGui::Spacing();
         ImGui::PopID();
+        s_cull.EndRow(id, s_mmRowActive);   // measure height; flag active edit
     }
     ImGui::EndChild();
     s_setAllOpen = 0;
@@ -882,6 +821,62 @@ void RenderMeMotesTab() {
         s_rowBufs.erase(deleteId);
         SyncEmoteBinds();            // drop the entry's Nexus InputBinds (all bound
                                      // variants; stays if a staged radial wheel refs it)
+    }
+
+    // ---- "Add to /me-motes" inline input (BELOW the list, to declutter it) ----
+    // Mirrors the Emote tab's "Add to catalog": an Id input + Add button, with
+    // empty/collision validation painting the invalid style; Add disabled until valid.
+    OptionsSection(L("opt.sec.add_me_mote"));
+    {
+        static char s_newIdBuf[64] = {};
+        std::string normNew     = NormalizeMeMoteId(std::string(s_newIdBuf));
+        bool        newHasInput = !TrimWhitespace(std::string(s_newIdBuf)).empty();
+
+        bool newIdDup = false;
+        if (newHasInput && !normNew.empty()) {
+            std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+            newIdDup = (FindMeMote(normNew) != nullptr);
+        }
+        bool newInvalid = newHasInput && (normNew.empty() || newIdDup);
+
+        bool newMmHovered = false;
+        {
+            InputFieldOpts o; o.invalid = newInvalid; o.width = 180.f;
+            InputFieldWithHint("##new_me_mote_id", "opt.mm.new_id_hint",
+                               s_newIdBuf, sizeof(s_newIdBuf), o, nullptr, &newMmHovered);
+        }
+        if (newInvalid && newMmHovered) {
+            if (normNew.empty()) {
+                TooltipText("opt.mm.id_min");
+            } else {
+                char m[160]; std::snprintf(m, sizeof m, L("opt.mm.id_exists"), normNew.c_str());
+                TooltipTextRaw(m);
+            }
+        }
+
+        ImGui::SameLine();
+        bool addEnabled = newHasInput && !newInvalid;
+        if (!addEnabled) {
+            ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.45f);
+        }
+        bool addPressed = ImGui::Button(L("opt.mm.add_button"));
+        if (!addEnabled) {
+            ImGui::PopStyleVar();
+            ImGui::PopItemFlag();
+        }
+        if (addPressed && addEnabled) {
+            const std::string newId = normNew;
+            {
+                std::lock_guard<std::mutex> lk(g_MeMotesMutex);
+                MeMote m; m.Id = newId;
+                g_MeMotes.push_back(std::move(m));
+            }
+            s_rowOpen[newId] = true;     // open the new row for immediate editing
+            LOG_DEBUG("/me-mote added (id=%s)", newId.c_str());
+            Persist();                    // outside the lock
+            s_newIdBuf[0] = '\0';         // clear input on commit
+        }
     }
 
     // ===== Bundled samples (uncommon: reseed) =====

@@ -5,6 +5,12 @@
 #include <unordered_map>
 #include <unordered_set>
 
+// emotes.json schema version this build writes. Lower-versioned files are migrated
+// up on load (see RunEmoteCatalogMigrations in data/migrations/EmoteCatalogMigration.cpp);
+// a fresh file is
+// stamped with this on first save.
+constexpr int kEmotesSchemaVersion = 2;
+
 struct Emote {
     // Id is the stable, language-INDEPENDENT key across the codebase
     // (favorites, ManuallyUnlocked, texture cache key, bundled-icon
@@ -47,6 +53,25 @@ struct Emote {
     // eligible for a RadialMenus wheel. Persisted as "keybind" in emotes.json.
     // See core/EmoteBinds.
     bool UserKeybind = false;
+
+    // Auto-motes (v1.5): chat trigger words. When auto-motes is enabled
+    // (g_Settings.AutoMotesEnabled) and ANY of these appears WHOLE-WORD,
+    // case-insensitive in one of the user's OWN sent chat lines on a watched
+    // channel, this emote auto-fires through the normal send gate. Empty (the
+    // default) = this emote never auto-fires. Stored lowercased + trimmed at
+    // ingress; serialized as "auto_keywords" in emotes.json (omitted when empty).
+    // Distinct from Aliases (which are search/unlock slash-command variants) so
+    // search aliases don't silently become chat triggers. See core/ChatWatch.
+    std::vector<std::string> AutoKeywords;
+
+    // Unlock provenance for bundled unlockable emotes (seeded from the bundled
+    // table; empty/0 for core and user-added emotes). Reference data for the UI -
+    // UnlockItem is the GW2 API item id of the unlock tome; WikiSlug is the wiki
+    // URL path segment of its unlock page (append to <wiki host>/wiki/; powers the
+    // "Copy wiki link" menu). Serialized as "unlock_item"/"wiki_slug" in
+    // emotes.json (omitted when 0/empty), mirroring the bundled emotes_i18n.json.
+    int         UnlockItem = 0;
+    std::string WikiSlug;
 };
 
 // Runtime emote catalog. All emotes (core + unlockable) live here, and
@@ -92,6 +117,11 @@ std::vector<std::string> AvailableEmoteLanguages();
 // new-bundled-emote notifier's snapshot diff (see emot3.md "Bundled-emote
 // notifier").
 std::vector<std::string> AllBundledEmoteIds();
+
+// True if `id` is a reserved bundled emote id (core OR unlockable). Blocks users
+// from creating a custom emote that would shadow a bundled one. Cached set built
+// from the bundled table on first call.
+bool IsBundledEmoteId(const std::string& id);
 
 // Bundle ids that are NEW relative to `known` (a snapshot of bundled ids seen on
 // a prior run) AND not already present in the live catalog. Drives the notifier:
@@ -152,9 +182,47 @@ std::string NormalizeUnlockKey(std::string s);
 // resolve to the stable id. Built once from emotes_i18n.json (then cached).
 struct BundledUnlockInfo {
     std::unordered_set<std::string>              unlockableIds;
-    std::unordered_map<std::string, std::string> normKeyToId;  // norm(key) -> id
+    std::unordered_map<std::string, std::string> normKeyToId;    // norm(key) -> id
+    std::unordered_map<std::string, std::string> wikiSlugById;   // id -> wiki URL path slug
+    std::unordered_map<std::string, int>         unlockItemById; // id -> unlock item id
 };
 const BundledUnlockInfo& GetBundledUnlockInfo();
+
+// Build a full GW2 wiki URL from a stored wiki_slug (Emote::WikiSlug), or "" if the
+// slug is empty. The slug already carries the page's canonical URL encoding. The
+// slug belongs to the emote (seeded / loaded), so callers pass e.WikiSlug rather
+// than re-deriving by id.
+std::string WikiUrl(const std::string& slug);
+
+// Resolved view of one bundled emote, in a chosen language, from a chosen
+// version of the bundled table. `found` is false when the id isn't in that
+// table. Exists to let the emote-catalog migration compare a loaded emote
+// against its v1 vs current bundle defaults WITHOUT exposing the table
+// internals (the LocaleEntry layout / per-language resolver stay private to
+// EmoteData.cpp). See data/migrations/EmoteCatalogMigration.*.
+struct ResolvedBundleEmote {
+    bool        found      = false;
+    std::string command;
+    std::string name;
+    std::string wikiSlug;
+    int         unlockItem = 0;
+    bool        targetable = false;
+    bool        isCore     = false;
+    bool        madKing    = false;
+};
+
+// Resolve bundled emote `id` in `lang` (English fallback) from either the frozen
+// v1 migration snapshot (fromV1 = true) or the current bundle (fromV1 = false),
+// lazily loading the relevant table. The migration runner (RunEmoteCatalogMigrations)
+// is the sole intended caller.
+ResolvedBundleEmote ResolveBundledById(const std::string& id,
+                                       const std::string& lang, bool fromV1);
+
+// Dev-tool (MemoryMonitor) accessors: estimated entry count + heap footprint of the two
+// bundled startup tables (the emote-i18n table behind seeding/search, and the unlock
+// match index). Within ~2x; report 0 until loaded/built. Only called under EMOT3_DEVTOOLS.
+void BundledEmoteTableStats(size_t& count, size_t& bytes);
+void BundledUnlockIndexStats(size_t& count, size_t& bytes);
 
 // Normalize a slash command for the send path: trim, force a leading '/',
 // lowercase. The send path (SendOrFillEmote in EmoteAction.cpp) skips index 0
@@ -164,3 +232,8 @@ const BundledUnlockInfo& GetBundledUnlockInfo();
 // send path relies on is guaranteed wherever a command enters. Returns the
 // input unchanged when it trims to empty.
 std::string NormalizeEmoteCommand(std::string command);
+
+// Canonical form for a user-typed emote Id (the stable catalog key): lowercase,
+// keep [a-z0-9_], collapse any other run to a single '_', drop leading/trailing
+// '_'. Mirrors NormalizeMeMoteId so emote + /me-mote ids share one safe-key rule.
+std::string NormalizeEmoteId(std::string s);
