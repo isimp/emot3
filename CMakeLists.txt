@@ -125,9 +125,10 @@ add_library(emot3 SHARED
   src/data/MeMotes.cpp
   src/data/QuickbarPresets.cpp
   src/data/Settings.cpp
-  src/data/migrations/Migrations.cpp
+  src/data/migrations/SettingsMigrations.cpp
   src/data/migrations/M001_NormalizeLegacyKeys.cpp
   src/data/migrations/M002_UnusableSplit.cpp
+  src/data/migrations/EmoteCatalogMigration.cpp
   src/data/Usage.cpp
   src/data/RadialExports.cpp
   ${EMOT3_GEN_CPP}

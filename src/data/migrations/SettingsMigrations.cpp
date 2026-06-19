@@ -1,4 +1,4 @@
-#include "Migrations.h"
+#include "SettingsMigrations.h"
 
 #include "Logging.h"
 

@@ -1,4 +1,4 @@
-#include "Migrations.h"
+#include "SettingsMigrations.h"
 
 #include "Settings.h"  // EQbScrollSnap / EShortcutClick enum values
 

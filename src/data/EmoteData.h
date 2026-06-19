@@ -6,7 +6,8 @@
 #include <unordered_set>
 
 // emotes.json schema version this build writes. Lower-versioned files are migrated
-// up on load (see RunEmoteCatalogMigrations in EmoteData.cpp); a fresh file is
+// up on load (see RunEmoteCatalogMigrations in data/migrations/EmoteCatalogMigration.cpp);
+// a fresh file is
 // stamped with this on first save.
 constexpr int kEmotesSchemaVersion = 2;
 
@@ -192,6 +193,30 @@ const BundledUnlockInfo& GetBundledUnlockInfo();
 // slug belongs to the emote (seeded / loaded), so callers pass e.WikiSlug rather
 // than re-deriving by id.
 std::string WikiUrl(const std::string& slug);
+
+// Resolved view of one bundled emote, in a chosen language, from a chosen
+// version of the bundled table. `found` is false when the id isn't in that
+// table. Exists to let the emote-catalog migration compare a loaded emote
+// against its v1 vs current bundle defaults WITHOUT exposing the table
+// internals (the LocaleEntry layout / per-language resolver stay private to
+// EmoteData.cpp). See data/migrations/EmoteCatalogMigration.*.
+struct ResolvedBundleEmote {
+    bool        found      = false;
+    std::string command;
+    std::string name;
+    std::string wikiSlug;
+    int         unlockItem = 0;
+    bool        targetable = false;
+    bool        isCore     = false;
+    bool        madKing    = false;
+};
+
+// Resolve bundled emote `id` in `lang` (English fallback) from either the frozen
+// v1 migration snapshot (fromV1 = true) or the current bundle (fromV1 = false),
+// lazily loading the relevant table. The migration runner (RunEmoteCatalogMigrations)
+// is the sole intended caller.
+ResolvedBundleEmote ResolveBundledById(const std::string& id,
+                                       const std::string& lang, bool fromV1);
 
 // Dev-tool (MemoryMonitor) accessors: estimated entry count + heap footprint of the two
 // bundled startup tables (the emote-i18n table behind seeding/search, and the unlock

@@ -1,6 +1,6 @@
 #include "Settings.h"
 #include "JsonUtil.h"
-#include "migrations/Migrations.h"  // RunSettingsMigrations + kCurrentSchemaVersion
+#include "migrations/SettingsMigrations.h"  // RunSettingsMigrations + kCurrentSchemaVersion
 #include "StringUtil.h"  // TrimWhitespace, reused by the sanitize pass
 #include "AtomicFile.h"  // AtomicWriteFile (crash-safe save - no live-file truncation)
 #include "I18n.h"        // AvailableUiLanguages, for UiLanguage validation
