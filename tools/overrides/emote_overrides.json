@@ -998,6 +998,76 @@
       "es": {
         "name": "Transformación"
       }
+    },
+    "clap": {
+      "en": {
+        "name": "Clap"
+      },
+      "de": {
+        "name": "Klatschen"
+      },
+      "fr": {
+        "name": "Applaudir"
+      },
+      "es": {
+        "name": "Aplaudir"
+      }
+    },
+    "fingerguns": {
+      "en": {
+        "name": "Finger Guns"
+      },
+      "de": {
+        "name": "Fingerpistolen"
+      },
+      "fr": {
+        "name": "Tir main"
+      },
+      "es": {
+        "name": "Manos pistoleras"
+      }
+    },
+    "lean": {
+      "en": {
+        "name": "Lean"
+      },
+      "de": {
+        "name": "Lehnen"
+      },
+      "fr": {
+        "name": "Se pencher"
+      },
+      "es": {
+        "name": "Reclinarse"
+      }
+    },
+    "firedance": {
+      "en": {
+        "name": "Fire Dance"
+      },
+      "de": {
+        "name": "Feuertanz"
+      },
+      "fr": {
+        "name": "Danse du feu"
+      },
+      "es": {
+        "name": "Danza del fuego"
+      }
+    },
+    "popcorn": {
+      "en": {
+        "name": "Popcorn"
+      },
+      "de": {
+        "name": "Popcorn"
+      },
+      "fr": {
+        "name": "Popcorn"
+      },
+      "es": {
+        "name": "Palomitas"
+      }
     }
   }
 }
