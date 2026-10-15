@@ -25,6 +25,10 @@ Precedence per field: **override → GW2 API → wiki**. Today this holds the
 best-effort display **names** (Sonnet-seeded) and the `mad_king` set; add a
 `command`/`aliases`/flag to pin those too.
 
+An emote added with `--add-new` gets names derived from its commands (e.g.
+`/manospistoleras` → "Manospistoleras") until it has an entry here; the report's
+"names: derived from command" count shows how many are still missing.
+
 ## `icons/<id>.png`
 
 A **hard icon replacement**. Drop a PNG named after the emote `id` (e.g.

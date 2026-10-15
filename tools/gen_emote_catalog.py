@@ -18,14 +18,16 @@ WHAT EACH SOURCE GIVES US (verified)
   - DE/FR/ES wiki `Emote` tables: each carries a "command (English)" column that
     joins a localized row back to our id without langlink guessing -- used to UNION
     in any localized alias the EN table's column happened to omit.
+  - EN wiki search for `"X" Emote Tome` pages: every tome emote, including the
+    gem-store ones the Emote table doesn't list; each page's infobox gives the
+    item id that /v2/items resolves.
   - There is NO localized display-name column on any wiki, and core emotes have no
     wiki icon / usable subpage (their wiki names collide with EoD skiff skills).
 
 SAFETY MODEL
   - Dry-run by default: prints a diff + a report and writes NOTHING. Pass --write
     to actually update the JSON and download icons.
-  - Never silently clobbers hand-curated `command`/`name`/flags. Curated values
-    win unless you pass the matching --refresh-* flag; conflicts are reported.
+  - Curated values live only in tools/overrides/ and always win (see below).
   - Icons are only ever ADDED (or refreshed with --refresh-icons); existing icons
     are never deleted, and only icons that trace to the wiki Emote table / API are
     fetched (no fuzzy guessing).
@@ -45,7 +47,17 @@ USAGE
     py -3 tools/gen_emote_catalog.py --write         # apply JSON + download icons
     py -3 tools/gen_emote_catalog.py --refresh       # force re-fetch (ignore cache)
     py -3 tools/gen_emote_catalog.py --write --refresh-icons   # normalize icons to API
-    py -3 tools/gen_emote_catalog.py --add-new       # also add wiki emotes we lack
+    py -3 tools/gen_emote_catalog.py --add-new       # also add emotes we lack
+
+NEW EMOTES
+  An emote is new when no id, command or English alias we ship matches it. Both
+  the EN Emote table and the tome pages are checked, and new emotes are resolved
+  like shipped ones (unlock item, slug, API commands + icon). A tome page whose
+  item can't be resolved is reported, never added as an empty entry. A new emote
+  still needs display names in tools/overrides/emote_overrides.json.
+
+TESTS
+    py -3 -m unittest discover -s tools/tests
 """
 import argparse
 import hashlib
@@ -454,8 +466,39 @@ def png_dims(data):
 # ---------------------------------------------------------------------------
 # Merge
 # ---------------------------------------------------------------------------
-def merge(existing, api, en_rows, en_index, lang_extra, icon_index, shared_urls,
-          overrides, key_to_id, key_to_slug, opts):
+def known_en_keys(emotes):
+    """Every id plus every English command/alias we already ship, as norm keys.
+    Matching against all of them (not just a row's first command) keeps an emote
+    the wiki lists alias-first (e.g. scissors as "/scis<br>/scissors") from being
+    mistaken for a new emote."""
+    known = {e["id"] for e in emotes}
+    for e in emotes:
+        en = e.get("en", {})
+        if en.get("command"):
+            known.add(norm(en["command"]))
+        for a in en.get("aliases", []):
+            known.add(norm(a))
+    return known
+
+
+def find_new_emotes(emotes, en_rows, tome_titles):
+    """Emotes the sources list that our catalog lacks: (table_new, tome_only).
+    table_new = [(id, row)] for EN Emote table rows; tome_only = [id] for
+    `"X" Emote Tome` pages the table doesn't list (e.g. gem-store tomes)."""
+    known = known_en_keys(emotes)
+    table_new = []
+    for row in en_rows:
+        norms = [norm(c) for c in row["cmds"].get("en", [])]
+        if not norms or any(n in known for n in norms):
+            continue
+        table_new.append((norms[0], row))
+        known.update(norms)
+    tome_only = sorted(k for k in tome_titles if k not in known)
+    return table_new, tome_only
+
+
+def merge(existing, api, en_index, lang_extra, icon_index, shared_urls,
+          overrides, key_to_id, key_to_slug, new_emotes, opts):
     """Rebuild every emote's per-language objects as a CLEAN PROJECTION of the
     sources -- no legacy hand-curated value is carried forward. Precedence:
 
@@ -483,6 +526,7 @@ def merge(existing, api, en_rows, en_index, lang_extra, icon_index, shared_urls,
         "icon_missing": [],      # (id) tome emote with no resolvable icon
         "icon_shared": [],       # (id) icon is a shared collection icon, skipped
         "wiki_not_in_catalog": [],
+        "tome_unresolved": [],   # (id) tome page whose item gives no command
         "added_emote": [],       # (id) brand-new emote added via --add-new
     }
     icon_jobs = []
@@ -633,31 +677,24 @@ def merge(existing, api, en_rows, en_index, lang_extra, icon_index, shared_urls,
     for e in existing["emotes"]:
         fill_emote(e, en_index.get(e["id"]))
 
-    # 2) report (and optionally add) wiki emotes not in our catalog. Match against
-    # EVERY English command/alias we already ship (not just a row's first command)
-    # so an emote the wiki lists alias-first (e.g. scissors as "/scis<br>/scissors")
-    # isn't mistaken for a new emote.
-    known_en = set(by_id.keys())
-    for e in existing["emotes"]:
-        en = e.get("en", {})
-        if en.get("command"):
-            known_en.add(norm(en["command"]))
-        for a in en.get("aliases", []):
-            known_en.add(norm(a))
-    for row in en_rows:
-        en_cmds = row["cmds"].get("en", [])
-        if not en_cmds:
-            continue
-        norms = [norm(c) for c in en_cmds]
-        if any(n in known_en for n in norms):
-            continue
-        eid = norms[0]
+    # 2) report (and optionally add) emotes the sources list that we lack: EN
+    # table rows, then tome pages the table omits. A tome-only emote has no row,
+    # so its commands come from the API item alone (targetable stays False unless
+    # overridden); without an item command it would have no language at all, so
+    # it is reported instead of added.
+    table_new, tome_only = new_emotes
+    candidates = list(table_new)
+    for eid in tome_only:
+        if (api.get(eid, {}).get("en") or {}).get("command"):
+            candidates.append((eid, None))
+        else:
+            report["tome_unresolved"].append(eid)
+    for eid, row in candidates:
         report["wiki_not_in_catalog"].append(eid)
         if opts.add_new:
             e = {"id": eid}                  # flags are derived in fill_emote
             existing["emotes"].append(e)
             by_id[eid] = e
-            known_en.update(norms)
             fill_emote(e, row)
             report["added_emote"].append(eid)
 
@@ -793,8 +830,11 @@ def print_report(report):
             lambda t: t[0])
     section("added new emotes (--add-new)", [(x,) for x in report["added_emote"]],
             lambda t: t[0])
-    section("wiki emotes NOT in our catalog (use --add-new to include)",
+    section("wiki/tome emotes NOT in our catalog (use --add-new to include)",
             [(x,) for x in report["wiki_not_in_catalog"]],
+            lambda t: t[0])
+    section("tome pages with no resolvable item (not added)",
+            [(x,) for x in report["tome_unresolved"]],
             lambda t: t[0])
 
 
@@ -813,7 +853,8 @@ def main():
     ap.add_argument("--refresh-icons", action="store_true",
                     help="re-download icons that already exist on disk (normalize to API)")
     ap.add_argument("--add-new", action="store_true",
-                    help="add wiki emotes not present in our catalog (review flags!)")
+                    help="add emotes the wiki table or tome pages list but our "
+                         "catalog lacks (review flags!)")
     opts = ap.parse_args()
 
     with open(JSON_PATH, encoding="utf-8") as f:
@@ -828,7 +869,12 @@ def main():
     # column links to each emote's tome page -> item id -> /v2/items (command +
     # icon). PREFERRED over wiki/curated in merge().
     print("Fetching GW2 API (tome item ids via unlock-item links) ...")
+    # New emotes are looked up alongside the shipped ones, so an added emote gets
+    # its unlock item, slug, localized commands and API icon in the same run.
+    new_emotes = find_new_emotes(existing["emotes"], en_rows, discover_tome_titles(opts))
     catalog_keys = {e["id"] for e in existing["emotes"]}
+    catalog_keys.update(eid for eid, _ in new_emotes[0])
+    catalog_keys.update(new_emotes[1])
     key_to_id, key_to_slug = collect_tome_ids(opts, en_rows, catalog_keys)
     api = fetch_api(opts, key_to_id, key_to_slug)
     # key_to_slug currently holds page TITLES; replace each with the canonical URL
@@ -862,9 +908,9 @@ def main():
     existing["version"] = existing.get("version", 1)
     existing["languages"] = LANGS
     existing["_note"] = NOTE
-    emotes, report, icon_jobs = merge(existing, api, en_rows, en_index, lang_extra,
+    emotes, report, icon_jobs = merge(existing, api, en_index, lang_extra,
                                       icon_index, shared_urls, overrides,
-                                      key_to_id, key_to_slug, opts)
+                                      key_to_id, key_to_slug, new_emotes, opts)
 
     print("\n===== DIFF =====")
     changed = print_diff(old_emotes, emotes)
